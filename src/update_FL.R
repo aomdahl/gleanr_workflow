@@ -3,49 +3,58 @@
 ## Copied over from another function since this wasn't working originally.
 ################################################################################################################################
 
-Update_FL <- function(X, W, option){
+Update_FL <- function(X, W, option, preF = NULL, preL = NULL){
   # number of features - to avoid using T in R
   D      = ncol(X)
   tStart0 = Sys.time()
   
   #Random initialization
-  print('Random initialization...')
-  FactorM   = matrix(runif(D*(option[['K']] - 1)), nrow = D);
-  #Ashton added in- option to include column of 1s
-  if(option[['ones_plain']])
+  if(!option[['preinitialize']])
   {
-    FactorM = cbind(rep(1, D), FactorM);
-  } else if(option[['ones_mixed_std']]) {
-    print("Using a standard ubiq factor")
-    cor_struct <- cor(X)
-    #set up directions (-1 or 1) based on most common direction across the board.
-    negatives <- apply(cor_struct, 1, function(x) sum((x < 0)))
-    positives <- apply(cor_struct, 1, function(x) sum(x > 0) - 1) #-1 because every one is positively correlated with itself.
-    best_ref <- positives >= negatives #this provides the most common reference
-    #1 accept the most common reference as the directions- just assume this is the dominating effect
-    ones <- ifelse(best_ref, 1, -1)
-  } else if(option[['ones_mixed_ref']]) {
-    cor_struct <- cor(X)
-    #set up directions (-1 or 1) based on most common direction across the board.
-    negatives <- apply(cor_struct, 1, function(x) sum((x < 0)))
-    positives <- apply(cor_struct, 1, function(x) sum(x > 0) - 1) #-1 because every one is positively correlated with itself.
-    best_ref <- positives >= negatives #this provides the most common reference
-    #2 find some trait that matches this as closely as possible, let that be the reference and use the directions relative to that one.
-    cor_ref <- cor_struct >= 0
-    reference_trait <- which.max(apply(cor_ref, 2, function(x) sum(x == best_ref)))
-    ones <- ifelse(cor_struct[,reference_trait] >= 0, 1, -1)
-    print(ones)
-  }	else if(option[['ones_eigenvect']]) {
-    cor_struct <- cor(X)
-    print("using evect approach...")
-    svd <- svd(cor_struct, nu = 1) #fortunately its symmetric, so  U and V are the same here!
-    ones <- sign(svd$u)
-  } else {
-    #FactorM   = matrix(runif(D*(option[['K']])), nrow = D);
-    ones = matrix(runif(D*(option[['K']])), nrow = D)[,1]
+    print('Random initialization...')
+    FactorM   = matrix(runif(D*(option[['K']] - 1)), nrow = D);
+    #Ashton added in- option to include column of 1s
+    if(option[['ones_plain']])
+    {
+      FactorM = cbind(rep(1, D), FactorM);
+    } else if(option[['ones_mixed_std']]) {
+      print("Using a standard ubiq factor")
+      cor_struct <- cor(X)
+      #set up directions (-1 or 1) based on most common direction across the board.
+      negatives <- apply(cor_struct, 1, function(x) sum((x < 0)))
+      positives <- apply(cor_struct, 1, function(x) sum(x > 0) - 1) #-1 because every one is positively correlated with itself.
+      best_ref <- positives >= negatives #this provides the most common reference
+      #1 accept the most common reference as the directions- just assume this is the dominating effect
+      ones <- ifelse(best_ref, 1, -1)
+    } else if(option[['ones_mixed_ref']]) {
+      cor_struct <- cor(X)
+      #set up directions (-1 or 1) based on most common direction across the board.
+      negatives <- apply(cor_struct, 1, function(x) sum((x < 0)))
+      positives <- apply(cor_struct, 1, function(x) sum(x > 0) - 1) #-1 because every one is positively correlated with itself.
+      best_ref <- positives >= negatives #this provides the most common reference
+      #2 find some trait that matches this as closely as possible, let that be the reference and use the directions relative to that one.
+      cor_ref <- cor_struct >= 0
+      reference_trait <- which.max(apply(cor_ref, 2, function(x) sum(x == best_ref)))
+      ones <- ifelse(cor_struct[,reference_trait] >= 0, 1, -1)
+      print(ones)
+    }	else if(option[['ones_eigenvect']]) {
+      cor_struct <- cor(X)
+      print("using evect approach...")
+      svd <- svd(cor_struct, nu = 1) #fortunately its symmetric, so  U and V are the same here!
+      ones <- sign(svd$u)
+    } else {
+      #FactorM   = matrix(runif(D*(option[['K']])), nrow = D);
+      ones = matrix(runif(D*(option[['K']])), nrow = D)[,1]
+    }
+    FactorM = cbind(ones, FactorM);
+    #print(FactorM)
+  } else #you pre-provide the first F.
+  {
+    FactorM   = preF;
+    print("initialized with PCA!")
   }
-  FactorM = cbind(ones, FactorM);
-  #print(FactorM)
+
+ 
   
   # First round of optimization
   print('Start optimization ...')
@@ -54,12 +63,13 @@ Update_FL <- function(X, W, option){
   #Need to adjust for first run- no reweighting (obvi.)
   og_option <- option[['reweighted']]
   option[['reweighted']] <- FALSE
+  
   if(option[['parallel']])
   {
-    L = fit_L_parallel(X, W, FactorM, option, formerL = NULL);
+    L = fit_L_parallel(X, W, FactorM, option, formerL = preL); #preL is by default Null, unless yo specify!
   } else
   {
-    L = fit_L(X, W, FactorM, option, formerL = NULL);
+    L = fit_L(X, W, FactorM, option, formerL = preL);
   }
   
   
