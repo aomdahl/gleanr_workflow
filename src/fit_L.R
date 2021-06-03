@@ -68,8 +68,9 @@ fit_L_foreach <- function(X, W, FactorM, option, formerL){
 fit_L_parallel <- function(X, W, FactorM, option, formerL){
   L = NULL
   library(foreach)
+  print("doing in parallel")
   tS = Sys.time()
-  cl <- makeCluster(3)
+  cl <- makeCluster(option[["ncores"]])
   registerDoParallel(cl)
   L <- foreach(row =seq(1,nrow(X)), .combine = 'rbind', .packages = 'penalized') %dopar% {
     x = X[row, ];
