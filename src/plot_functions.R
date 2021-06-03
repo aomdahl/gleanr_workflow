@@ -22,6 +22,11 @@ orderFactors <- function(F, dist = "euclidean")
 
 plotFactors <- function(F, trait_names, title, cluster = T, t_order = NA)
 {
+  if(dim(F)[2] == 0)
+    {
+        print("No dim")
+        return(ggplot() + theme_void())   
+    }
   new_names <- c(seq(1,ncol(F)), "trait")
   if(!is.na(t_order))
   {

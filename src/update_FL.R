@@ -181,13 +181,13 @@ Update_FL <- function(X, W, option, preF = NULL, preL = NULL){
     
     # converge if: 1). Change of the values in factor matrix is small. ie. The factor matrix is stable. 2). Change in the objective function becomes small; 3). reached maximum number of iterations
     if(option[['convF']] >= F_change){
-      print(paste0('Factor matrix converges at itertaion ', iii));
+      print(paste0('Factor matrix converges at iteration ', iii));
       break
     }
     
     oc1 = abs(objective_change[length(objective_change)])
     if(option[['convO']] >= oc1){
-      print(paste0('Objective function converges at itertaion ', iii));
+      print(paste0('Objective function converges at iteration ', iii));
       break
     }
     if(iii == option[['iter']]){
