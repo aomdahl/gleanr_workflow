@@ -127,8 +127,16 @@ one_fit <- function(x, w, FactorM, option, formerL){
     l = coef(fit, 'all');
     
     
-  }	
-	else {
+  } else if(option[["fixed_ubiq"]])
+  {
+    lambdas <- c(0, rep(option[['alpha1']], (ncol(FactorMp) - 1))) #no lasso on that first column
+    fit = penalized(response = X, penalized = dat_i[,paste0('F', seq(1, ncol(FactorMP)))], data=dat_i,
+                    unpenalized = ~0, lambda1 =lambdas, lambda2=1e-10,
+                    positive = F, standardize = F, trace = F)
+    #glm_fit <- glmnet(x = dat_i[,paste0('F', seq(1, ncol(Lp)))], y = xp, alpha = 1, lambda = lambdas, intercept = FALSE)
+    
+    l = coef(fit, 'all')
+  }		else {
     fit = penalized(response = X, penalized = dat_i[,paste0('F', seq(1,ncol(FactorMp)))], data=dat_i,
                     unpenalized = ~0, lambda1 = option[['alpha1']], lambda2=1e-10,
                     positive = F, standardize = F, trace = F);
