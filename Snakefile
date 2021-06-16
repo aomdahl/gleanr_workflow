@@ -75,14 +75,13 @@ rule extract_sumstats: #get out the z-scores
     input:
         "gwas_extracts/seed{seedn}_thresh{thresh}_h2-{h2}_vars{pval}/seed{seedn}_thresh{thresh}_h2-{h2}_vars{pval}.pruned_rsids.txt",        
         "trait_selections/seed{seedn}_thresh{thresh}_h2-{h2}.studies.tsv"
-
     output:
         "gwas_extracts/seed{seedn}_thresh{thresh}_h2-{h2}_vars{pval}/seed{seedn}_thresh{thresh}_h2-{h2}_vars{pval}.se.tsv",
         "gwas_extracts/seed{seedn}_thresh{thresh}_h2-{h2}_vars{pval}/seed{seedn}_thresh{thresh}_h2-{h2}_vars{pval}.n.tsv",
         "gwas_extracts/seed{seedn}_thresh{thresh}_h2-{h2}_vars{pval}/seed{seedn}_thresh{thresh}_h2-{h2}_vars{pval}.beta.tsv"
     params:
-        gwas_dir="/work-zfs/abattle4/lab_data/UKBB/GWAS_Neale/highly_heritable_traits_2/unzipped" 
-        outfile="gwas_extracts/seed{seedn}_thresh{thresh}_h2-{h2}_vars{pval}/seed{seedn}_thresh{thresh}_h2-{h2}_vars{pval}"
+        gwas_dir="/work-zfs/abattle4/lab_data/UKBB/GWAS_Neale/highly_heritable_traits_2/unzipped", 
+        outfile="gwas_extracts/seed{seedn}_thresh{thresh}_h2-{h2}_vars{pval}/seed{seedn}_thresh{thresh}_h2-{h2}_vars{pval}",
         type="std"
     shell: 
         """
