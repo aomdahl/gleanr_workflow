@@ -19,6 +19,33 @@ orderFactors <- function(F, dist = "euclidean")
   }
 }
 
+#F <- run_stats_l1$betas_se_K20_fix_ubiq[[1]]
+#trait_names = names
+#t_order = orderh
+plotFactorsBarplot <- function(F, trait_names, title, cluster = T, t_order = NA)
+{
+  new_names <- c(seq(1,ncol(F)), "trait")
+  if(!is.na(t_order))
+  {
+    ordering <- t_order
+  }else if(cluster) {
+    ordering <- orderFactors(F)
+  }else{
+    ordering <- 1:nrow(F)
+  }
+  factors_nn <- data.frame(F) %>% mutate("trait" = factor(trait_names, levels = trait_names[ordering]) )
+  names(factors_nn) <- new_names
+  nn <- tidyr::pivot_longer(factors_nn, cols = seq(1:ncol(F)), names_to = "x") %>%  arrange(value)
+  nn$x <- as.factor(as.numeric(nn$x))
+  nn$factors <- paste0("F", nn$x)
+  
+  p <- ggplot(nn, aes(x = trait, y = value)) + geom_bar(stat='identity', fill  = "skyblue") + facet_wrap(~factors) + 
+    theme_minimal(15) + theme(axis.text.x=element_blank()) + xlab("GWAS traits") + ylab("Factor value")
+
+  return(p)
+}
+
+
 
 plotFactors <- function(F, trait_names, title, cluster = T, t_order = NA)
 {

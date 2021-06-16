@@ -51,11 +51,11 @@ fit_F <- function(X, W, L, option, formerF = NULL){
 		{
 		  fit = penalized(response = X, penalized = dat_i[,paste0('F', seq(1, ncol(Lp)))], data=dat_i,
 		                  unpenalized = ~0, lambda1 = option[['lambda1']], lambda2=1e-10,
-		                  positive = F, standardize = F, trace = F, startbeta = formerF[col,] )
+		                  positive = FALSE, standardize = FALSE, trace = FALSE, startbeta = formerF[col,] )
 		  f = coef(fit, 'all')
 		  #fit = penalized(response = X, penalized = dat_i[,paste0('F', seq(2, ncol(Lp)))], data=dat_i,
 		                  #unpenalized = ~0 + dat_i[,1], lambda1 = option[['lambda1']], lambda2=1e-10,
-		                  #positive = F, standardize = F, trace = F, startbeta = formerF[col,] )
+		                  #positive = FALSE, standardize = FALSE, trace = FALSE, startbeta = formerF[col,] )
 		} else if(option[["glmnet"]])
 		{
 		  glm_fit <- glmnet(x = dat_i[,paste0('F', seq(1, ncol(Lp)))], y = xp, alpha = 1, lambda = c(option[['lambda1']]), intercept = FALSE)
@@ -65,7 +65,7 @@ fit_F <- function(X, W, L, option, formerF = NULL){
 		  lambdas <- c(0, rep(option[['lambda1']], (ncol(Lp) - 1))) #no lasso on that first column
 		  fit = penalized(response = X, penalized = dat_i[,paste0('F', seq(1, ncol(Lp)))], data=dat_i,
 		                  unpenalized = ~0, lambda1 =lambdas, lambda2=1e-10,
-		                  positive = F, standardize = F, trace = F)
+		                  positive = FALSE, standardize = FALSE, trace = FALSE)
 		  #glm_fit <- glmnet(x = dat_i[,paste0('F', seq(1, ncol(Lp)))], y = xp, alpha = 1, lambda = lambdas, intercept = FALSE)
 		  
 		  f = coef(fit, 'all')
@@ -73,7 +73,7 @@ fit_F <- function(X, W, L, option, formerF = NULL){
 		else {
 		  fit = penalized(response = X, penalized = dat_i[,paste0('F', seq(1, ncol(Lp)))], data=dat_i,
 		                  unpenalized = ~0, lambda1 =option[['lambda1']], lambda2=1e-10,
-		                  positive = F, standardize = F, trace = F)
+		                  positive = FALSE, standardize = FALSE, trace = FALSE)
 		  f = coef(fit, 'all')
 		}
 		
