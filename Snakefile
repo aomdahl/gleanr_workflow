@@ -19,7 +19,7 @@ rule trait_list:
         "trait_selections/seed{seedn}_thresh{thresh}_h2-{h2}.{custom}.studies.tsv","trait_selections/seed{seedn}_thresh{thresh}_h2-{h2}.{custom}.names.tsv"
     shell:
         """
-        Rscript src/getSelectionList.R --corr_dat {input[0]}  --trait_list {input[1]} --output ./trait_selections/ --nongender_specific --num_samples 1 --start_seed {wildcards.seedn} --threshold {wildcards.thresh} --h2 {wildcards.h2} --names
+        Rscript {src_path}/getSelectionList.R --corr_dat {input[0]}  --trait_list {input[1]} --output ./trait_selections/ --nongender_specific --num_samples 1 --start_seed {wildcards.seedn} --threshold {wildcards.thresh} --h2 {wildcards.h2} --names
         """
 rule extract_snps: #finds the variants that meet our signal threshold. here just looking at the LDSC ones.
     input:
@@ -29,7 +29,7 @@ rule extract_snps: #finds the variants that meet our signal threshold. here just
     shell:
         """
             ml python/3.7-anaconda
-            python src/unionVariants.py --gwas_list {input.trait_list}  --output {output} --type ldsc --pval {wildcards.pval} --extension ".both_sexes.tsv" --gwas_dir /work-zfs/abattle4/lab_data/UKBB/GWAS_Neale/highly_heritable_traits_2/ldsr_format/unzipped/
+            python {src_path}/unionVariants.py --gwas_list {input.trait_list}  --output {output} --type ldsc --pval {wildcards.pval} --extension ".both_sexes.tsv" --gwas_dir /work-zfs/abattle4/lab_data/UKBB/GWAS_Neale/highly_heritable_traits_2/ldsr_format/unzipped/
         """
 
 
@@ -43,8 +43,8 @@ rule filter_1KG: #filter those lists for multi-allelic snps, indels, ambiguous s
         
     shell:
         """
-        bash src/variant_lookup.sh {input} {output[0]}
-        bash src/snp_cleanup.sh {output[0]} {output[1]}
+        bash {src_path}/variant_lookup.sh {input} {output[0]}
+        bash {src_path}/snp_cleanup.sh {output[0]} {output[1]}
         """
 
 rule prune: #reduce it to a pruned list
@@ -68,7 +68,7 @@ rule ids_to_rsids:
         "gwas_extracts/seed{seedn}_thresh{thresh}_h2-{h2}_vars{pval}.{custom}/seed{seedn}_thresh{thresh}_h2-{h2}_vars{pval}.{custom}.pruned_rsids.txt"
     shell: #Only applies if using the LDSC variants, which here we are sadly.    
         """
-        bash src/variant_to_rsid.sh {input} {output}
+        bash {src_path}/variant_to_rsid.sh {input} {output}
         """
 
 rule extract_sumstats: #get out the z-scores
@@ -86,7 +86,7 @@ rule extract_sumstats: #get out the z-scores
     shell: 
         """
         ml python/3.7-anaconda;
-        python src/quickGWASIter.py  --type {params.type} --output {params.outfile} --gwas_list {input[1]} --snp_list {input[0]} --extension ".both_sexes.tsv" --gwas_dir {params.gwas_dir}
+        python {src_path}/quickGWASIter.py  --type {params.type} --output {params.outfile} --gwas_list {input[1]} --snp_list {input[0]} --extension ".both_sexes.tsv" --gwas_dir {params.gwas_dir}
         """
 rule hapmap_reference: #get the list of hapmap snps for extraction, omitting HLA region
     input:
