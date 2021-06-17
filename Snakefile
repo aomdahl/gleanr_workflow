@@ -119,7 +119,7 @@ rule factorize:
         "gwas_extracts/seed{seedn}_thresh{thresh}_h2-{h2}_vars{pval}.{custom}/seed{seedn}_thresh{thresh}_h2-{h2}_vars{pval}.{custom}.z.tsv", 
         "trait_selections/seed{seedn}_thresh{thresh}_h2-{h2}.{custom}.names.tsv"
     output:
-        expand("results/seed{{seedn}}_thresh{{thresh}}_h2-{{h2}}_vars{{pval}}{.{custom}}/factorization/{ot}.{{f_type}}.{{seedn}}{ext}", ot=output_type, ext=[".txt", ".png"])
+        expand("results/seed{{seedn}}_thresh{{thresh}}_h2-{{h2}}_vars{{pval}}.{{custom}}/factorization/{ot}.{{f_type}}.{{seedn}}{ext}", ot=output_type, ext=[".txt", ".png"])
         #expand("results/seed{{seedn}}_thresh{{thresh}}_h2-{{h2}}_vars{{pval}}/factorization/{ot}.{ft}.{{seedn}}{ext}", ot=output_type, ft = factorization_type, ext=[".txt", ".png"])
     params:
         "results/seed{seedn}_thresh{thresh}_h2-{h2}_vars{pval}.{custom}/factorization/"
