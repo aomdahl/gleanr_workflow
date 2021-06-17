@@ -112,7 +112,7 @@ rule hapmap_extract: #Pull the hapmap3 snps from the LDSC summary stats. This st
     shell: 
         """
         ml python/3.7-anaconda;
-        python src/quickGWASIter.py  --type ldsc --output {params[1]} --gwas_list {input[1]} --snp_list {input[0]} --extension ".both_sexes.tsv" --gwas_dir {params[0]}
+        python {src_path}/quickGWASIter.py  --type ldsc --output {params[1]} --gwas_list {input[1]} --snp_list {input[0]} --extension ".both_sexes.tsv" --gwas_dir {params[0]}
         """
 rule factorize:
     input:
