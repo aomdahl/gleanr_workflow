@@ -10,6 +10,10 @@ source('src/compute_obj.R')
 
 parser <- ArgumentParser$new()
 parser$add_description("Script to run matrix factorization")
+parser$add_argument("--gwas_effects", type = 'character', help = "Specify the Z or B file, depending on specified weighting scheme. First column is ids of each variant, column names specify the trait")
+parser$add_argument("--uncertainty", type = 'character', help = "Specify the path to the SE or other uncertainty file, depending on the weightin scheme.irst column is ids of each variant, column names specify the trait")
+parser$add_argument("--trait_names", type = 'character', help = "Human readable trait names, used for plotting. Ensure order is the same as the orderr in the input tables.")
+parser$add_argument("--variants", type = 'character', help = "List containing the identifiers of the variants. First column is chr:pos, 2nd is rsid.")
 parser$add_argument("--weighting_scheme", type = 'character', help = "Specify either Z, B, B_SE, B_MAF", default = "B_SE")
 parser$add_argument("--alphas", type = 'character', help = "Specify which alphas to do, all in quotes, separated by ',' character")
 parser$add_argument("--lambdas", type = 'character', help = "Specify which lambdas to do, all in quotes, separated by ',' character")
@@ -17,12 +21,13 @@ parser$add_argument("--output", type = "character", help = "Source file location
 parser$add_argument("--cores", type = "numeric", help = "Number of cores", default = 2)
 parser$add_argument("--fixed_first", type = "logical", help = "if want to remove L1 prior on first factor", action = "store_true", default = FALSE)
 parser$add_argument("--debug", type = "logical", help = "if want debug run", action = "store_true", default = FALSE)
+parser$add_argument("--overview_plots", type = "logical", help = "To include plots showing the objective, sparsity, etc for each run", action = "store_true", default = FALSE)
 parser$add_argument("-k", "--nfactors", type = "numeric", help = "specify the number of factors", default = 15)
 parser$add_argument("-i", "--niter", type = "numeric", help = "specify the number of iterations", default = 30)
-00  
 parser$add_argument('--help',type='logical',action='store_true',help='Print the help page')
 parser$helpme()
 args <- parser$get_args()
+
 #TODO:
     #add in functionality in the event the objective begins to increase again. Don't want that....
 #Read in the hyperparameters to explore
@@ -31,50 +36,41 @@ lambdas <- scan(text = args$lambdas, what = character(), sep = ',')
 output <- args$output
 #Load the data
 dir <- "/work-zfs/abattle4/ashton/snp_networks/gwas_decomp_ldsc/gwas_extracts/seed2_thresh0.9_h2-0.1_vars1e-5/"
-z_scores <- fread(paste0(dir, "seed2_thresh0.9_h2-0.1_vars1e-5.FULL_LIST.1e-5.z.tsv")) %>% drop_na() %>% arrange(ids)
-names <- scan("/work-zfs/abattle4/ashton/snp_networks/gwas_decomp_ldsc/trait_selections/seed2_thresh0.9_h2-0.1.names.tsv", what = character())
-z <- as.matrix(z_scores %>% select(-ids))
+effects <- fread(args$gwas_effects) %>% drop_na() %>% arrange(ids)
+all_ids <- effects$ids
+names <- scan(args$trait_names, what = character())
+effects <- effects %>% select(-ids)
 
-betas <- fread(paste0(dir, "seed2_thresh0.9_h2-0.1_vars1e-5.FULL_LIST.1e-5.beta.tsv")) %>% 
-  drop_na() %>% filter(ids %in% z_scores$ids) %>% arrange(ids) %>% select(-ids) %>% as.matrix() 
-all_ids <- fread(paste0(dir, "seed2_thresh0.9_h2-0.1_vars1e-5.FULL_LIST.1e-5.beta.tsv")) %>% 
-  drop_na() %>% filter(ids %in% z_scores$ids) %>% arrange(ids) %>% select(ids)
-
-rsid_map <- fread(paste0(dir, "seed2_thresh0.9_h2-0.1_vars1e-5.pruned_rsids.txt"), header =FALSE) %>% rename("ids" = V1, "rsids" = V2)
-if(args$weighting_scheme == "Z")
+rsid_map <- fread(args$variants, header =FALSE) %>% rename("ids" = V1, "rsids" = V2)
+if(args$weighting_scheme == "Z" || args$weighting_scheme == "B")
 {
+  print("No scaling by standard error will take place. Input to uncertainty being ignored.")
   W <- matrix(1,nrow = nrow(z), ncol = ncol(z))
-  X <- z
-  
-} else if(args$weighting_scheme == "B"){
-  W <- matrix(1,nrow = nrow(z), ncol = ncol(z))
-  X <- betas
+  X <- effects
   
 } else if(args$weighting_scheme == "B_SE")
 {
-  W_se <- fread(paste0(dir, "seed2_thresh0.9_h2-0.1_vars1e-5.FULL_LIST.1e-5.se.tsv")) %>% drop_na() %>% filter(ids %in% z_scores$ids) %>% arrange(ids) %>% select(-ids) %>% as.matrix()
+  print("Scaling by 1/SE.")
+  W_se <- fread(args$uncertainty) %>% drop_na() %>% filter(ids %in% all_ids$ids) %>% arrange(ids) %>% select(-ids) %>% as.matrix()
   W <- 1/ W_se
-  X <- betas
+  X <- effects
   
 } else if(args$weighting_scheme == "B_MAF")
 {
-  W_maf <- fread(paste0(dir, "seed2_thresh0.9_h2-0.1_vars1e-5.FULL_LIST.1e-5.maf.tsv")) %>% 
-    drop_na() %>% filter(ids %in% z_scores$ids) %>% arrange(ids) %>% select(-ids) %>% as.matrix()
+  print("Scaling by 1/var(MAF)")
+  W_maf <- fread(args$uncertainty) %>% drop_na() %>% 
+    filter(ids %in% z_scores$ids) %>% arrange(ids) %>% select(-ids) %>% as.matrix()
   W <- 1/matrix(apply(W_maf, 2, function(x) 2*x*(1-x)), nrow = nrow(W_maf), ncol = ncol(W_maf))
-  X <- betas
+  X <- effects 
 } else
 {
   print("No form selected. Please try again.")
   quit()
 }
 
-
-
 #set up settings
 option <- list()
 option[['K']] <- args$nfactors
-option[['alpha1']] <- 1
-option[['lambda1']] <- 1
 option[['iter']] <- args$niter
 option[['ones_mixed_std']] <- FALSE
 option[['ones_mixed_ref']] <- FALSE
@@ -93,9 +89,6 @@ option[["ncores"]] <- args$cores
 option[["fixed_ubiq"]] <- args$fixed_first
 #Store stats here
 run_stats <- list()
-
-target <- 0.87
-iter_count = 1
 type_ <- args$weighting_scheme 
 run_stats <- list()
 name_list <- c()
@@ -110,6 +103,8 @@ if(args$debug)
 }
 a_plot <- c()
 l_plot <- c()
+
+#Actually run the factorization
 for(a in alphas){
   for (l in lambdas){
     option[['alpha1']] <- as.numeric(a)
@@ -121,7 +116,7 @@ for(a in alphas){
     time <- end-start
     run_stats[[iter_count]] <- c(run, time)
     iter_count <- iter_count + 1
-    
+    #things for plots
     if(length(run) == 0)
     {
         fname = paste0(output, "A", a, "_L", l, "_","K", args$ type_, ".NO_OUTPUT.png")
@@ -132,59 +127,53 @@ for(a in alphas){
     title_ = paste0("A", a, "_L", l, " Type = ", args$weighting_scheme )
     p <- plotFactors(run[[1]],trait_names = names, title = title_)
     ggsave(filename = fname, plot = p, device = "png", width = 10, height = 8)
-    
     #Lazy bookeeping nonsense for plots
     name_list <- c(name_list,  paste0("A", a, "_L", l))
     a_plot <- c(a_plot, a)
     l_plot <- c(l_plot, l)
   }
 }
-
-#Make a plot with the various sparsities
-if(FALSE)
-{
-  load("/Users/ashton/Documents/JHU/Research/LocalData/snp_network/eigenfactors_weighting_marcc_plots/beta_se/runDat.RData")
-  alphas <- c(800,850,900,950)
-  lambdas <-c(800,850,900,950)
-  name_list <- c()
-  for(a in alphas){
-    for (l in lambdas){
-      a_plot <- c(a_plot, a)
-      l_plot <- c(l_plot, l)
-      name_list <- c(name_list,  paste0("A", a, "_L", l))
-    }
-  }
-}
-factor_sparsities <- data.frame("alpha" = a_plot, "lambda" = l_plot, 
-                                "sparsity" = unlist(lapply(run_stats, function(x) x[[4]])), 
-                                "runtime" = unlist(lapply(run_stats, function(x) x[[7]])))
-loading_sparsities <- data.frame("alpha" = a_plot, "lambda" = l_plot, 
-                                 "sparsity" = unlist(lapply(run_stats, function(x) x[[3]])), 
-                                 "runtime" = unlist(lapply(run_stats, function(x) x[[7]])))
-print(paste0(output, "/factor_sparsity.png"))
-
-ggplot(data = factor_sparsities, aes(x = alpha, y= lambda, fill = sparsity)) + geom_tile() + 
-  theme_minimal(15) + scale_fill_gradient(low="white", high="navy") + ggtitle("Factor Sparsity")
-ggsave(paste0(output, "/factor_sparsity.png"), device = "png")  
-
-ggplot(data = loading_sparsities, aes(x = alpha, y= lambda, fill = sparsity)) + geom_tile() + 
-  theme_minimal(15) + scale_fill_gradient2(low="white", high="navy", limits = c(0,max(loading_sparsities$sparsity))) + ggtitle("Loading Sparsity")
-ggsave(paste0(output, "/loading_sparsity.png"), device = "png")  
-#Make a plot with the various runtimes.
-ggplot(data = factor_sparsities, aes(x = alpha, y= lambda, fill = runtime)) + geom_tile() + 
-  theme_minimal(15) + scale_fill_gradient(low="white", high="navy") + ggtitle("Runtime")
-ggsave(paste0(output, "/runtimes.png"), device = "png")      
-#Plot the change in objective function for each one too....
-#run_stat <- run_stats_l1
-
-objectives <- data.frame(lapply(run_stats, function(x) x[[6]])) %>% drop_na() 
-colnames(objectives) <- name_list
-objectives <- objectives %>% mutate("iteration" =1:nrow(objectives)) %>% reshape2::melt(., id.vars = "iteration")
-ggplot(data = objectives, aes(x = iteration, y = value, color = variable)) + geom_point() + geom_line() + 
-  theme_minimal(15) + ggtitle("Objective function") + ylab("Objective score")
-ggsave(paste0(output, "/objective.png"), device = "png")     
 #Save all the data...
+#We actually need output information
+writeOutputTables(run_stats, output)
 save(run_stats, file = paste0(output, "/runDat.RData"))
+writeOutputTables <- function(stats, out_dir)
+
+
+
+
+
+if(args$overview_plots)
+{
+  factor_sparsities <- data.frame("alpha" = a_plot, "lambda" = l_plot, 
+                                  "sparsity" = unlist(lapply(run_stats, function(x) x[[4]])), 
+                                  "runtime" = unlist(lapply(run_stats, function(x) x[[7]])))
+  loading_sparsities <- data.frame("alpha" = a_plot, "lambda" = l_plot, 
+                                  "sparsity" = unlist(lapply(run_stats, function(x) x[[3]])), 
+                                  "runtime" = unlist(lapply(run_stats, function(x) x[[7]])))
+  print(paste0(output, "/factor_sparsity.png"))
+
+  ggplot(data = factor_sparsities, aes(x = alpha, y= lambda, fill = sparsity)) + geom_tile() + 
+    theme_minimal(15) + scale_fill_gradient(low="white", high="navy") + ggtitle("Factor Sparsity")
+  ggsave(paste0(output, "/factor_sparsity.png"), device = "png")  
+
+  ggplot(data = loading_sparsities, aes(x = alpha, y= lambda, fill = sparsity)) + geom_tile() + 
+    theme_minimal(15) + scale_fill_gradient2(low="white", high="navy", limits = c(0,max(loading_sparsities$sparsity))) + ggtitle("Loading Sparsity")
+  ggsave(paste0(output, "/loading_sparsity.png"), device = "png")  
+  #Make a plot with the various runtimes.
+  ggplot(data = factor_sparsities, aes(x = alpha, y= lambda, fill = runtime)) + geom_tile() + 
+    theme_minimal(15) + scale_fill_gradient(low="white", high="navy") + ggtitle("Runtime")
+  ggsave(paste0(output, "/runtimes.png"), device = "png")      
+  #Plot the change in objective function for each one too....
+
+  objectives <- data.frame(lapply(run_stats, function(x) x[[6]])) %>% drop_na() 
+  colnames(objectives) <- name_list
+  objectives <- objectives %>% mutate("iteration" =1:nrow(objectives)) %>% reshape2::melt(., id.vars = "iteration")
+  ggplot(data = objectives, aes(x = iteration, y = value, color = variable)) + geom_point() + geom_line() + 
+    theme_minimal(15) + ggtitle("Objective function") + ylab("Objective score")
+  ggsave(paste0(output, "/objective.png"), device = "png")    
+}
+
 
 
 
