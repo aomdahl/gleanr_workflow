@@ -7,6 +7,7 @@ source("src/update_FL.R")
 source("src/fit_L.R")
 source("src/plot_functions.R")
 source('src/compute_obj.R')
+source('src/buildFactorMatrices.R')
 
 parser <- ArgumentParser$new()
 parser$add_description("Script to run matrix factorization")
@@ -135,13 +136,8 @@ for(a in alphas){
 }
 #Save all the data...
 #We actually need output information
-writeOutputTables(run_stats, output)
 save(run_stats, file = paste0(output, "/runDat.RData"))
-writeOutputTables <- function(stats, out_dir)
-
-
-
-
+writeFactorMatrices(alphas, lambdas, names, run_stats,output)
 
 if(args$overview_plots)
 {
