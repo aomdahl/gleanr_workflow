@@ -47,10 +47,6 @@
   	return(L)
   }
   
-tE = Sys.time();
-  print(paste0('Updating Loading matrix takes ', round((tE - tS)/60, 2), 'min'));
-  return(L)
-}
 
 
 fit_L_parallel <- function(X, W, FactorM, option, formerL){
