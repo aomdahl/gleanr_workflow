@@ -36,13 +36,19 @@ alphas <- scan(text = args$alphas, what = character(), sep = ',')
 lambdas <- scan(text = args$lambdas, what = character(), sep = ',')
 output <- args$output
 #Load the data
-dir <- "/work-zfs/abattle4/ashton/snp_networks/gwas_decomp_ldsc/gwas_extracts/seed2_thresh0.9_h2-0.1_vars1e-5/"
 effects <- fread(args$gwas_effects) %>% drop_na() %>% arrange(ids)
 all_ids <- effects$ids
-names <- scan(args$trait_names, what = character())
+print("so far so good....")
+if(args$trait_names == "")
+{
+  print("No trait names provided. Using the identifiers in the tabular effect data instead.")
+  names <- names(effects)[-1]
+} else{
+    names <- scan(args$trait_names, what = character())
+}
 effects <- effects %>% select(-ids)
-
 rsid_map <- fread(args$variants, header =FALSE) %>% rename("ids" = V1, "rsids" = V2)
+print("Checkpoint 2")
 if(args$weighting_scheme == "Z" || args$weighting_scheme == "B")
 {
   print("No scaling by standard error will take place. Input to uncertainty being ignored.")
