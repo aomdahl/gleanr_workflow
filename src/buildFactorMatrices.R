@@ -3,6 +3,7 @@
 
 writeFactorMatrices <- function(specs1, specs2, studies, run_list, out_prefix)
 {
+  entry <- c()
   for(i in specs1) { for(j in specs2) { entry <- c(entry, paste0(i, " ", j)) }}
   run_list <- entry
   for(r in run_list)

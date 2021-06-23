@@ -31,8 +31,8 @@ args <- parser$get_args()
 #TODO:
     #add in functionality in the event the objective begins to increase again. Don't want that....
 #Read in the hyperparameters to explore
-alphas <- scan(text = args$alphas, what = character(), sep = ',')
-lambdas <- scan(text = args$lambdas, what = character(), sep = ',')
+alphas <- scan(text = args$alphas, what = character(), sep = ',', quiet = TRUE)
+lambdas <- scan(text = args$lambdas, what = character(), sep = ',', quiet = TRUE)
 output <- args$output
 #Load the data
 effects <- fread(args$gwas_effects) %>% drop_na() %>% arrange(ids)
@@ -42,7 +42,7 @@ if(args$trait_names == "")
   message("No trait names provided. Using the identifiers in the tabular effect data instead.")
   names <- names(effects)[-1]
 } else{
-    names <- scan(args$trait_names, what = character())
+    names <- scan(args$trait_names, what = character(), quiet = TRUE)
 }
 effects <- effects %>% select(-ids)
 if(args$weighting_scheme == "Z" || args$weighting_scheme == "B")
@@ -88,7 +88,11 @@ option[['ones_eigenvect']] <- TRUE
 option[['ones_plain']] <- FALSE
 option[['reweighted']] <- FALSE
 option[["glmnet"]] <- FALSE
-option[["parallel"]] <- TRUE
+if(args$cores > 1)
+{
+  message(paste("Running in parallel on", args$cores, "cores"))
+  option[["parallel"]] <- TRUE
+}
 option[["ncores"]] <- args$cores
 option[["fixed_ubiq"]] <- args$fixed_first
 #Store stats here
