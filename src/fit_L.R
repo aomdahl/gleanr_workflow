@@ -53,8 +53,6 @@
 
 fit_L_parallel <- function(X, W, FactorM, option, formerL){
   L = NULL
-
-  message("doing in parallel")
   tS = Sys.time()
   cl <- parallel::makeCluster(option[["ncores"]])
   doParallel::registerDoParallel(cl)
