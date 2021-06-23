@@ -11,14 +11,14 @@ Update_FL <- function(X, W, option, preF = NULL, preL = NULL){
   #Random initialization
   if(!option[['preinitialize']])
   {
-    print('Random initialization...')
+    message('Random initialization...')
     FactorM   = matrix(runif(D*(option[['K']] - 1)), nrow = D);
     #Ashton added in- option to include column of 1s
     if(option[['ones_plain']])
     {
       FactorM = cbind(rep(1, D), FactorM);
     } else if(option[['ones_mixed_std']]) {
-      print("Using a standard ubiq factor")
+      message("Using a standard ubiq factor")
       cor_struct <- cor(X)
       #set up directions (-1 or 1) based on most common direction across the board.
       negatives <- apply(cor_struct, 1, function(x) sum((x < 0)))
@@ -36,8 +36,8 @@ Update_FL <- function(X, W, option, preF = NULL, preL = NULL){
       cor_ref <- cor_struct >= 0
       reference_trait <- which.max(apply(cor_ref, 2, function(x) sum(x == best_ref)))
       ones <- ifelse(cor_struct[,reference_trait] >= 0, 1, -1)
-      print(ones)
     }	else if(option[['ones_eigenvect']]) {
+      message("1st column based on direction of svd of cor")
       cor_struct <- cor(X)
       svd <- svd(cor_struct, nu = 1) #fortunately its symmetric, so  U and V are the same here!
       ones <- sign(svd$u)
@@ -46,18 +46,15 @@ Update_FL <- function(X, W, option, preF = NULL, preL = NULL){
       ones = matrix(runif(D*(option[['K']])), nrow = D)[,1]
     }
     FactorM = cbind(ones, FactorM);
-    #print(FactorM)
   } else #you pre-provide the first F.
   {
     FactorM   = preF;
-    print("initialized with PCA!")
+    message("initialized with PCA!")
   }
 
- 
-  
   # First round of optimization
-  print('Start optimization ...')
-  print(paste0('K = ', (option[['K']]), '; alpha1 = ', (option[['alpha1']]),'; lambda1 = ', (option[['lambda1']])));
+  message('Start optimization ...')
+  message(paste0('K = ', (option[['K']]), '; alpha1 = ', (option[['alpha1']]),'; lambda1 = ', (option[['lambda1']])));
   
   #Need to adjust for first run- no reweighting (obvi.)
   og_option <- option[['reweighted']]
@@ -71,9 +68,7 @@ Update_FL <- function(X, W, option, preF = NULL, preL = NULL){
     L = fit_L(X, W, FactorM, option, formerL = preL);
   }
   
-  
   option[['reweighted']] <- og_option
-  
   objective = c(NA, compute_obj(X, W, L, FactorM, option));
   objective_change = c(1, 1);
   old_change = 1;
@@ -82,8 +77,8 @@ Update_FL <- function(X, W, option, preF = NULL, preL = NULL){
   # if L is empty, stop
   non_empty_l = which(apply(L, 2, function(x) sum(x!=0)) > 0)
   if(length(non_empty_l) == 0){
-    print('Finished');
-    print('L is completely empty, alpha1 too large')
+    message('Finished');
+    message('L is completely empty, alpha1 too large')
     FactorM = NULL;
     F_sparsity = 1;
     L_sparsity = 1;
@@ -107,7 +102,7 @@ Update_FL <- function(X, W, option, preF = NULL, preL = NULL){
       FactorM = fit_F(X, W, L, option, FactorM);
     }
     
-    print(paste0("Currently on iteration ", iii))
+    message(paste0("Currently on iteration ", iii))
     # if number of factors decrease because of empty factor, the change in ||F||_F = 100
     if(ncol(FactorM) != ncol(F_old)){
       F_change = 100
@@ -118,8 +113,8 @@ Update_FL <- function(X, W, option, preF = NULL, preL = NULL){
     
     non_empty_f = which(apply(FactorM, 2, function(x) sum(x!=0)) > 0)
     if(length(non_empty_f) == 0){
-      print('Finished');
-      print('F is completely empty, lambda1 too large')
+      message('Finished');
+      message('F is completely empty, lambda1 too large')
       F_sparsity = 1;
       L_sparsity = 1;
       factor_corr = 1;
@@ -140,8 +135,8 @@ Update_FL <- function(X, W, option, preF = NULL, preL = NULL){
     # if L is empty, stop
     non_empty_l = which(apply(L, 2, function(x) sum(x!=0)) > 0)
     if(length(non_empty_l) == 0){
-      print('Finished');
-      print('L is completely empty, alpha1 too large')
+      message('Finished');
+      message('L is completely empty, alpha1 too large')
       FactorM = NULL;
       F_sparsity = 1;
       L_sparsity = 1;
@@ -170,27 +165,27 @@ Update_FL <- function(X, W, option, preF = NULL, preL = NULL){
     
     if(option[['disp']]){
       cat('\n')
-      print(paste0('Iter', iii, ':'))
-      print(paste0('Objective change = ', obj_change))
-      print(paste0('Frobenius norm of (updated factor matrix - previous factor matrix) / number of factors  = ', F_change));
-      print(paste0('Loading Sparsity = ', L_sparsity, '; Factor sparsity = ', F_sparsity, '; ', Nfactor, ' factors remain')); 
+      message(paste0('Iter', iii, ':'))
+      message(paste0('Objective change = ', obj_change))
+      message(paste0('Frobenius norm of (updated factor matrix - previous factor matrix) / number of factors  = ', F_change));
+      message(paste0('Loading Sparsity = ', L_sparsity, '; Factor sparsity = ', F_sparsity, '; ', Nfactor, ' factors remain')); 
       cat('\n')
     }
     
     
     # converge if: 1). Change of the values in factor matrix is small. ie. The factor matrix is stable. 2). Change in the objective function becomes small; 3). reached maximum number of iterations
     if(option[['convF']] >= F_change){
-      print(paste0('Factor matrix converges at iteration ', iii));
+      message(paste0('Factor matrix converges at iteration ', iii));
       break
     }
     
     oc1 = abs(objective_change[length(objective_change)])
     if(option[['convO']] >= oc1){
-      print(paste0('Objective function converges at iteration ', iii));
+      message(paste0('Objective function converges at iteration ', iii));
       break
     }
     if(iii == option[['iter']]){
-      print('Reached maximum iteration.');
+      message('Reached maximum iteration.');
       break
     }
     
@@ -198,8 +193,8 @@ Update_FL <- function(X, W, option, preF = NULL, preL = NULL){
   
   tEnd0 = Sys.time()
   cat('\n')
-  print('Total time used for optimization: ');
-  print(tEnd0 - tStart0);
+  message('Total time used for optimization: ');
+  message(tEnd0 - tStart0);
   cat('\n')
   
   # return L, F, sparsity in L and F, number of factors -- could be different from K!
