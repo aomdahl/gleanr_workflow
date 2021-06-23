@@ -75,34 +75,6 @@ fit_L_parallel <- function(X, W, FactorM, option, formerL){
     return(L)
   }
   
-  
-  fit_L_parallel <- function(X, W, FactorM, option, formerL){
-    L = NULL
-    library(foreach)
-    tS = Sys.time()
-    cl <- makeCluster(3)
-    registerDoParallel(cl)
-    L <- foreach(row =seq(1,nrow(X)), .combine = 'rbind', .packages = 'penalized') %dopar% {
-      x = X[row, ];
-      w = W[row, ];
-        xp = w * x; #elementwise multiplication
-        FactorMp = diag(w) %*% FactorM;  #what are we doing here?
-        dat_i = as.data.frame(cbind((xp), FactorMp));
-        colnames(dat_i) = c('X', paste0('F', seq(1, ncol(FactorMp))));
-        fit = penalized(response = X, penalized = dat_i[,paste0('F', seq(1,ncol(FactorMp)))], data=dat_i,
-                          unpenalized = ~0, lambda1 = option[['alpha1']], lambda2=1e-10,
-                          positive = FALSE, standardize = FALSE, trace = FALSE);
-        l = coef(fit, 'all');
-        l
-      }
-    
-    stopCluster(cl)
-    tE = Sys.time();
-    print(paste0('Updating Loading matrix takes ', round((tE - tS)/60, 2), 'min'));
-    return(L)
-  }
-  
-  
   one_fit <- function(x, w, FactorM, option, formerL){
   	xp = w * x; #elementwise multiplication
   	FactorMp = diag(w) %*% FactorM;  #what are we doing here?
