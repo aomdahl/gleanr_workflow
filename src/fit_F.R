@@ -81,8 +81,7 @@ fit_F <- function(X, W, L, option, formerF = NULL){
 	}
 
 	tEnd = Sys.time();
-	#print(paste0('Updating Factor matrix takes ', round((tEnd - tStart)/60, 2), 'min'));
-  message(dim(FactorM))
+	message(paste0('Updating Factor matrix takes ', round((tEnd - tStart)/60, 2), 'min'));
 	return(FactorM)
 
 }

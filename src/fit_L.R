@@ -54,7 +54,7 @@
 fit_L_parallel <- function(X, W, FactorM, option, formerL){
   L = NULL
 
-  print("doing in parallel")
+  message("doing in parallel")
   tS = Sys.time()
   cl <- parallel::makeCluster(option[["ncores"]])
   doParallel::registerDoParallel(cl)
@@ -73,7 +73,7 @@ fit_L_parallel <- function(X, W, FactorM, option, formerL){
     }
     
     tE = Sys.time();
-    print(paste0('Updating Loading matrix takes ', round((tE - tS)/60, 2), 'min'));
+    message(paste0('Updating Loading matrix takes ', round((tE - tS)/60, 2), 'min'));
     return(L)
   }
   
