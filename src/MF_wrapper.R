@@ -39,36 +39,35 @@ effects <- fread(args$gwas_effects) %>% drop_na() %>% arrange(ids)
 all_ids <- effects$ids
 if(args$trait_names == "")
 {
-  print("No trait names provided. Using the identifiers in the tabular effect data instead.")
+  message("No trait names provided. Using the identifiers in the tabular effect data instead.")
   names <- names(effects)[-1]
 } else{
     names <- scan(args$trait_names, what = character())
 }
 effects <- effects %>% select(-ids)
-print("Checkpoint 2")
 if(args$weighting_scheme == "Z" || args$weighting_scheme == "B")
 {
-  print("No scaling by standard error will take place. Input to uncertainty being ignored.")
+  message("No scaling by standard error will take place. Input to uncertainty being ignored.")
   W <- matrix(1,nrow = nrow(z), ncol = ncol(z))
   X <- effects
   
 } else if(args$weighting_scheme == "B_SE")
 {
-  print("Scaling by 1/SE.")
+  message("Scaling by 1/SE.")
   W_se <- fread(args$uncertainty) %>% drop_na() %>% filter(ids %in% all_ids) %>% arrange(ids) %>% select(-ids)
   W <- 1/ W_se
   X <- effects
   
 } else if(args$weighting_scheme == "B_MAF")
 {
-  print("Scaling by 1/var(MAF)")
+  message("Scaling by 1/var(MAF)")
   W_maf <- fread(args$uncertainty) %>% drop_na() %>% 
     filter(ids %in% all_ids) %>% arrange(ids) %>% select(-ids) 
   W <- 1/matrix(apply(W_maf, 2, function(x) 2*x*(1-x)), nrow = nrow(W_maf), ncol = ncol(W_maf))
   X <- effects 
 } else
 {
-  print("No form selected. Please try again.")
+  message("No form selected. Please try again.")
   quit()
 }
 
@@ -99,11 +98,11 @@ run_stats <- list()
 name_list <- c()
 if(args$debug)
 {
-  print(alphas)
-  print(lambdas)
-  print(head(W))
-  print(head(X))
-  print("Debug okay?")
+  message(alphas)
+  message(lambdas)
+  message(head(W))
+  message(head(X))
+  message("Debug okay?")
   quit()
 }
 a_plot <- c()
@@ -151,7 +150,7 @@ if(args$overview_plots)
   loading_sparsities <- data.frame("alpha" = a_plot, "lambda" = l_plot, 
                                   "sparsity" = unlist(lapply(run_stats, function(x) x[[3]])), 
                                   "runtime" = unlist(lapply(run_stats, function(x) x[[7]])))
-  print(paste0(output, "/factor_sparsity.png"))
+  message(paste0(output, "/factor_sparsity.png"))
 
   ggplot(data = factor_sparsities, aes(x = alpha, y= lambda, fill = sparsity)) + geom_tile() + 
     theme_minimal(15) + scale_fill_gradient(low="white", high="navy") + ggtitle("Factor Sparsity")
