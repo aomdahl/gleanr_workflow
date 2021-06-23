@@ -39,7 +39,6 @@ Update_FL <- function(X, W, option, preF = NULL, preL = NULL){
       print(ones)
     }	else if(option[['ones_eigenvect']]) {
       cor_struct <- cor(X)
-      print("using evect approach...")
       svd <- svd(cor_struct, nu = 1) #fortunately its symmetric, so  U and V are the same here!
       ones <- sign(svd$u)
     } else {

@@ -29,13 +29,14 @@ suppressWarnings(library(penalized))
 fit_F <- function(X, W, L, option, formerF = NULL){
 	tStart   = Sys.time();
 	FactorM  = NULL;
-
+    #print(dim(X))
+    #print(dim(W))
 	## fit each factor one by one -- because of the element-wise multiplication from weights!
 	for(col in seq(1, ncol(X))){
-		x = X[, col];
-		w = W[, col];
-
-		## weight the equations on both sides
+        
+        x = X[, col, with = FALSE];
+        w = W[, col, with = FALSE];
+        ## weight the equations on both sides
 		xp = w * x;
 		Lp = w * L;
 

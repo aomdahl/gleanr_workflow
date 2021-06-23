@@ -1,7 +1,7 @@
 #Source everything you need:
 
 #... you know, I am pretty sure yuan has a setup for this already. like to specify the desired sparsity or whatever.
-pacman::p_load(data.table, tidyr, dplyr, readr, ggplot2, stringr, penalized, cowplot, parallel, doParallel, Xmisc)
+pacman::p_load(tidyr, dplyr, readr, ggplot2, stringr, penalized, cowplot, parallel, doParallel, Xmisc)
 source("src/fit_F.R")
 source("src/update_FL.R")
 source("src/fit_L.R")
@@ -37,7 +37,6 @@ output <- args$output
 #Load the data
 effects <- fread(args$gwas_effects) %>% drop_na() %>% arrange(ids)
 all_ids <- effects$ids
-print("so far so good....")
 if(args$trait_names == "")
 {
   print("No trait names provided. Using the identifiers in the tabular effect data instead.")
@@ -56,7 +55,7 @@ if(args$weighting_scheme == "Z" || args$weighting_scheme == "B")
 } else if(args$weighting_scheme == "B_SE")
 {
   print("Scaling by 1/SE.")
-  W_se <- fread(args$uncertainty) %>% drop_na() %>% filter(ids %in% all_ids$ids) %>% arrange(ids) %>% select(-ids) %>% as.matrix()
+  W_se <- fread(args$uncertainty) %>% drop_na() %>% filter(ids %in% all_ids) %>% arrange(ids) %>% select(-ids)
   W <- 1/ W_se
   X <- effects
   
@@ -64,7 +63,7 @@ if(args$weighting_scheme == "Z" || args$weighting_scheme == "B")
 {
   print("Scaling by 1/var(MAF)")
   W_maf <- fread(args$uncertainty) %>% drop_na() %>% 
-    filter(ids %in% z_scores$ids) %>% arrange(ids) %>% select(-ids) %>% as.matrix()
+    filter(ids %in% all_ids) %>% arrange(ids) %>% select(-ids) 
   W <- 1/matrix(apply(W_maf, 2, function(x) 2*x*(1-x)), nrow = nrow(W_maf), ncol = ncol(W_maf))
   X <- effects 
 } else
@@ -84,6 +83,7 @@ option[['disp']] <- FALSE
 option[['convF']] <- 0
 option[['convO']] <- 0
 option[['ones_mixed_std']] <- FALSE
+option[["preinitialize"]] <- FALSE
 option[["ones_mixed_ref"]] <- FALSE
 option[['ones_eigenvect']] <- TRUE
 option[['ones_plain']] <- FALSE
@@ -108,7 +108,7 @@ if(args$debug)
 }
 a_plot <- c()
 l_plot <- c()
-
+iter_count <- 1
 #Actually run the factorization
 for(a in alphas){
   for (l in lambdas){
