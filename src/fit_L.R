@@ -25,6 +25,8 @@
   
   
   suppressWarnings(library(penalized))
+  library(foreach)
+  library(parallel)
   
   fit_L<- function(X, W, FactorM, option, formerL){
   	L = NULL
@@ -51,15 +53,15 @@
 
 fit_L_parallel <- function(X, W, FactorM, option, formerL){
   L = NULL
-  library(foreach)
+
   print("doing in parallel")
   tS = Sys.time()
-  cl <- makeCluster(option[["ncores"]])
-  registerDoParallel(cl)
+  cl <- parallel::makeCluster(option[["ncores"]])
+  doParallel::registerDoParallel(cl)
   L <- foreach(row =seq(1,nrow(X)), .combine = 'rbind', .packages = 'penalized') %dopar% {
     x = X[row, ];
     w = W[row, ];
-      xp = w * x; #elementwise multiplication
+      xp = t(w * x); #elementwise multiplication
       FactorMp = diag(w) %*% FactorM;  #what are we doing here?
       dat_i = as.data.frame(cbind((xp), FactorMp));
       colnames(dat_i) = c('X', paste0('F', seq(1, ncol(FactorMp))));

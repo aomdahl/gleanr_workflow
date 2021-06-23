@@ -29,16 +29,14 @@ suppressWarnings(library(penalized))
 fit_F <- function(X, W, L, option, formerF = NULL){
 	tStart   = Sys.time();
 	FactorM  = NULL;
-    #print(dim(X))
-    #print(dim(W))
 	## fit each factor one by one -- because of the element-wise multiplication from weights!
 	for(col in seq(1, ncol(X))){
         
-        x = X[, col, with = FALSE];
-        w = W[, col, with = FALSE];
+      x = X[, col, with = FALSE];
+      w = W[, col, with = FALSE];
         ## weight the equations on both sides
-		xp = w * x;
-		Lp = w * L;
+		xp = unlist(w) * x;
+		Lp = unlist(w)* L;
 
 		## Fit: xp = L %*% f with l1 penalty on f -- |lambda1 * f|
 		dat_i = as.data.frame(cbind(xp, Lp));
@@ -84,7 +82,7 @@ fit_F <- function(X, W, L, option, formerF = NULL){
 
 	tEnd = Sys.time();
 	#print(paste0('Updating Factor matrix takes ', round((tEnd - tStart)/60, 2), 'min'));
-
+  message(dim(FactorM))
 	return(FactorM)
 
 }
