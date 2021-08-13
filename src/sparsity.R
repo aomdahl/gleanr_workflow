@@ -28,7 +28,9 @@ pacman::p_load(data.table, tidyr, dplyr, readr, ggplot2, stringr, Xmisc)
 parser <- ArgumentParser$new()
 parser$add_description("Script to quickly assess the sparsity of a matrix by column")
 parser$add_argument("--data", type = 'character', help = "Path to data file")
-parser$add_argument('--figure',type='logical',action='store_true', help='ADo you want to make a figure with the data', default = FALSE)
+parser$add_argument('--figure',type='logical',action='store_true', help='Do you want to make a figure with the data', default = FALSE)
+parser$add_argument('--approx',type='logical',action='store_true', help='Give approximate sparsity', default = FALSE)
+parser$add_argument('--omit_first',type='logical',action='store_true', help='Omit the first column in calculation', default = FALSE)
 parser$add_argument('--help',type='logical',action='store_true',help='Print the help page')
 parser$helpme()
 args <- parser$get_args()
@@ -42,8 +44,22 @@ if(FALSE)
 }
 
 dat <- fread(args$data)
-#Exact sparsity 
-sparsity <- exactSparsity(dat)
-print("Exact sparsity:")
+if(args$omit_first)
+{
+  dat <- dat[,-1]
+}
+if(args$approx)
+{
+  #Approximate sparsity
+  sparsity <- approxSparsity(dat)
+  print("Approximate sparsity:")
+} else{
+  #Exact sparsity 
+  sparsity <- exactSparsity(dat)
+  print("Exact sparsity:")
+}
+
 print(summary(sparsity))
-plot(sparsity)
+#plot(sparsity)
+
+
