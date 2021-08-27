@@ -267,9 +267,8 @@ noiseMatrixLD <- function(tau, N,T, LD = 0.3, prop_cor = 0.3)
 }
 
 
-simulateGWASSimple <- function(T, N, K, tau, trait_diversity, seed =23456)
+simulateGWASSimple <- function(T, N, K, tau, trait_diversity)
 {
-  set.seed(seed)
   F <- factorSimple(K, T, trait_diversity)
   L <- loadingSimple(N, K)
   E <- noiseMatrix(tau, N,T)

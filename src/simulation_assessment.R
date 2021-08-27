@@ -68,7 +68,7 @@ getCoordinatedCorrelation <- function(fp, lp, trueF, trueL, rankK){
     dif = ncol(trueF) - ncol(fp)
     fp = cbind(fp, matrix(rep(0, nrow(fp) * dif), ncol = dif))
     lp = cbind(lp, matrix(rep(0, nrow(lp) * dif), ncol = dif))
-    sig_hits = cbind(sig_hits, matrix(rep(0, nrow(sig_hits) * dif), ncol = dif))
+    #sig_hits = cbind(sig_hits, matrix(rep(0, nrow(sig_hits) * dif), ncol = dif))
   }
   rankK = ncol(trueF)
   suppressWarnings(library('combinat'))
@@ -89,10 +89,10 @@ getCoordinatedCorrelation <- function(fp, lp, trueF, trueL, rankK){
   ord = which.max(ord_sum)
   lp = lp[,ordering[[ord]]]
   fp = fp[,ordering[[ord]]]
-  sig_hits = sig_hits[, ordering[[ord]]]
+  #sig_hits = sig_hits[, ordering[[ord]]]
   
-  lp = lp / matrix(rep(apply(lp, 2, function(x) max(abs(x))), nrow(lp)), nrow = nrow(lp), byrow = T)
-  fp = fp / matrix(rep(apply(fp, 2, function(x) max(abs(x))), nrow(fp)), nrow = nrow(fp), byrow = T)
+  #lp = lp / matrix(rep(apply(lp, 2, function(x) max(abs(x))), nrow(lp)), nrow = nrow(lp), byrow = T)
+  #fp = fp / matrix(rep(apply(fp, 2, function(x) max(abs(x))), nrow(fp)), nrow = nrow(fp), byrow = T)
   colnames(fp) = seq(1,ncol(fp))
   rownames(fp) = seq(1, nrow(fp))
   
@@ -132,3 +132,4 @@ assessFactorization <- function(f_hat, l_hat, x_hat, F, L)
   return(ret)
   
 }
+
