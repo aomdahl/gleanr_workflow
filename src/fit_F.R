@@ -29,14 +29,16 @@ suppressWarnings(library(penalized))
 fit_F <- function(X, W, L, option, formerF = NULL){
 	tStart   = Sys.time();
 	FactorM  = NULL;
+	r.v <- c()
+	
 	## fit each factor one by one -- because of the element-wise multiplication from weights!
 	for(col in seq(1, ncol(X))){
         
       #x = X[, col, with = FALSE];
       #w = W[, col, with = FALSE];
-       x = X[, col]
-        w = W[, col]
-         ## weight the equations on both sides
+    x = X[, col];
+	    w = W[, col];
+        ## weight the equations on both sides
 		xp = unlist(w) * x;
 		Lp = unlist(w)* L;
 
@@ -70,20 +72,33 @@ fit_F <- function(X, W, L, option, formerF = NULL){
 		  #glm_fit <- glmnet(x = dat_i[,paste0('F', seq(1, ncol(Lp)))], y = xp, alpha = 1, lambda = lambdas, intercept = FALSE)
 		  
 		  f = coef(fit, 'all')
-		}		
-		else {
+		} else {
 		  fit = penalized(response = X, penalized = dat_i[,paste0('F', seq(1, ncol(Lp)))], data=dat_i,
 		                  unpenalized = ~0, lambda1 =option[['lambda1']], lambda2=1e-10,
 		                  positive = FALSE, standardize = FALSE, trace = FALSE)
 		  f = coef(fit, 'all')
 		}
 		
-		
+		if(option$traitSpecificVar)
+		{
+		  n = nrow(dat_i[,paste0('F', seq(1, ncol(Lp)))])
+		  p = ncol(dat_i[,paste0('F', seq(1, ncol(Lp)))])
+		  res.var <- (1/(n-p)) * fit@residuals %*% fit@residuals
+		  r.v <- c(r.v, res.var)
+		}
 		FactorM = rbind(FactorM, f);
+		print(col)
 	}
 
 	tEnd = Sys.time();
 	message(paste0('Updating Factor matrix takes ', round((tEnd - tStart)/60, 2), 'min'));
+	if(option$traitSpecificVar)
+	{
+	  ret <- list()
+	  ret$r.v <- r.v
+	  ret$mat <- FactorM
+	  return(ret)
+	}
 	return(FactorM)
 
 }

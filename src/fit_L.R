@@ -28,24 +28,8 @@
   library(foreach)
   library(parallel)
   
-  fit_L<- function(X, W, FactorM, option, formerL){
-  	L = NULL
-  	tS = Sys.time()
-  	for(row in seq(1,nrow(X))){
-  		x = X[row, ];
-  		w = W[row, ];
-  		if(option[['reweighted']])
-  		{
-  		  l = one_fit(x, w, FactorM, option, formerL[row,]);
-  		}		else {
-  		  l = one_fit(x, w, FactorM, option, NULL);
-  		}
-  		
-  		L = rbind(L, l);
-  	}
-  	tE = Sys.time();
-  	print(paste0('Updating Loading matrix takes ', round((tE - tS)/60, 2), 'min'));
   
+<<<<<<< HEAD
   	return(L)
   }
   
@@ -75,8 +59,35 @@ L <- foreach(row =seq(1,nrow(X)), .combine = 'rbind', .packages = 'penalized', .
                         positive = F, standardize = F, trace = F);
       l = coef(fit, 'all');
       l
+=======
+  #Function for running the fitting step. Options include
+  #reweighted: this uses the previous iteration to initialize the current one. Thought it might provide a speed boost, but the difference seemed to be minimal.
+  #glmnet: This uses the glmnet function; just exploring options
+  #fastReg: This one was supposed to be faster. I don't know that it was at all; but not sure about serious results on it
+  #ridge_L: this employs L2 as opposed to L1 regression  on L
+  #fixed_ubiq: this allows for a ubiquitous factor by removing the L1 constraint from the first column.
+  #@param r.v- the trait-specific variance vector.
+  #@return: l, the current learned row of l (k x 1) of weights for a given SNP
+  one_fit <- function(x, w, FactorM, option, formerL, r.v){
+    if(option$traitSpecificVar && !is.null(r.v))
+    {
+      #xp = x / r.v;
+      #print("In here...")
+      xp = x #I don't think we weight the samples by the variance, do we?
+      FactorMp = diag(1/r.v) %*% FactorM;
+    }else{
+      xp = w * x;
+      FactorMp = diag(w) %*% FactorM; #scaling this way is much smaller
     }
+     #elementwise multiplication
+    if(option$parallel)
+    {
+      xp = t(w * x)
+>>>>>>> dd3dc8a55d7f68fe259a7c8624a9a62558877401
+    }
+      #what are we doing here?
     
+<<<<<<< HEAD
     tE = Sys.time();
     message(paste0('Updating Loading matrix takes ', round((tE - tS)/60, 2), 'min'));
     return(L)
@@ -90,6 +101,12 @@ L <- foreach(row =seq(1,nrow(X)), .combine = 'rbind', .packages = 'penalized', .
   #Removed the transpose on X, getting the wrong dimensions
   	dat_i = as.data.frame(cbind((xp), FactorMp));
   	colnames(dat_i) = c('X', paste0('F', seq(1, ncol(FactorMp))));
+=======
+    # Fit: xp' = FactorMp %*% l with l1 penalty on l -- |alpha1 * l|
+    #Removed the transpose on X, getting the wrong dimensions
+    dat_i = as.data.frame(cbind((xp), FactorMp));
+    colnames(dat_i) = c('X', paste0('F', seq(1, ncol(FactorMp))));
+>>>>>>> dd3dc8a55d7f68fe259a7c8624a9a62558877401
     if(option[["reweighted"]])
     {
       fit = penalized(response = X, penalized = dat_i[,paste0('F', seq(1,ncol(FactorMp)))], data=dat_i,
@@ -114,16 +131,17 @@ L <- foreach(row =seq(1,nrow(X)), .combine = 'rbind', .packages = 'penalized', .
                       unpenalized = ~0, lambda1 = 1e-15, lambda2=option[['alpha1']],
                       positive = FALSE, standardize = FALSE, trace = FALSE);
       l = coef(fit, 'all');
-      
-      
     } else if(option[["fixed_ubiq"]])
     {
       lambdas <- c(0, rep(option[['alpha1']], (ncol(FactorMp) - 1))) #no lasso on that first column
+<<<<<<< HEAD
       fit = penalized(response = X, penalized = dat_i[,paste0('F', seq(1, ncol(FactorM)))], data=dat_i,
+=======
+      fit = penalized(response = X, penalized = dat_i[,paste0('F', seq(1, ncol(FactorMp)))], data=dat_i,
+>>>>>>> dd3dc8a55d7f68fe259a7c8624a9a62558877401
                       unpenalized = ~0, lambda1 =lambdas, lambda2=1e-10,
                       positive = FALSE, standardize = FALSE, trace = FALSE)
-      #glm_fit <- glmnet(x = dat_i[,paste0('F', seq(1, ncol(Lp)))], y = xp, alpha = 1, lambda = lambdas, intercept = FALSE)
-      
+
       l = coef(fit, 'all')
     }		else {
       fit = penalized(response = X, penalized = dat_i[,paste0('F', seq(1,ncol(FactorMp)))], data=dat_i,
@@ -131,9 +149,58 @@ L <- foreach(row =seq(1,nrow(X)), .combine = 'rbind', .packages = 'penalized', .
                       positive = FALSE, standardize = FALSE, trace = FALSE);
       l = coef(fit, 'all');
     }
-  
-  	
-  	return(l)
+    
+    return(l)
   }
   
+  
+  fit_L<- function(X, W, FactorM, option, formerL, r.v = NULL){
+  	L = NULL
+  	tS = Sys.time()
+  	for(row in seq(1,nrow(X))){
+  		x = X[row, ];
+  		w = W[row, ];
+  		if(option[['reweighted']])
+  		{
+  		  l = one_fit(x, w, as.matrix(FactorM), option, formerL[row,], r.v);
+  		}		else {
+  		  l = one_fit(x, w, as.matrix(FactorM), option, NULL, r.v);
+  		}
+  		
+  		L = rbind(L, l);
+  		#print(row)
+  	}
+  	tE = Sys.time();
+  	print(paste0('Updating Loading matrix takes ', round((tE - tS)/60, 2), 'min'));
+  
+  	return(L)
+  }
+  
+
+
+  fit_L_parallel <- function(X, W, FactorM, option, formerL){
+    L = NULL
+    tS = Sys.time()
+    cl <- parallel::makeCluster(option[["ncores"]])
+    doParallel::registerDoParallel(cl)
+    L <- foreach(row =seq(1,nrow(X)), .combine = 'rbind', .packages = 'penalized') %dopar% {
+      x = X[row, ];
+      w = W[row, ];
+      xp = t(w * x); #elementwise multiplication
+      FactorMp = diag(w) %*% FactorM;  #what are we doing here?
+      dat_i = as.data.frame(cbind((xp), FactorMp));
+      colnames(dat_i) = c('X', paste0('F', seq(1, ncol(FactorMp))));
+      fit = penalized(response = X, penalized = dat_i[,paste0('F', seq(1,ncol(FactorMp)))], data=dat_i,
+                      unpenalized = ~0, lambda1 = option[['alpha1']], lambda2=1e-10,
+                      positive = F, standardize = F, trace = F);
+      l = coef(fit, 'all');
+      #should be able to do with a one_fit command here, once we figure out why this isn't working....
+      l
+    }
+    
+    tE = Sys.time();
+    message(paste0('Updating Loading matrix takes ', round((tE - tS)/60, 2), 'min'));
+    return(L)
+  }
+
   

@@ -3,6 +3,18 @@
 ## Copied over from another function since this wasn't working originally.
 ################################################################################################################################
 
+#helpful code for debugging
+if(FALSE)
+{
+  source("/Users/ashton/Documents/JHU/Research/LocalData/snp_network/quickLoadData.R")
+  all <- quickLoadFactorization("Z")
+  X <- all$X
+  W <- all$W
+  option <- all$option
+  option$traitSpecificVar <- TRUE
+  option$parallel <- FALSE
+}
+
 Update_FL <- function(X, W, option, preF = NULL, preL = NULL){
   # number of features - to avoid using T in R
   D      = ncol(X)
@@ -60,7 +72,7 @@ Update_FL <- function(X, W, option, preF = NULL, preL = NULL){
   og_option <- option[['reweighted']]
   option[['reweighted']] <- FALSE
   
-  if(option[['parallel']])
+  if(option[['parallel']]) #This is not working at all. Can't tell you why. But its not. Need to spend some time debugging at some point.
   {
     print("Fitting L")	
     L = fit_L_parallel(X, W, FactorM, option, formerL = preL); #preL is by default Null, unless yo specify!
@@ -88,7 +100,9 @@ Update_FL <- function(X, W, option, preF = NULL, preL = NULL){
     return()
   }
   
-  
+
+    trait.var <- matrix(NA, option[['iter']], ncol(X))
+
   for (iii in seq(1, option[['iter']])){
     
     ## update F
@@ -100,10 +114,15 @@ Update_FL <- function(X, W, option, preF = NULL, preL = NULL){
       option[['reweighted']] <- og_option
     } else
     {
-      FactorM = fit_F(X, W, L, option, FactorM);
+      FactorM = fit_F(X, W, L, option, FactorM); #by iter 3 really slows down, due to the L1 requirements. Yea this won't do....
     }
-    
     message(paste0("Currently on iteration ", iii))
+    #get the factor specific variance....
+    if(option$traitSpecificVar)
+    {
+      trait.var[iii,] <- FactorM$r.v
+      FactorM <- FactorM$mat
+    }
     # if number of factors decrease because of empty factor, the change in ||F||_F = 100
     if(ncol(FactorM) != ncol(F_old)){
       F_change = 100
@@ -129,10 +148,9 @@ Update_FL <- function(X, W, option, preF = NULL, preL = NULL){
     {
       L  = fit_L_parallel(X, W, FactorM, option, L);
     }else{
-      L  = fit_L(X, W, FactorM, option, L);
+      L  = fit_L(X, W, FactorM, option, L, r.v = trait.var[iii,]); #the l1 one requirement is making things tough here.....
     }
-     
-    
+
     # if L is empty, stop
     non_empty_l = which(apply(L, 2, function(x) sum(x!=0)) > 0)
     if(length(non_empty_l) == 0){
@@ -162,6 +180,7 @@ Update_FL <- function(X, W, option, preF = NULL, preL = NULL){
     obj_updated = compute_obj(X, W, L, FactorM, option);
     obj_change = obj_updated - objective[length(objective)];
     objective = c(objective, obj_updated);
+    print(objective)
     objective_change = c(objective_change, obj_change);
     
     if(option[['disp']]){
@@ -199,6 +218,19 @@ Update_FL <- function(X, W, option, preF = NULL, preL = NULL){
   cat('\n')
   
   # return L, F, sparsity in L and F, number of factors -- could be different from K!
-  return(list(FactorM, L, L_sparsity, F_sparsity, Nfactor, objective))
+  return(list(FactorM, L, L_sparsity, F_sparsity, Nfactor, objective, trait.var))
 }
 
+#9/07 testing notes
+#tried regular, works
+#trying now with factor-specific variance, shall see.
+
+#ran
+#t2 <- Update_FL(X,W, option)
+library(ggplot)
+#res <- data.frame(t2[[7]]) %>% mutate("iter" = c(1,2,3,4)) %>% pivot_longer(cols = paste0("X", 1:55))
+#ggplot(res, aes(x = iter, y  = value, color = name)) + geom_line()
+option$alpha1 <- 0
+option$lambda1 <- 0
+option$iter <- 10
+t3 <- Update_FL(X,W, option)
