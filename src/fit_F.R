@@ -36,7 +36,7 @@ fit_F <- function(X, W, L, option, formerF = NULL){
         
       #x = X[, col, with = FALSE];
       #w = W[, col, with = FALSE];
-	    x = X[, col];
+    x = X[, col];
 	    w = W[, col];
         ## weight the equations on both sides
 		xp = unlist(w) * x;

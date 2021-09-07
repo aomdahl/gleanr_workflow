@@ -74,6 +74,7 @@ Update_FL <- function(X, W, option, preF = NULL, preL = NULL){
   
   if(option[['parallel']]) #This is not working at all. Can't tell you why. But its not. Need to spend some time debugging at some point.
   {
+    print("Fitting L")	
     L = fit_L_parallel(X, W, FactorM, option, formerL = preL); #preL is by default Null, unless yo specify!
   } else
   {
