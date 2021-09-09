@@ -39,10 +39,10 @@
   one_fit <- function(x, w, FactorM, option, formerL, r.v){
     if(option$traitSpecificVar && !is.null(r.v))
     {
-      #xp = x / r.v;
+      xp = x / sqrt(r.v);
       #print("In here...")
-      xp = x #I don't think we weight the samples by the variance, do we?
-      FactorMp = diag(1/r.v) %*% FactorM;
+      #xp = x #I don't think we weight the samples by the variance, do we?
+      FactorMp = diag(1/sqrt(r.v)) %*% FactorM;
     }else{
       xp = w * x;
       FactorMp = diag(w) %*% FactorM; #scaling this way is much smaller

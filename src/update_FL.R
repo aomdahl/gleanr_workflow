@@ -6,7 +6,8 @@
 #helpful code for debugging
 if(FALSE)
 {
-  source("/Users/ashton/Documents/JHU/Research/LocalData/snp_network/quickLoadData.R")
+  #source("/Users/ashton/Documents/JHU/Research/LocalData/snp_network/quickLoadData.R")
+  source("/work-zfs/abattle4/ashton/snp_networks/custom_l1_factorization/src/quickLoadData.R")
   all <- quickLoadFactorization("Z")
   X <- all$X
   W <- all$W
@@ -224,13 +225,16 @@ Update_FL <- function(X, W, option, preF = NULL, preL = NULL){
 #9/07 testing notes
 #tried regular, works
 #trying now with factor-specific variance, shall see.
+if(FALSE)
+{
 
-#ran
-#t2 <- Update_FL(X,W, option)
-library(ggplot)
-#res <- data.frame(t2[[7]]) %>% mutate("iter" = c(1,2,3,4)) %>% pivot_longer(cols = paste0("X", 1:55))
-#ggplot(res, aes(x = iter, y  = value, color = name)) + geom_line()
-option$alpha1 <- 0
-option$lambda1 <- 0
-option$iter <- 10
-t3 <- Update_FL(X,W, option)
+    #ran
+    #t2 <- Update_FL(X,W, option)
+    library(ggplot2)
+    #res <- data.frame(t2[[7]]) %>% mutate("iter" = c(1,2,3,4)) %>% pivot_longer(cols = paste0("X", 1:55))
+    #ggplot(res, aes(x = iter, y  = value, color = name)) + geom_line()
+    option$alpha1 <- 0
+    option$lambda1 <- 0
+    option$iter <- 10
+    t3 <- Update_FL(X,W, option)
+}
