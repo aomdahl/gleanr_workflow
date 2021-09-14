@@ -22,7 +22,7 @@ orderFactors <- function(F, dist = "euclidean")
 #F <- run_stats_l1$betas_se_K20_fix_ubiq[[1]]
 #trait_names = names
 #t_order = orderh
-plotFactorsBarplot <- function(F, trait_names, title, cluster = T, t_order = NA)
+plotFactorsBarplot <- function(F, trait_names, title, cluster = TRUE, t_order = NA)
 {
   new_names <- c(seq(1,ncol(F)), "trait")
   if(!is.na(t_order))
@@ -47,7 +47,7 @@ plotFactorsBarplot <- function(F, trait_names, title, cluster = T, t_order = NA)
 
 
 
-plotFactors <- function(F, trait_names, title, cluster = T, t_order = NA)
+plotFactors <- function(F, trait_names, title, cluster = TRUE, t_order = NA)
 {
   if(dim(F)[2] == 0)
     {
