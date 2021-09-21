@@ -130,12 +130,13 @@ rule factorize:
 rule project:
     input:
         factors="factorization_data/{identifier}.factors.txt",
-        variants="gwas_extracts/seed{seedn}_thresh{thresh}_h2-{h2}_vars{pval}/full_hapmap3_snps.z.tsv" #fixed, for now.
+        variants="gwas_extracts/{identifier}/full_hapmap3_snps.z.tsv" #fixed, for now.
+        #variants="gwas_extracts/seed{seedn}_thresh{thresh}_h2-{h2}_vars{pval}/full_hapmap3_snps.z.tsv" #fixed, for now.
     output:
         "results/{identifier}/projected_hapmap3_loadings.txt"
     params:
     run:
-        shell("Rscript {src_path}/projectSumStats.R --output {output} --factors {input.factors} --sumstats {input.variants} --id_type 'RSID'")
+        shell("Rscript {src_path}/projectSumStats.R --output {output} --factors {input.factors} --sumstats {input.variants} --id_type 'RSID' --no_rownames")
 
 checkpoint prep_enrichment: #format the outputed factors for enrichment analysis
     input:
@@ -206,13 +207,14 @@ rule ldsc_visualize:
     input:
        aggregate_factors
     output:
-        "results/{identifier}/ldsc_enrichment_{tis_ref}/full_heatmap.png", "results/{identifier}/ldsc_enrichment_{tis_ref}/fdr_heatmap.png"
+        "results/{identifier}/ldsc_enrichment_{tis_ref}/full_heatmap.png", "results/{identifier}/ldsc_enrichment_{tis_ref}/fdr_0.05_heatmap.png", "results/{identifier}/ldsc_enrichment_{tis_ref}/fdr_0.01_heatmap.png"
     params:
         "results/{identifier}/ldsc_enrichment_{tis_ref}/"
     shell:
         """
             echo {input}
-            Rscript {src_path}/visualizeLDSC.R --input_dir {params} --plot_type "fdr_sig" --output {output[1]}
+            Rscript {src_path}/visualizeLDSC.R --input_dir {params} --plot_type "fdr_sig" --output {output[1]} --fdr 0.05
+            Rscript {src_path}/visualizeLDSC.R --input_dir {params} --plot_type "fdr_sig" --output {output[2]} --fdr 0.01
             Rscript {src_path}/visualizeLDSC.R --input_dir {params} --plot_type "horizontal" --output {output[0]}
         """
 

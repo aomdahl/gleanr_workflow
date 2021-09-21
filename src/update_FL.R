@@ -6,13 +6,23 @@
 #helpful code for debugging
 if(FALSE)
 {
-  source("/Users/ashton/Documents/JHU/Research/LocalData/snp_network/quickLoadData.R")
-  all <- quickLoadFactorization("Z")
+  #source("/Users/ashton/Documents/JHU/Research/LocalData/snp_network/quickLoadData.R")
+  source("/work-zfs/abattle4/ashton/snp_networks/custom_l1_factorization/src/quickLoadData.R")
+  source("/work-zfs/abattle4/ashton/snp_networks/custom_l1_factorization/src/fit_F.R")
+  source("/work-zfs/abattle4/ashton/snp_networks/custom_l1_factorization/src/fit_L.R")
+  source("/work-zfs/abattle4/ashton/snp_networks/custom_l1_factorization/src/compute_obj.R")
+  source("/work-zfs/abattle4/ashton/snp_networks/custom_l1_factorization/src/plot_functions.R")
+  all <- quickLoadFactorization("Z", "MARCC")
   X <- all$X
   W <- all$W
   option <- all$option
   option$traitSpecificVar <- TRUE
   option$parallel <- FALSE
+  
+  #subset for faster running....
+  X <- X[1:1000, 1:10]
+  W <- W[1:1000, 1:10]
+  option$K <- 5
 }
 
 Update_FL <- function(X, W, option, preF = NULL, preL = NULL){
@@ -101,11 +111,13 @@ Update_FL <- function(X, W, option, preF = NULL, preL = NULL){
   }
   
 
-    trait.var <- matrix(NA, option[['iter']], ncol(X))
+  trait.var <- matrix(NA, option[['iter']], ncol(X))
 
   for (iii in seq(1, option[['iter']])){
+    message(paste0("Currently on iteration ", iii))
     
     ## update F
+    message("fitting F...")
     if(iii == 1)
     {
       og_option <- option[['reweighted']]
@@ -116,7 +128,6 @@ Update_FL <- function(X, W, option, preF = NULL, preL = NULL){
     {
       FactorM = fit_F(X, W, L, option, FactorM); #by iter 3 really slows down, due to the L1 requirements. Yea this won't do....
     }
-    message(paste0("Currently on iteration ", iii))
     #get the factor specific variance....
     if(option$traitSpecificVar)
     {
@@ -144,6 +155,7 @@ Update_FL <- function(X, W, option, preF = NULL, preL = NULL){
     colnames(FactorM) = seq(1, ncol(FactorM));
     
     ## update L
+    message("Fitting L....")
     if(option[['parallel']])
     {
       L  = fit_L_parallel(X, W, FactorM, option, L);
@@ -224,13 +236,92 @@ Update_FL <- function(X, W, option, preF = NULL, preL = NULL){
 #9/07 testing notes
 #tried regular, works
 #trying now with factor-specific variance, shall see.
+if(FALSE)
+{
 
-#ran
-#t2 <- Update_FL(X,W, option)
-library(ggplot)
-#res <- data.frame(t2[[7]]) %>% mutate("iter" = c(1,2,3,4)) %>% pivot_longer(cols = paste0("X", 1:55))
-#ggplot(res, aes(x = iter, y  = value, color = name)) + geom_line()
-option$alpha1 <- 0
-option$lambda1 <- 0
-option$iter <- 10
-t3 <- Update_FL(X,W, option)
+  #Get trait sample sizes:
+  samp.size <- fread("/work-zfs/abattle4/ashton/snp_networks/gwas_decomp_ldsc/gwas_extracts/seed2_thresh0.9_h2-0.1_vars1e-5/seed2_thresh0.9_h2-0.1_vars1e-5.n.tsv")
+ ss <- data.frame(t(samp.size[1,2:11])) %>% mutate("names" = n[1:10])
+ names(ss) <- c('count', "n")
+ ss %>% arrange(count)
+    #ran
+    t2 <- Update_FL(X,W, option) #gets caught on iteration 5 here.... super weird.
+    library(ggplot2)
+    ndf <- data.frame("n" = names, "name" = paste0("X", 1:55) )
+    res <- data.frame(t2[[7]]) %>% mutate("iter" = 1:30) %>% pivot_longer(cols = paste0("X", 1:10)) %>% merge(., ndf) %>%
+      merge(., ss) %>% mutate("label" = paste0(n, "_", count))
+    ggplot(res, aes(x = iter, y  = value, color = n)) + geom_line()
+  
+    
+    ggplot(res, aes(x = iter, y  = value, color = label)) + geom_line(size = res$count/max(res$count))
+    plotFactors(t2[[1]], trait_names = n[1:10], title = "mini")
+    
+    
+    option$alpha1 <- 5
+    option$lambda1 <- 5
+    option$iter <- 10
+    t3 <- Update_FL(X,W, option)
+    res <- data.frame(t3[[7]]) %>% mutate("iter" = 1:10) %>% pivot_longer(cols = paste0("X", 1:10)) %>% merge(.,ndf) %>%
+      merge(., ss) %>% mutate("label" = paste0(n, "_", count))
+    ggplot(res, aes(x = iter, y  = value, color = label)) + geom_line(size = res$count/max(res$count))
+    plotFactors(t3[[1]], trait_names = n[1:10], title = "mini")
+    
+    #Account for heritability 
+    
+    
+    #Trying full,
+    load("/work-zfs/abattle4/ashton/snp_networks/scratch/trait_standard_error_investigation/full.run.sept.RData")
+    #X is full X
+    option$alpha1 <- 20
+    option$lambda1 <- 20
+    option$iter <- 20
+    samp.size <- fread("/work-zfs/abattle4/ashton/snp_networks/gwas_decomp_ldsc/gwas_extracts/seed2_thresh0.9_h2-0.1_vars1e-5/seed2_thresh0.9_h2-0.1_vars1e-5.n.tsv")
+    ss <- data.frame(t(samp.size[1,2:ncol(samp.size)])) %>% mutate("names" = n)
+    names(ss) <- c('count', "n")
+    ndf <- data.frame("n" = names, "name" = paste0("X", 1:55) )
+    t.full <- Update_FL(X,W, option)
+    res <- data.frame(t.full[[7]]) %>% mutate("iter" = 1:20) %>% pivot_longer(cols = paste0("X", 1:55)) %>% merge(.,ndf) %>%
+      merge(., ss) %>% mutate("label" = paste0(n, "_", count))
+    ggplot(res, aes(x = iter, y  = value, color = label)) + geom_line(size = res$count/max(res$count))  + theme(legend.position = "none")
+    
+    #I know this is so messy... diagnosing now.
+  lowvar <- which(t.full[[7]][20,] < 0.01)
+  names[lowvar] #I speculate these are the ones we really perform well on...
+  plotFactors(t.full[[1]], trait_names = n, title = "all")
+  
+
+  #based on the factors, my predicted list
+  
+  #it looks like in general, they are mostly the top ones
+  #look at reconstruction error
+  X_hat <- t.full[[2]] %*% t(t.full[[1]])
+  mse <- apply((X-X_hat)^2, 2, mean)
+  plot(mse)
+  which.min(mse)
+  recon_order <-names[order(mse)]
+  which(recon_order %in% names[lowvar])
+  #exactly those 15.
+  #So those that get low variance are those that we predict very well on.....
+  #Let's look at the opposite end
+  recon_order <-names[order(-mse)]
+  highvar
+  which(recon_order %in% names[lowvar])
+  
+  #plot of residual variance estimates bs actual
+  e.var <- apply((X-X_hat),2,var)
+  plot(apply((X-X_hat),2,var), t.full[[7]][20,], xlab = "Overall residual variance", ylab = "Output residual variance")
+  abline(a = 0,b =1, col = "blue")
+  diff <- abs(e.var -t.full[[7]][20,])
+  mismatch <- which(abs(e.var -t.full[[7]][20,]) > 0.01)
+  
+  #Try it with a reduced regularization
+  
+  option$alpha1 <- 10
+  option$lambda1 <- 10
+  option$K <- 10
+  option$iter <- 20
+  samp.size <- fread("/work-zfs/abattle4/ashton/snp_networks/gwas_decomp_ldsc/gwas_extracts/seed2_thresh0.9_h2-0.1_vars1e-5/seed2_thresh0.9_h2-0.1_vars1e-5.n.tsv")
+ 
+  t.full.10 <- Update_FL(X,W, option)
+  
+}
