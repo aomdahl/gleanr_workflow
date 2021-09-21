@@ -87,7 +87,7 @@ fit_F <- function(X, W, L, option, formerF = NULL){
 		  r.v <- c(r.v, res.var)
 		}
 		FactorM = rbind(FactorM, f);
-		print(col)
+		#print(col)
 	}
 
 	tEnd = Sys.time();

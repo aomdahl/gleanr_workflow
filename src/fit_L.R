@@ -141,7 +141,7 @@
       colnames(dat_i) = c('X', paste0('F', seq(1, ncol(FactorMp))));
       fit = penalized(response = X, penalized = dat_i[,paste0('F', seq(1,ncol(FactorMp)))], data=dat_i,
                       unpenalized = ~0, lambda1 = option[['alpha1']], lambda2=1e-10,
-                      positive = F, standardize = F, trace = F);
+                      positive = FALSE, standardize = FALSE, trace = FALSE);
       l = coef(fit, 'all');
       #should be able to do with a one_fit command here, once we figure out why this isn't working....
       l

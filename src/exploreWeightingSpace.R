@@ -94,6 +94,10 @@ option[["glmnet"]] <- FALSE
 option[["parallel"]] <- TRUE
 option[["ncores"]] <- args$cores
 option[["fixed_ubiq"]] <- args$fixed_first
+option$traitSpecificVar <- FALSE
+option$preinitialize <- FALSE
+option$ridge_L <- FALSE
+option$fastReg <- FALSE
 #Store stats here
 run_stats <- list()
 
@@ -117,7 +121,6 @@ for(a in alphas){
   for (l in lambdas){
     option[['alpha1']] <- as.numeric(a)
     option[['lambda1']] <- as.numeric(l)
-    option[["parallel"]] <- TRUE
     start <- Sys.time()
     run <- Update_FL(X, W, option)
     end <- Sys.time()
