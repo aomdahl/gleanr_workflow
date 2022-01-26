@@ -16,30 +16,30 @@ rule trait_list:
     input:
        "/work-zfs/abattle4/lab_data/UKBB/GWAS_Neale/genetic_correlations/geno_correlations.simplified.txt", "/work-zfs/abattle4/lab_data/UKBB/GWAS_Neale/heritability_estimates/ukbb.tsv",
     output:
-        "trait_selections/seed{seedn}_thresh{thresh}_h2-{h2}.{custom}.studies.tsv","trait_selections/seed{seedn}_thresh{thresh}_h2-{h2}.{custom}.names.tsv"
+        "trait_selections/{identifier}.studies.tsv","trait_selections/{identifier}.names.tsv"
     shell:
         """
-        Rscript {src_path}/getSelectionList.R --corr_dat {input[0]}  --trait_list {input[1]} --output ./trait_selections/ --nongender_specific --num_samples 1 --start_seed {wildcards.seedn} --threshold {wildcards.thresh} --h2 {wildcards.h2} --names
+        Rscript {src_path}/getSelectionList.R --corr_dat {input[0]}  --trait_list {input[1]} --output ./trait_selections/ --nongender_specific --num_samples 1 --start_seed 2 --threshold 0.9 --h2 0.1 --names
         """
 rule extract_snps: #finds the variants that meet our signal threshold. here just looking at the LDSC ones.
     input:
-       trait_list="trait_selections/seed{seedn}_thresh{thresh}_h2-{h2}.{custom}.studies.tsv",
+       trait_list="trait_selections/{identifier}.studies.tsv",
     output:
-        "gwas_extracts/seed{seedn}_thresh{thresh}_h2-{h2}_vars{pval}.{custom}/seed{seedn}_thresh{thresh}_h2-{h2}_vars{pval}.{custom}.union.txt"
+        "gwas_extracts/{identifier}/{identifier}.union.txt"
     shell:
         """
             ml python/3.7-anaconda
-            python {src_path}/unionVariants.py --gwas_list {input.trait_list}  --output {output} --type ldsc --pval {wildcards.pval} --extension ".both_sexes.tsv" --gwas_dir /work-zfs/abattle4/lab_data/UKBB/GWAS_Neale/highly_heritable_traits_2/ldsr_format/unzipped/
+            python {src_path}/unionVariants.py --gwas_list {input.trait_list}  --output {output} --type ldsc --pval 1e-5 --extension ".both_sexes.tsv" --gwas_dir /work-zfs/abattle4/lab_data/UKBB/GWAS_Neale/highly_heritable_traits_2/ldsr_format/unzipped/
         """
 
 
 rule filter_1KG: #filter those lists for multi-allelic snps, indels, ambiguous snps, etc.
     input:
-        "gwas_extracts/seed{seedn}_thresh{thresh}_h2-{h2}_vars{pval}.{custom}/seed{seedn}_thresh{thresh}_h2-{h2}_vars{pval}.{custom}.union.txt"
+        "gwas_extracts/{identifier}/{identifier}.union.txt"
 
     output:
-        "gwas_extracts/seed{seedn}_thresh{thresh}_h2-{h2}_vars{pval}.{custom}/seed{seedn}_thresh{thresh}_h2-{h2}_vars{pval}.{custom}.ids.txt",
-        "gwas_extracts/seed{seedn}_thresh{thresh}_h2-{h2}_vars{pval}.{custom}/seed{seedn}_thresh{thresh}_h2-{h2}_vars{pval}.{custom}.1000G.txt"
+        "gwas_extracts/{identifier}/{identifier}.ids.txt",
+        "gwas_extracts/{identifier}/{identifier}.1000G.txt"
         
     shell:
         """
@@ -49,11 +49,11 @@ rule filter_1KG: #filter those lists for multi-allelic snps, indels, ambiguous s
 
 rule prune: #reduce it to a pruned list
     input:
-        "gwas_extracts/seed{seedn}_thresh{thresh}_h2-{h2}_vars{pval}.{custom}/seed{seedn}_thresh{thresh}_h2-{h2}_vars{pval}.{custom}.1000G.txt"
+        "gwas_extracts/{identifier}/{identifier}.1000G.txt"
     output:
-        "gwas_extracts/seed{seedn}_thresh{thresh}_h2-{h2}_vars{pval}.{custom}/500kb.0.04r2.prune.in"
+        "gwas_extracts/{identifier}/500kb.0.04r2.prune.in"
     
-    params: "gwas_extracts/seed{seedn}_thresh{thresh}_h2-{h2}_vars{pval}.{custom}/500kb.0.04r2"
+    params: "gwas_extracts/{identifier}/500kb.0.04r2"
 
     shell:
         """
@@ -62,10 +62,10 @@ rule prune: #reduce it to a pruned list
 
 rule ids_to_rsids:
     input:
-        "gwas_extracts/seed{seedn}_thresh{thresh}_h2-{h2}_vars{pval}.{custom}/500kb.0.04r2.prune.in",
+        "gwas_extracts/{identifier}/500kb.0.04r2.prune.in",
 
     output:
-        "gwas_extracts/seed{seedn}_thresh{thresh}_h2-{h2}_vars{pval}.{custom}/seed{seedn}_thresh{thresh}_h2-{h2}_vars{pval}.{custom}.pruned_rsids.txt"
+        "gwas_extracts/{identifier}/{identifier}.pruned_rsids.txt"
     shell: #Only applies if using the LDSC variants, which here we are sadly.    
         """
         bash {src_path}/variant_to_rsid.sh {input} {output}
@@ -73,15 +73,15 @@ rule ids_to_rsids:
 
 rule extract_sumstats: #get out the z-scores
     input:
-        "gwas_extracts/seed{seedn}_thresh{thresh}_h2-{h2}_vars{pval}.{custom}/seed{seedn}_thresh{thresh}_h2-{h2}_vars{pval}.{custom}.pruned_rsids.txt",        
-        "trait_selections/seed{seedn}_thresh{thresh}_h2-{h2}.{custom}.studies.tsv"
+        "gwas_extracts/{identifier}/{identifier}.pruned_rsids.txt",        
+        "trait_selections/{identifier}.studies.tsv"
     output:
-        "gwas_extracts/seed{seedn}_thresh{thresh}_h2-{h2}_vars{pval}.{custom}/seed{seedn}_thresh{thresh}_h2-{h2}_vars{pval}.{custom}.se.tsv",
-        "gwas_extracts/seed{seedn}_thresh{thresh}_h2-{h2}_vars{pval}.{custom}/seed{seedn}_thresh{thresh}_h2-{h2}_vars{pval}.{custom}.n.tsv",
-        "gwas_extracts/seed{seedn}_thresh{thresh}_h2-{h2}_vars{pval}.{custom}/seed{seedn}_thresh{thresh}_h2-{h2}_vars{pval}.{custom}.beta.tsv"
+        "gwas_extracts/{identifier}/{identifier}.se.tsv",
+        "gwas_extracts/{identifier}/{identifier}.n.tsv",
+        "gwas_extracts/{identifier}/{identifier}.beta.tsv"
     params:
         gwas_dir="/work-zfs/abattle4/lab_data/UKBB/GWAS_Neale/highly_heritable_traits_2/unzipped", 
-        outfile="gwas_extracts/seed{seedn}_thresh{thresh}_h2-{h2}_vars{pval}.{custom}/seed{seedn}_thresh{thresh}_h2-{h2}_vars{pval}.{custom}",
+        outfile="gwas_extracts/{identifier}/{identifier}",
         type="std"
     shell: 
         """
@@ -96,19 +96,19 @@ rule hapmap_reference: #get the list of hapmap snps for extraction, omitting HLA
         """
         wget https://data.broadinstitute.org/alkesgroup/LDSCORE/weights_hm3_no_hla.tgz -p data/
         tar -xvzf data/weights_hm3_no_hla.tgz
-        for i in {{1..22}}; do zcat data/weights_hm3_no_hla/weights.${{i}}.l2.ldscore.gz | tail -n +2 | awk '{{print $1":"$3"\t"$2}}' >> {output}; done
+        for i in "factorization_data/{identifier}.factors.txt"{{1..22}}; do zcat data/weights_hm3_no_hla/weights.${{i}}.l2.ldscore.gz | tail -n +2 | awk '{{print $1":"$3"\t"$2}}' >> {output}; done
         """
 
 rule hapmap_extract: #Pull the hapmap3 snps from the LDSC summary stats. This step takes a bit more memory, 10 GB at least.
     input:
         "data/hm3_no_hla.txt",
-        "trait_selections/seed{seedn}_thresh{thresh}_h2-{h2}.{custom}.studies.tsv"
+        "trait_selections/{identifier}.studies.tsv"
     output:
-        "gwas_extracts/seed{seedn}_thresh{thresh}_h2-{h2}_vars{pval}.{custom}/full_hapmap3_snps.z.tsv",
-        "gwas_extracts/seed{seedn}_thresh{thresh}_h2-{h2}_vars{pval}.{custom}/full_hapmap3_snps.n.tsv"
+        "gwas_extracts/{identifier}/full_hapmap3_snps.z.tsv",
+        "gwas_extracts/{identifier}/full_hapmap3_snps.n.tsv"
     params:
         "/work-zfs/abattle4/lab_data/UKBB/GWAS_Neale/highly_heritable_traits_2/ldsr_format/unzipped/",
-        "gwas_extracts/seed{seedn}_thresh{thresh}_h2-{h2}_vars{pval}.{custom}/full_hapmap3_snps"
+        "gwas_extracts/{identifier}/full_hapmap3_snps"
     shell: 
         """
         ml python/3.7-anaconda;
@@ -116,13 +116,13 @@ rule hapmap_extract: #Pull the hapmap3 snps from the LDSC summary stats. This st
         """
 rule factorize:
     input:
-        "gwas_extracts/seed{seedn}_thresh{thresh}_h2-{h2}_vars{pval}.{custom}/seed{seedn}_thresh{thresh}_h2-{h2}_vars{pval}.{custom}.z.tsv", 
-        "trait_selections/seed{seedn}_thresh{thresh}_h2-{h2}.{custom}.names.tsv"
+        "gwas_extracts/{identifier}/{identifier}.z.tsv", 
+        "trait_selections/{identifier}.names.tsv"
     output:
         expand("results/seed{{seedn}}_thresh{{thresh}}_h2-{{h2}}_vars{{pval}}.{{custom}}/factorization/{ot}.{{f_type}}.{{seedn}}{ext}", ot=output_type, ext=[".txt", ".png"])
         #expand("results/seed{{seedn}}_thresh{{thresh}}_h2-{{h2}}_vars{{pval}}/factorization/{ot}.{ft}.{{seedn}}{ext}", ot=output_type, ft = factorization_type, ext=[".txt", ".png"])
     params:
-        "results/seed{seedn}_thresh{thresh}_h2-{h2}_vars{pval}.{custom}/factorization/"
+        "results/{identifier}/factorization/"
     run:
         shell("Rscript src/MF_wrapper.R")
 
@@ -218,4 +218,22 @@ rule ldsc_visualize:
             Rscript {src_path}/visualizeLDSC.R --input_dir {params} --plot_type "horizontal" --output {output[0]}
         """
 
-
+rule factors_assessment:
+#This isn't perfect. For a cleaner run of this, try:
+# bash src/runOnCustomOnes.sh ./factorization_run_lists/7_k_runlist.txt
+#where 7_k_runlist.txt is a list of all of the factorizations to analyze.
+#In the future, I would like to have this step nicely snakemaked....
+    input: #a bit hacky at the moment, but whatever...
+        tiss_dir = "results/{identifier}/ldsc_enrichment_{tis_ref}/",
+        trait_names = "/work-zfs/abattle4/ashton/snp_networks/gwas_decomp_ldsc/trait_selections/seed2_thresh0.9_h2-0.1.names.tsv",
+        trait_ids = "/work-zfs/abattle4/ashton/snp_networks/gwas_decomp_ldsc/trait_selections/seed2_thresh0.9_h2-0.1.studies.tsv", 
+        factors= "factorization_data/{identifier}.factors.txt"
+    output:  "results/{identifier}/factor_simple_scores.txt"
+    params: "results/{identifier}"
+    shell:
+        """
+            echo "Assuming using the seed 2 run...."
+            Rscript /work-zfs/abattle4/ashton/snp_networks/scratch/ldsc_all_traits/src/factAssessment.R --factors {input.factors} \
+                --output {params[0]} --simple --ldsc_reference  ldsc_results/seed2_thres0.9_h2-0.1/ \
+                --ldsc_dir {input.tiss_dir} --trait.ids {input.trait_ids} --trait.names {input.trait_names}
+        """
