@@ -1,5 +1,5 @@
 #R plots data viz.
-pacman::p_load(data.table, tidyr, dplyr, readr, ggplot2, stringr, Xmisc, cowplot, ashr)
+pacman::p_load(data.table, tidyr, dplyr, ggplot2, stringr, Xmisc, cowplot, ashr)
 
 orderFactors <- function(F, dist = "euclidean")
 {
