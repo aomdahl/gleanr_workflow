@@ -1,13 +1,20 @@
 #Source everything you need:
 
 #... you know, I am pretty sure yuan has a setup for this already. like to specify the desired sparsity or whatever.
-pacman::p_load(tidyr, dplyr, readr, ggplot2, stringr, penalized, cowplot, parallel, doParallel, Xmisc)
-source("src/fit_F.R")
-source("src/update_FL.R")
-source("src/fit_L.R")
-source("src/plot_functions.R")
-source('src/compute_obj.R')
-source('src/buildFactorMatrices.R')
+pacman::p_load(tidyr, dplyr, ggplot2, stringr, penalized, cowplot, parallel, doParallel, Xmisc)
+source("/work-zfs/abattle4/ashton/snp_networks/custom_l1_factorization/src/fit_F.R")
+source("/work-zfs/abattle4/ashton/snp_networks/custom_l1_factorization/src/update_FL.R")
+source("/work-zfs/abattle4/ashton/snp_networks/custom_l1_factorization/src/fit_L.R")
+source("/work-zfs/abattle4/ashton/snp_networks/custom_l1_factorization/src/plot_functions.R")
+source('/work-zfs/abattle4/ashton/snp_networks/custom_l1_factorization/src/compute_obj.R')
+source('/work-zfs/abattle4/ashton/snp_networks/custom_l1_factorization/src/buildFactorMatrices.R')
+
+
+quickSort <- function(tab, col = 1)
+{
+  tab[order(tab[,..col], decreasing = TRUE),]
+}
+
 
 parser <- ArgumentParser$new()
 parser$add_description("Script to run matrix factorization")
@@ -24,19 +31,45 @@ parser$add_argument("--debug", type = "logical", help = "if want debug run", act
 parser$add_argument("--overview_plots", type = "logical", help = "To include plots showing the objective, sparsity, etc for each run", action = "store_true", default = FALSE)
 parser$add_argument("-k", "--nfactors", type = "numeric", help = "specify the number of factors", default = 15)
 parser$add_argument("-i", "--niter", type = "numeric", help = "specify the number of iterations", default = 30)
+parser$add_arg(c("-f", "--converged_F_change"), type="double", default=0.02,help="Change in factor matrix to call convergence")
+parser$add_arg(c("-o", "--converged_obj_change"), type="double", default=1,help="Relative change in the objective function to call convergence")
+parser$add_arg("--no_SNP_col", type="logical", default= FALSE, action = "store_true", help="Specify this option if there is NOT first column there...")
 parser$add_argument('--help',type='logical',action='store_true',help='Print the help page')
 parser$helpme()
 args <- parser$get_args()
 
 #TODO:
     #add in functionality in the event the objective begins to increase again. Don't want that....
+  #finesse functionality to allow for trait-specific variance to be learned (?)
+if(FALSE)
+{
+  args <- list()
+  args$gwas_effects <- "/work-zfs/abattle4/ashton/snp_networks/scratch/udler_td2/processed_data/beta_signed_matrix.tsv"
+  args$uncertainty <- "/work-zfs/abattle4/ashton/snp_networks/scratch/udler_td2/processed_data/se_matrix.tsv"
+  args$nfactors <- 6
+  args$niter <- 50
+  args$alphas <- "0.05, 0.1,0.25,0.5,0.75,1,1.25,1.5"
+  args$lambdas <- "0.05, 0.1,0.25,0.5,0.75,1,1.25,1.5"
+args$cores <- 1
+args$fixed_first <- TRUE
+args$weighting_scheme = "B_SE"
+args$output <- "/work-zfs/abattle4/ashton/snp_networks/scratch/udler_td2/processed_data/gwasMF_"
+args$converged_obj_change <- 1
+
+  
+}
 #Read in the hyperparameters to explore
 alphas <- scan(text = args$alphas, what = character(), sep = ',', quiet = TRUE)
 lambdas <- scan(text = args$lambdas, what = character(), sep = ',', quiet = TRUE)
 output <- args$output
-#Load the data
-effects <- fread(args$gwas_effects) %>% drop_na() %>% arrange(ids)
-all_ids <- effects$ids
+
+#Load the effect size data
+effects <- fread(args$gwas_effects) %>% drop_na()
+effects <- effects[order(effects[,1], decreasing = TRUE),]
+all_ids <- unlist(effects[,1])
+
+
+#Get the trait names out
 if(args$trait_names == "")
 {
   message("No trait names provided. Using the identifiers in the tabular effect data instead.")
@@ -44,7 +77,8 @@ if(args$trait_names == "")
 } else{
     names <- scan(args$trait_names, what = character(), quiet = TRUE)
 }
-effects <- effects %>% select(-ids)
+effects <- effects[,-1]
+#Look at the weighting scheme options...
 if(args$weighting_scheme == "Z" || args$weighting_scheme == "B")
 {
   message("No scaling by standard error will take place. Input to uncertainty being ignored.")
@@ -54,7 +88,7 @@ if(args$weighting_scheme == "Z" || args$weighting_scheme == "B")
 } else if(args$weighting_scheme == "B_SE")
 {
   message("Scaling by 1/SE.")
-  W_se <- fread(args$uncertainty) %>% drop_na() %>% filter(ids %in% all_ids) %>% arrange(ids) %>% select(-ids)
+  W_se <- fread(args$uncertainty) %>% drop_na() %>% filter(unlist(.[,1]) %in% all_ids) %>% quickSort(.) %>% select(-1)
   W <- 1/ W_se
   X <- effects
   
@@ -75,6 +109,8 @@ if(args$weighting_scheme == "Z" || args$weighting_scheme == "B")
 option <- list()
 option[['K']] <- args$nfactors
 option[['iter']] <- args$niter
+option[['convF']] <- 0
+option[['convO']] <- args$converged_obj_change
 option[['ones_mixed_std']] <- FALSE
 option[['ones_mixed_ref']] <- FALSE
 option[['ones']] <- FALSE
@@ -88,6 +124,11 @@ option[['ones_eigenvect']] <- TRUE
 option[['ones_plain']] <- FALSE
 option[['reweighted']] <- FALSE
 option[["glmnet"]] <- FALSE
+option[["parallel"]] <- FALSE
+option[["fastReg"]] <- FALSE
+option[["ridge_L"]] <- FALSE
+option$intercept_ubiq <- FALSE
+option$traitSpecificVar <- FALSE
 if(args$cores > 1)
 {
   message(paste("Running in parallel on", args$cores, "cores"))
@@ -117,9 +158,9 @@ for(a in alphas){
   for (l in lambdas){
     option[['alpha1']] <- as.numeric(a)
     option[['lambda1']] <- as.numeric(l)
-    option[["parallel"]] <- TRUE
+    option[["parallel"]] <- FALSE
     start <- Sys.time()
-    run <- Update_FL(X, W, option)
+    run <- Update_FL(as.matrix(X), as.matrix(W), option)
     end <- Sys.time()
     time <- end-start
     run_stats[[iter_count]] <- c(run, time)
