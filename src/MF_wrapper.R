@@ -20,7 +20,7 @@ parser <- ArgumentParser$new()
 parser$add_description("Script to run matrix factorization")
 parser$add_argument("--gwas_effects", type = 'character', help = "Specify the Z or B file, depending on specified weighting scheme. First column is ids of each variant, column names specify the trait")
 parser$add_argument("--uncertainty", type = 'character', help = "Specify the path to the SE or other uncertainty file, depending on the weightin scheme.irst column is ids of each variant, column names specify the trait")
-parser$add_argument("--trait_names", type = 'character', help = "Human readable trait names, used for plotting. Ensure order is the same as the orderr in the input tables.")
+parser$add_argument("--trait_names", type = 'character', help = "Human readable trait names, used for plotting. Ensure order is the same as the orderr in the input tables.", default = "")
 parser$add_argument("--weighting_scheme", type = 'character', help = "Specify either Z, B, B_SE, B_MAF", default = "B_SE")
 parser$add_argument("--alphas", type = 'character', help = "Specify which alphas to do, all in quotes, separated by ',' character")
 parser$add_argument("--lambdas", type = 'character', help = "Specify which lambdas to do, all in quotes, separated by ',' character")
@@ -31,9 +31,11 @@ parser$add_argument("--debug", type = "logical", help = "if want debug run", act
 parser$add_argument("--overview_plots", type = "logical", help = "To include plots showing the objective, sparsity, etc for each run", action = "store_true", default = FALSE)
 parser$add_argument("-k", "--nfactors", type = "numeric", help = "specify the number of factors", default = 15)
 parser$add_argument("-i", "--niter", type = "numeric", help = "specify the number of iterations", default = 30)
-parser$add_arg(c("-f", "--converged_F_change"), type="double", default=0.02,help="Change in factor matrix to call convergence")
-parser$add_arg(c("-o", "--converged_obj_change"), type="double", default=1,help="Relative change in the objective function to call convergence")
-parser$add_arg("--no_SNP_col", type="logical", default= FALSE, action = "store_true", help="Specify this option if there is NOT first column there...")
+parser$add_argument("--posF", type = "logical", default = FALSE,  help = "Specify if you want to use the smei-nonnegative setup.", action = "store_true")
+parser$add_argument("--scale_n", type = "character", default = "",  help = "Specify the path to a matrix of sample sizes if you want to scale by sqrtN as well as W")
+parser$add_argument("-f", "--converged_F_change", type="double", default=0.02,help="Change in factor matrix to call convergence")
+parser$add_argument("-o", "--converged_obj_change", type="double", default=1,help="Relative change in the objective function to call convergence")
+parser$add_argument("--no_SNP_col", type="logical", default= FALSE, action = "store_true", help="Specify this option if there is NOT first column there...")
 parser$add_argument('--help',type='logical',action='store_true',help='Print the help page')
 parser$helpme()
 args <- parser$get_args()
@@ -105,6 +107,12 @@ if(args$weighting_scheme == "Z" || args$weighting_scheme == "B")
   quit()
 }
 
+if(args$scale_n != "")
+{
+  N <- fread(args$scale_n) %>% drop_na() %>% filter(unlist(.[,1]) %in% all_ids) %>% quickSort(.) %>% select(-1)
+  W <- W * 1/sqrt(N)
+}
+
 #set up settings
 option <- list()
 option[['K']] <- args$nfactors
@@ -127,6 +135,7 @@ option[["glmnet"]] <- FALSE
 option[["parallel"]] <- FALSE
 option[["fastReg"]] <- FALSE
 option[["ridge_L"]] <- FALSE
+option[["posF"]] <- args$posF
 option$intercept_ubiq <- FALSE
 option$traitSpecificVar <- FALSE
 if(args$cores > 1)
@@ -184,7 +193,7 @@ for(a in alphas){
 }
 #Save all the data...
 #We actually need output information
-save(run_stats, file = paste0(output, "/runDat.RData"))
+save(run_stats, file = paste0(output, "runDat.RData"))
 writeFactorMatrices(alphas, lambdas, names, run_stats,output)
 
 if(args$overview_plots)
@@ -195,19 +204,23 @@ if(args$overview_plots)
   loading_sparsities <- data.frame("alpha" = a_plot, "lambda" = l_plot, 
                                   "sparsity" = unlist(lapply(run_stats, function(x) x[[3]])), 
                                   "runtime" = unlist(lapply(run_stats, function(x) x[[7]])))
-  message(paste0(output, "/factor_sparsity.png"))
+  message(paste0(output, "factor_sparsity.png"))
 
   ggplot(data = factor_sparsities, aes(x = alpha, y= lambda, fill = sparsity)) + geom_tile() + 
     theme_minimal(15) + scale_fill_gradient(low="white", high="navy") + ggtitle("Factor Sparsity")
-  ggsave(paste0(output, "/factor_sparsity.png"), device = "png")  
+  ggsave(paste0(output, "factor_sparsity.png"), device = "png")  
 
   ggplot(data = loading_sparsities, aes(x = alpha, y= lambda, fill = sparsity)) + geom_tile() + 
     theme_minimal(15) + scale_fill_gradient2(low="white", high="navy", limits = c(0,max(loading_sparsities$sparsity))) + ggtitle("Loading Sparsity")
-  ggsave(paste0(output, "/loading_sparsity.png"), device = "png")  
+  ggsave(paste0(output, "loading_sparsity.png"), device = "png")  
   #Make a plot with the various runtimes.
-  ggplot(data = factor_sparsities, aes(x = alpha, y= lambda, fill = runtime)) + geom_tile() + 
-    theme_minimal(15) + scale_fill_gradient(low="white", high="navy") + ggtitle("Runtime")
-  ggsave(paste0(output, "/runtimes.png"), device = "png")      
+  #3/11 this was wiggin out so I dropped it...
+  #print(factor_sparsities)
+  #ggplot(data = factor_sparsities, aes(x = alpha, y= lambda, fill = runtime)) + geom_tile() + 
+  #  theme_minimal(15) + scale_fill_gradient(low="white", high="navy") + ggtitle("Runtime")
+  #ggsave(paste0(output, "runtimes.png"), device = "png")      
+  
+  
   #Plot the change in objective function for each one too....
 
   objectives <- data.frame(lapply(run_stats, function(x) x[[6]])) %>% drop_na() 
@@ -215,7 +228,7 @@ if(args$overview_plots)
   objectives <- objectives %>% mutate("iteration" =1:nrow(objectives)) %>% reshape2::melt(., id.vars = "iteration")
   ggplot(data = objectives, aes(x = iteration, y = value, color = variable)) + geom_point() + geom_line() + 
     theme_minimal(15) + ggtitle("Objective function") + ylab("Objective score")
-  ggsave(paste0(output, "/objective.png"), device = "png")    
+  ggsave(paste0(output, "objective.png"), device = "png")    
 }
 
 

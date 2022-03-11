@@ -54,7 +54,7 @@ fit_F <- function(X, W, L, option, formerF = NULL){
 		{
 		  fit = penalized(response = X, penalized = dat_i[,paste0('F', seq(1, ncol(Lp)))], data=dat_i,
 		                  unpenalized = ~0, lambda1 = option[['lambda1']], lambda2=1e-10,
-		                  positive = FALSE, standardize = FALSE, trace = FALSE, startbeta = formerF[col,] )
+		                  positive = option$posF, standardize = FALSE, trace = FALSE, startbeta = formerF[col,] )
 		  f = coef(fit, 'all')
 		  #fit = penalized(response = X, penalized = dat_i[,paste0('F', seq(2, ncol(Lp)))], data=dat_i,
 		                  #unpenalized = ~0 + dat_i[,1], lambda1 = option[['lambda1']], lambda2=1e-10,
@@ -68,14 +68,14 @@ fit_F <- function(X, W, L, option, formerF = NULL){
 		  lambdas <- c(0, rep(option[['lambda1']], (ncol(Lp) - 1))) #no lasso on that first column
 		  fit = penalized(response = X, penalized = dat_i[,paste0('F', seq(1, ncol(Lp)))], data=dat_i,
 		                  unpenalized = ~0, lambda1 =lambdas, lambda2=1e-10,
-		                  positive = FALSE, standardize = FALSE, trace = FALSE)
+		                  positive = option$posF, standardize = FALSE, trace = FALSE)
 		  #glm_fit <- glmnet(x = dat_i[,paste0('F', seq(1, ncol(Lp)))], y = xp, alpha = 1, lambda = lambdas, intercept = FALSE)
 		  
 		  f = coef(fit, 'all')
 		} else {
 		  fit = penalized(response = X, penalized = dat_i[,paste0('F', seq(1, ncol(Lp)))], data=dat_i,
 		                  unpenalized = ~0, lambda1 =option[['lambda1']], lambda2=1e-10,
-		                  positive = FALSE, standardize = FALSE, trace = FALSE)
+		                  positive = option$posF, standardize = FALSE, trace = FALSE)
 		  f = coef(fit, 'all')
 		}
 		
@@ -99,6 +99,13 @@ fit_F <- function(X, W, L, option, formerF = NULL){
 	  ret$mat <- FactorM
 	  return(ret)
 	}
-	return(FactorM)
 
+    if(option$intercept_ubiq) #Force the ubiquitous term to be fixed. Run with fixed_ubiq? doesn't really matter{
+    {
+        cor_struct <- cor(X)
+      svd <- svd(cor_struct, nu = 1) #fortunately its symmetric, so  U and V are the same here!
+      ones <- sign(svd$u) 
+        FactorM[,1] <- ones
+	}
+    return(FactorM)
 }

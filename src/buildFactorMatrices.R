@@ -11,7 +11,8 @@ writeFactorMatrices <- function(specs1, specs2, studies, run_list, out_prefix)
     index <- which(entry == r)
     curr_run <-  run_stats[[index]]
     f_dat <- data.frame("rownames" = studies, curr_run[[1]])
-    write_tsv(f_dat, paste0(out_prefix, gsub(" ", "_", r), ".factors.txt"))
+    #write_tsv(f_dat, paste0(out_prefix, gsub(" ", "_", r), ".factors.txt"))
+    write.table(f_dat, file = paste0(out_prefix, gsub(" ", "_", r), ".factors.txt"), sep = "\t", quote = FALSE, row.names=FALSE)
   }
 }
 

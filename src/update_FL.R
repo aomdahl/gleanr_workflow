@@ -27,17 +27,17 @@ if(FALSE)
 
 Update_FL <- function(X, W, option, preF = NULL, preL = NULL){
   # number of features - to avoid using T in R
-  D      = ncol(X)
+  D = ncol(X)
   tStart0 = Sys.time()
-  
+  FactorM = NULL 
   #Random initialization
   if(!option[['preinitialize']])
   {
-    message('Random initialization...')
     FactorM   = matrix(runif(D*(option[['K']] - 1)), nrow = D);
     #Ashton added in- option to include column of 1s
     if(option[['ones_plain']])
     {
+      message("Initializing ubiquitous factor with all ones...")
       FactorM = cbind(rep(1, D), FactorM);
     } else if(option[['ones_mixed_std']]) {
       message("Using a standard ubiq factor")
@@ -71,7 +71,11 @@ Update_FL <- function(X, W, option, preF = NULL, preL = NULL){
   } else #you pre-provide the first F.
   {
     FactorM   = preF;
-    message("initialized with PCA!")
+  }
+  if(option$posF)
+  {
+    message("Performing semi-non-negative factorization today....")
+    FactorM = abs(FactorM)
   }
 
   # First round of optimization
@@ -84,7 +88,7 @@ Update_FL <- function(X, W, option, preF = NULL, preL = NULL){
   
   if(option[['parallel']]) #This is not working at all. Can't tell you why. But its not. Need to spend some time debugging at some point.
   {
-    print("Fitting L")	
+    #print("Fitting L")	
     L = fit_L_parallel(X, W, FactorM, option, formerL = preL); #preL is by default Null, unless yo specify!
   } else
   {
@@ -110,22 +114,19 @@ Update_FL <- function(X, W, option, preF = NULL, preL = NULL){
     return()
   }
   
-
   trait.var <- matrix(NA, option[['iter']], ncol(X))
 
   for (iii in seq(1, option[['iter']])){
     message(paste0("Currently on iteration ", iii))
-    
     ## update F
-    message("fitting F...")
+    #message("fitting F...")
     if(iii == 1)
     {
       og_option <- option[['reweighted']]
       option[['reweighted']] <- FALSE
       FactorM = fit_F(X, W, L, option, FactorM);
       option[['reweighted']] <- og_option
-    } else
-    {
+    } else {
       FactorM = fit_F(X, W, L, option, FactorM); #by iter 3 really slows down, due to the L1 requirements. Yea this won't do....
     }
     #get the factor specific variance....
@@ -141,7 +142,6 @@ Update_FL <- function(X, W, option, preF = NULL, preL = NULL){
       F_change = norm(FactorM - F_old, 'F') / ncol(FactorM)
     }
     F_old = FactorM;
-    
     non_empty_f = which(apply(FactorM, 2, function(x) sum(x!=0)) > 0)
     if(length(non_empty_f) == 0){
       message('Finished');
@@ -155,7 +155,7 @@ Update_FL <- function(X, W, option, preF = NULL, preL = NULL){
     colnames(FactorM) = seq(1, ncol(FactorM));
     
     ## update L
-    message("Fitting L....")
+    #message("Fitting L....")
     if(option[['parallel']])
     {
       L  = fit_L_parallel(X, W, FactorM, option, L);
@@ -182,7 +182,6 @@ Update_FL <- function(X, W, option, preF = NULL, preL = NULL){
     L = as.matrix(as.data.frame(L[, non_empty]));
     FactorM  = as.matrix(as.data.frame(FactorM[, non_empty]));
     
-    
     # collect sparsity in L and F
     L_sparsity = sum(abs(L) < 1e-5) / ncol(L) / nrow(L);
     F_sparsity = sum(abs(FactorM) < 1e-5) / ncol(FactorM) / nrow(FactorM);
@@ -192,7 +191,6 @@ Update_FL <- function(X, W, option, preF = NULL, preL = NULL){
     obj_updated = compute_obj(X, W, L, FactorM, option);
     obj_change = obj_updated - objective[length(objective)];
     objective = c(objective, obj_updated);
-    print(objective)
     objective_change = c(objective_change, obj_change);
     
     if(option[['disp']]){
@@ -203,16 +201,16 @@ Update_FL <- function(X, W, option, preF = NULL, preL = NULL){
       message(paste0('Loading Sparsity = ', L_sparsity, '; Factor sparsity = ', F_sparsity, '; ', Nfactor, ' factors remain')); 
       cat('\n')
     }
-    
-    
     # converge if: 1). Change of the values in factor matrix is small. ie. The factor matrix is stable. 2). Change in the objective function becomes small; 3). reached maximum number of iterations
     if(option[['convF']] >= F_change){
+     
       message(paste0('Factor matrix converges at iteration ', iii));
       break
     }
     
     oc1 = abs(objective_change[length(objective_change)])
     if(option[['convO']] >= oc1){
+      message("Ojbective function change threshold achieved!")
       message(paste0('Objective function converges at iteration ', iii));
       break
     }
@@ -220,17 +218,15 @@ Update_FL <- function(X, W, option, preF = NULL, preL = NULL){
       message('Reached maximum iteration.');
       break
     }
-    
   }
-  
+  retlist <- list("F" = FactorM, "L" = L, "L_sparsity" = L_sparsity, "F_sparsity" = F_sparsity, "K" = Nfactor, "obj" = objective, "study_var" = trait.var)
   tEnd0 = Sys.time()
   cat('\n')
   message('Total time used for optimization: ');
   message(tEnd0 - tStart0);
   cat('\n')
-  
   # return L, F, sparsity in L and F, number of factors -- could be different from K!
-  return(list(FactorM, L, L_sparsity, F_sparsity, Nfactor, objective, trait.var))
+    return(retlist)
 }
 
 #9/07 testing notes
