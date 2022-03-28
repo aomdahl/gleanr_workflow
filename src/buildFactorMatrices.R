@@ -1,7 +1,7 @@
 #!/usr/bin/env Rscript
 #Manually extract runs from this directory to check for enrichment, see what we get.
-
-writeFactorMatrices <- function(specs1, specs2, studies, run_list, out_prefix)
+#s(alphas, lambdas, names, run_stats,output)
+writeFactorMatrices <- function(specs1, specs2, studies, snps, run_stats, out_prefix)
 {
   entry <- c()
   for(i in specs1) { for(j in specs2) { entry <- c(entry, paste0(i, " ", j)) }}
@@ -13,6 +13,9 @@ writeFactorMatrices <- function(specs1, specs2, studies, run_list, out_prefix)
     f_dat <- data.frame("rownames" = studies, curr_run[[1]])
     #write_tsv(f_dat, paste0(out_prefix, gsub(" ", "_", r), ".factors.txt"))
     write.table(f_dat, file = paste0(out_prefix, gsub(" ", "_", r), ".factors.txt"), sep = "\t", quote = FALSE, row.names=FALSE)
+    #how about loadings you ninny?
+    l_dat <- data.frame("snps" = snps,curr_run[[2]])
+    write.table(l_dat, file = paste0(out_prefix, gsub(" ", "_", r), ".loadings.txt"), sep = "\t", quote = FALSE, row.names=FALSE)
   }
 }
 

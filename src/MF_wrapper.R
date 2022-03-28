@@ -44,19 +44,17 @@ message("Please make sure the first column of input data is SNP/RSIDs.")
 #TODO:
     #add in functionality in the event the objective begins to increase again. Don't want that....
   #finesse functionality to allow for trait-specific variance to be learned (?)
-if(FALSE)
+#easy enough to add in.
+if(FALSE) #For debug functionality
 {
   args <- list()
   args$gwas_effects <- "/work-zfs/abattle4/ashton/snp_networks/scratch/udler_td2/processed_data/beta_signed_matrix.tsv"
   args$uncertainty <- "/work-zfs/abattle4/ashton/snp_networks/scratch/udler_td2/processed_data/se_matrix.tsv"
   args$nfactors <- 6
   args$niter <- 10
-  args$alphas <- "1e-16,0.05,0.1,0.25,0.5,0.75,1" #using 0.00001 since it doesn't like 0
-  args$lambdas <- "1e-16,0.05,0.1,0.25,0.5,0.75,1"
-  
-  args$alphas <- "1e-16,0.5,1" #using 0.00001 since it doesn't like 0
-  args$lambdas <- "1e-16,0.5,1"
-  
+  args$alphas <- "1e-16,0.001,0.005,0.01" #using 0.00001 since it doesn't like 0
+  args$lambdas <- "1e-16,0.001,0.005,0.01"
+
 args$cores <- 1
 args$fixed_first <- TRUE
 args$weighting_scheme = "B_SE"
@@ -64,6 +62,7 @@ args$output <- "/work-zfs/abattle4/ashton/snp_networks/scratch/udler_td2/process
 args$converged_obj_change <- 1
 args$scaled_sparsity <- TRUE
 args$posF <- FALSE
+args$scaled_sparsity <- TRUE
 
 }
 #Read in the hyperparameters to explore
@@ -149,6 +148,7 @@ option[["ridge_L"]] <- FALSE
 option[["posF"]] <- args$posF
 option$intercept_ubiq <- FALSE
 option$traitSpecificVar <- FALSE
+option$calibrate_sparsity <- args$scaled_sparsity
 if(args$cores > 1)
 {
   message(paste("Running in parallel on", args$cores, "cores"))
@@ -202,7 +202,7 @@ if(args$scaled_sparsity & FALSE)
 
 #recommend
 #3/28 attempt
-option$calibrate_sparsity <- TRUE
+
 max_sparsity <- Update_FL(as.matrix(X), as.matrix(W), option)
 if(option$calibrate_sparsity)
 {
@@ -213,12 +213,18 @@ if(option$calibrate_sparsity)
     lambdas <- lambdas * max_sparsity$lambda
     
     option$calibrate_sparsity <- FALSE
+    message("Scaled amounts are:")
+    message("    Lambdas:")
+    message(lambdas)
+    message("    Alphas:")
+    message(alphas)
   }else
   {
     message('Inputed sparsity parameters must be between 0 and 1 to use the "calibrate_sparsity option".')
     quit()
   }
 }
+
 for(a in alphas){
   for (l in lambdas){
     option[['alpha1']] <- as.numeric(a)
@@ -240,11 +246,11 @@ for(a in alphas){
       message(paste0("Current F sparsity: ", run$F_sparsity))  
       message(paste0("Current L sparsity: ", run$L_sparsity))  
       message(paste0("Number of active factors:", ncol(run$F)))
-      fname = paste0(output, "A", a, "_L", l, "_", type_, ".png")
-        title_ = paste0("A", a, "_L", l, " Type = ", args$weighting_scheme )
-          #p <- plotFactors(run[[1]],trait_names = names, title = title_)
+      fname = paste0(output, "A", round(a, digits = 3), "_L", round(l, digits = 3), "_", type_, ".png")
+        title_ = paste0("A", round(a, digits = 3), "_L", round(l, digits = 3), " Type = ", args$weighting_scheme )
+          p <- plotFactors(run[[1]],trait_names = names, title = title_)
           print(plotFactors(run[[1]],trait_names = names, title = title_))
-          #ggsave(filename = fname, plot = p, device = "png", width = 10, height = 8)
+          ggsave(filename = fname, plot = p, device = "png", width = 10, height = 8)
           #Lazy bookeeping nonsense for plots
           name_list <- c(name_list,  paste0("A", a, "_L", l))
           a_plot <- c(a_plot, a)
@@ -253,10 +259,10 @@ for(a in alphas){
 
   }
 }
-#Save all the data...
+  #Save all the data...
 #We actually need output information
 save(run_stats, file = paste0(output, "runDat.RData"))
-writeFactorMatrices(alphas, lambdas, names, run_stats,output)
+writeFactorMatrices(alphas, lambdas, names,all_ids, run_stats,output)
 check_stats = max(sapply(run_stats, length))
 print(check_stats)
 print(run_stats)
@@ -282,14 +288,7 @@ if(args$overview_plots)
   ggplot(data = loading_sparsities, aes(x = alpha, y= lambda, fill = sparsity)) + geom_tile() + 
     theme_minimal(15) + scale_fill_gradient2(low="white", high="navy", limits = c(0,max(loading_sparsities$sparsity))) + ggtitle("Loading Sparsity")
   ggsave(paste0(output, "loading_sparsity.png"), device = "png")  
-  #Make a plot with the various runtimes.
-  #3/11 this was wiggin out so I dropped it...
-  #print(factor_sparsities)
-  #ggplot(data = factor_sparsities, aes(x = alpha, y= lambda, fill = runtime)) + geom_tile() + 
-  #  theme_minimal(15) + scale_fill_gradient(low="white", high="navy") + ggtitle("Runtime")
-  #ggsave(paste0(output, "runtimes.png"), device = "png")      
-  
-  
+
   #Plot the change in objective function for each one too....
 
   objectives <- data.frame(lapply(run_stats, function(x) x[[6]])) %>% drop_na() 
