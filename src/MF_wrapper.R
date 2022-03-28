@@ -100,7 +100,9 @@ if(args$weighting_scheme == "Z" || args$weighting_scheme == "B")
 } else if(args$weighting_scheme == "B_SE")
 {
   message("Scaling by 1/SE.")
-  W_se <- fread(args$uncertainty) %>% drop_na() %>% filter(unlist(.[,1]) %in% all_ids) %>% quickSort(.) %>% select(-1)
+  W_se <- fread(args$uncertainty) %>% drop_na() %>% filter(unlist(.[,1]) %in% all_ids) %>% quickSort(.)
+  stopifnot(!any(all_ids != W_se[,1]))
+  W_se <- W_se %>% select(-1)
   W <- 1/ W_se
   X <- effects
   
@@ -120,6 +122,8 @@ if(args$weighting_scheme == "Z" || args$weighting_scheme == "B")
 if(args$scale_n != "")
 {
   N <- fread(args$scale_n) %>% drop_na() %>% filter(unlist(.[,1]) %in% all_ids) %>% quickSort(.) %>% select(-1)
+  stopifnot(!any(all_ids != N[,1]))
+  N <- N %>% select(-1)
   W <- W * 1/sqrt(N)
 }
 
