@@ -44,7 +44,7 @@
       #xp = x #I don't think we weight the samples by the variance, do we?
       FactorMp = diag(1/sqrt(r.v)) %*% FactorM;
     }else{
-      xp = w * x;
+      xp = unlist(w * x);
       FactorMp = diag(w) %*% FactorM; #scaling this way is much smaller
     }
      #elementwise multiplication
@@ -64,19 +64,23 @@
                       unpenalized = ~0, lambda1 = option[['alpha1']], lambda2=1e-10,
                       positive = FALSE, standardize = FALSE, trace = FALSE, startbeta = formerL);
       l = coef(fit, 'all');
-    } else if(option[["glmnet"]]) {
+    } 
+    else if(option[["glmnet"]]) 
+      {
       
       fit <- glmnet(x = dat_i[,paste0('F', seq(1,ncol(FactorMp)))], y = xp, alpha = 1, lambda = c(option[['alpha1']]), intercept = FALSE)
       l = coef(fit, 'all')[,1][-1];
       
-    }	else if(option[["fastReg"]]){
+    }	
+    else if(option[["fastReg"]]){
       td <- t(dat_i[,paste0('F', seq(1,ncol(FactorMp)))])
       XTX <- td %*% dat_i[,paste0('F', seq(1,ncol(FactorMp)))]
       XTY <- td %*% xp
       fit <- elasticnet(XTX, XTY, lam2 = -1, lam1 = option[['alpha1']])
       #did we really try this?
       
-    }	else if(option[["ridge_L"]]){
+    }	
+    else if(option[["ridge_L"]]){
       
       print("doing the ridge L")
       fit = penalized(response = X, penalized = dat_i[,paste0('F', seq(1,ncol(FactorMp)))], data=dat_i,
@@ -84,13 +88,22 @@
                       positive = FALSE, standardize = FALSE, trace = FALSE);
       l = coef(fit, 'all');
       
-    } else if(option[["fixed_ubiq"]])
+    } 
+    else if(option$calibrate_sparsity)
+    {
+      fit = recommendRange(response = X, penalized = dat_i[,paste0('F', seq(1, ncol(FactorMp)))], data=dat_i,
+                           unpenalized = ~0, lambda1 =lambdas, lambda2=1e-10,
+                           positive = FALSE)
+      return(fit)
+    }
+    else if(option[["fixed_ubiq"]])
     {
       lambdas <- c(0, rep(option[['alpha1']], (ncol(FactorMp) - 1))) #no lasso on that first column
+      #browser()
+      #Okay, it seems like this is working now to estimate the max. Track over all the rows, then get the max
       fit = penalized(response = X, penalized = dat_i[,paste0('F', seq(1, ncol(FactorMp)))], data=dat_i,
                       unpenalized = ~0, lambda1 =lambdas, lambda2=1e-10,
                       positive = FALSE, standardize = FALSE, trace = FALSE)
-
       l = coef(fit, 'all')
     }		else {
       fit = penalized(response = X, penalized = dat_i[,paste0('F', seq(1,ncol(FactorMp)))], data=dat_i,
@@ -115,7 +128,6 @@
   		}		else {
   		  l = one_fit(x, w, as.matrix(FactorM), option, NULL, r.v);
   		}
-  		
   		L = rbind(L, l);
   		#print(row)
   	}
@@ -126,22 +138,29 @@
   }
   
 
-
+#Something is jacked up with this.
   fit_L_parallel <- function(X, W, FactorM, option, formerL){
     L = NULL
     tS = Sys.time()
     cl <- parallel::makeCluster(option[["ncores"]])
+    print("c-1")
     doParallel::registerDoParallel(cl)
     L <- foreach(row =seq(1,nrow(X)), .combine = 'rbind', .packages = 'penalized') %dopar% {
       x = X[row, ];
+      print("c1")
       w = W[row, ];
+      print("c2")
       xp = t(w * x); #elementwise multiplication
+      print("c3")
       FactorMp = diag(w) %*% FactorM;  #what are we doing here?
+      print("c4")
       dat_i = as.data.frame(cbind((xp), FactorMp));
+      print("c5")
       colnames(dat_i) = c('X', paste0('F', seq(1, ncol(FactorMp))));
       fit = penalized(response = X, penalized = dat_i[,paste0('F', seq(1,ncol(FactorMp)))], data=dat_i,
                       unpenalized = ~0, lambda1 = option[['alpha1']], lambda2=1e-10,
                       positive = FALSE, standardize = FALSE, trace = FALSE);
+      print("c6")
       l = coef(fit, 'all');
       #should be able to do with a one_fit command here, once we figure out why this isn't working....
       l

@@ -86,11 +86,26 @@ Update_FL <- function(X, W, option, preF = NULL, preL = NULL){
   og_option <- option[['reweighted']]
   option[['reweighted']] <- FALSE
   
+  if(option$calibrate_sparsity)
+  {
+    message("Calibrating sparsity to be on a 0 - 1 scale for convenience")
+    max_sparsity = fit_L(X, W, FactorM, option, formerL = preL)
+    alpha <- max(max_sparsity)
+    fakeopt <- option
+    fakeopt$alpha <- 1e-16
+    fakeopt$calibrate_sparsity <- FALSE
+    temp_l = fit_L(X, W, FactorM, fakeopt, formerL = preL); #Calibrate this with no sparsity....
+    lambda = fit_F(X, W, temp_l, option, FactorM)
+    return(list("alpha" = alpha, "lambda" = max(lambda)))
+  }
+  
+  
   if(option[['parallel']]) #This is not working at all. Can't tell you why. But its not. Need to spend some time debugging at some point.
   {
     #print("Fitting L")	
     L = fit_L_parallel(X, W, FactorM, option, formerL = preL); #preL is by default Null, unless yo specify!
-  } else
+  }
+  else
   {
     L = fit_L(X, W, FactorM, option, formerL = preL);
   }
@@ -113,13 +128,24 @@ Update_FL <- function(X, W, option, preF = NULL, preL = NULL){
     Nfactor = 0;
     return()
   }
+  #Alternatively, if L has only the one factor and we are doing the unwighted ubiq mode...
+  if(ncol(L) == 1 & option[["fixed_ubiq"]])
+  {
+    message("Only the ubiquitous factor remains, when we are removing any L1 prior on it")
+    FactorM = NULL;
+    F_sparsity = 1;
+    L_sparsity = 1;
+    factor_corr = 1;
+    Nfactor = 0;
+    return()
+  }
+  
   
   trait.var <- matrix(NA, option[['iter']], ncol(X))
 
   for (iii in seq(1, option[['iter']])){
     message(paste0("Currently on iteration ", iii))
     ## update F
-    #message("fitting F...")
     if(iii == 1)
     {
       og_option <- option[['reweighted']]
@@ -143,14 +169,15 @@ Update_FL <- function(X, W, option, preF = NULL, preL = NULL){
     }
     F_old = FactorM;
     non_empty_f = which(apply(FactorM, 2, function(x) sum(x!=0)) > 0)
-    if(length(non_empty_f) == 0){
+    if(length(non_empty_f) == 0 | (non_empty_f[1] == 1 & option$fixed_ubiq & (length(non_empty_f) == 1))){
       message('Finished');
-      message('F is completely empty, lambda1 too large')
+      message('F is completely empty or loaded only on ubiquitous factor, lambda1 too large')
       F_sparsity = 1;
       L_sparsity = 1;
       factor_corr = 1;
       Nfactor = 0;
-      return();
+      if(length(non_empty_f) == 0) {return();}
+      else {break}
     }
     colnames(FactorM) = seq(1, ncol(FactorM));
     
@@ -226,98 +253,6 @@ Update_FL <- function(X, W, option, preF = NULL, preL = NULL){
   message(tEnd0 - tStart0);
   cat('\n')
   # return L, F, sparsity in L and F, number of factors -- could be different from K!
-    return(retlist)
+    return(retlist) #F, L, l sparsity ,f_sparsity, K, obj, study_var, 
 }
 
-#9/07 testing notes
-#tried regular, works
-#trying now with factor-specific variance, shall see.
-if(FALSE)
-{
-
-  #Get trait sample sizes:
-  samp.size <- fread("/work-zfs/abattle4/ashton/snp_networks/gwas_decomp_ldsc/gwas_extracts/seed2_thresh0.9_h2-0.1_vars1e-5/seed2_thresh0.9_h2-0.1_vars1e-5.n.tsv")
- ss <- data.frame(t(samp.size[1,2:11])) %>% mutate("names" = n[1:10])
- names(ss) <- c('count', "n")
- ss %>% arrange(count)
-    #ran
-    t2 <- Update_FL(X,W, option) #gets caught on iteration 5 here.... super weird.
-    library(ggplot2)
-    ndf <- data.frame("n" = names, "name" = paste0("X", 1:55) )
-    res <- data.frame(t2[[7]]) %>% mutate("iter" = 1:30) %>% pivot_longer(cols = paste0("X", 1:10)) %>% merge(., ndf) %>%
-      merge(., ss) %>% mutate("label" = paste0(n, "_", count))
-    ggplot(res, aes(x = iter, y  = value, color = n)) + geom_line()
-  
-    
-    ggplot(res, aes(x = iter, y  = value, color = label)) + geom_line(size = res$count/max(res$count))
-    plotFactors(t2[[1]], trait_names = n[1:10], title = "mini")
-    
-    
-    option$alpha1 <- 5
-    option$lambda1 <- 5
-    option$iter <- 10
-    t3 <- Update_FL(X,W, option)
-    res <- data.frame(t3[[7]]) %>% mutate("iter" = 1:10) %>% pivot_longer(cols = paste0("X", 1:10)) %>% merge(.,ndf) %>%
-      merge(., ss) %>% mutate("label" = paste0(n, "_", count))
-    ggplot(res, aes(x = iter, y  = value, color = label)) + geom_line(size = res$count/max(res$count))
-    plotFactors(t3[[1]], trait_names = n[1:10], title = "mini")
-    
-    #Account for heritability 
-    
-    
-    #Trying full,
-    load("/work-zfs/abattle4/ashton/snp_networks/scratch/trait_standard_error_investigation/full.run.sept.RData")
-    #X is full X
-    option$alpha1 <- 20
-    option$lambda1 <- 20
-    option$iter <- 20
-    samp.size <- fread("/work-zfs/abattle4/ashton/snp_networks/gwas_decomp_ldsc/gwas_extracts/seed2_thresh0.9_h2-0.1_vars1e-5/seed2_thresh0.9_h2-0.1_vars1e-5.n.tsv")
-    ss <- data.frame(t(samp.size[1,2:ncol(samp.size)])) %>% mutate("names" = n)
-    names(ss) <- c('count', "n")
-    ndf <- data.frame("n" = names, "name" = paste0("X", 1:55) )
-    t.full <- Update_FL(X,W, option)
-    res <- data.frame(t.full[[7]]) %>% mutate("iter" = 1:20) %>% pivot_longer(cols = paste0("X", 1:55)) %>% merge(.,ndf) %>%
-      merge(., ss) %>% mutate("label" = paste0(n, "_", count))
-    ggplot(res, aes(x = iter, y  = value, color = label)) + geom_line(size = res$count/max(res$count))  + theme(legend.position = "none")
-    
-    #I know this is so messy... diagnosing now.
-  lowvar <- which(t.full[[7]][20,] < 0.01)
-  names[lowvar] #I speculate these are the ones we really perform well on...
-  plotFactors(t.full[[1]], trait_names = n, title = "all")
-  
-
-  #based on the factors, my predicted list
-  
-  #it looks like in general, they are mostly the top ones
-  #look at reconstruction error
-  X_hat <- t.full[[2]] %*% t(t.full[[1]])
-  mse <- apply((X-X_hat)^2, 2, mean)
-  plot(mse)
-  which.min(mse)
-  recon_order <-names[order(mse)]
-  which(recon_order %in% names[lowvar])
-  #exactly those 15.
-  #So those that get low variance are those that we predict very well on.....
-  #Let's look at the opposite end
-  recon_order <-names[order(-mse)]
-  highvar
-  which(recon_order %in% names[lowvar])
-  
-  #plot of residual variance estimates bs actual
-  e.var <- apply((X-X_hat),2,var)
-  plot(apply((X-X_hat),2,var), t.full[[7]][20,], xlab = "Overall residual variance", ylab = "Output residual variance")
-  abline(a = 0,b =1, col = "blue")
-  diff <- abs(e.var -t.full[[7]][20,])
-  mismatch <- which(abs(e.var -t.full[[7]][20,]) > 0.01)
-  
-  #Try it with a reduced regularization
-  
-  option$alpha1 <- 10
-  option$lambda1 <- 10
-  option$K <- 10
-  option$iter <- 20
-  samp.size <- fread("/work-zfs/abattle4/ashton/snp_networks/gwas_decomp_ldsc/gwas_extracts/seed2_thresh0.9_h2-0.1_vars1e-5/seed2_thresh0.9_h2-0.1_vars1e-5.n.tsv")
- 
-  t.full.10 <- Update_FL(X,W, option)
-  
-}

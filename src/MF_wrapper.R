@@ -24,6 +24,7 @@ parser$add_argument("--trait_names", type = 'character', help = "Human readable 
 parser$add_argument("--weighting_scheme", type = 'character', help = "Specify either Z, B, B_SE, B_MAF", default = "B_SE")
 parser$add_argument("--alphas", type = 'character', help = "Specify which alphas to do, all in quotes, separated by ',' character")
 parser$add_argument("--lambdas", type = 'character', help = "Specify which lambdas to do, all in quotes, separated by ',' character")
+parser$add_argument("--scaled_sparsity", type = "logical", action = "store_true", default = FALSE, help = "Specify this to scale the sparsity params by dataset to be between 0 and 1")
 parser$add_argument("--output", type = "character", help = "Source file location")
 parser$add_argument("--cores", type = "numeric", help = "Number of cores", default = 2)
 parser$add_argument("--fixed_first", type = "logical", help = "if want to remove L1 prior on first factor", action = "store_true", default = FALSE)
@@ -39,7 +40,7 @@ parser$add_argument("--no_SNP_col", type="logical", default= FALSE, action = "st
 parser$add_argument('--help',type='logical',action='store_true',help='Print the help page')
 parser$helpme()
 args <- parser$get_args()
-
+message("Please make sure the first column of input data is SNP/RSIDs.")
 #TODO:
     #add in functionality in the event the objective begins to increase again. Don't want that....
   #finesse functionality to allow for trait-specific variance to be learned (?)
@@ -49,20 +50,25 @@ if(FALSE)
   args$gwas_effects <- "/work-zfs/abattle4/ashton/snp_networks/scratch/udler_td2/processed_data/beta_signed_matrix.tsv"
   args$uncertainty <- "/work-zfs/abattle4/ashton/snp_networks/scratch/udler_td2/processed_data/se_matrix.tsv"
   args$nfactors <- 6
-  args$niter <- 50
-  args$alphas <- "0.05, 0.1,0.25,0.5,0.75,1,1.25,1.5"
-  args$lambdas <- "0.05, 0.1,0.25,0.5,0.75,1,1.25,1.5"
+  args$niter <- 10
+  args$alphas <- "1e-16,0.05,0.1,0.25,0.5,0.75,1" #using 0.00001 since it doesn't like 0
+  args$lambdas <- "1e-16,0.05,0.1,0.25,0.5,0.75,1"
+  
+  args$alphas <- "1e-16,0.5,1" #using 0.00001 since it doesn't like 0
+  args$lambdas <- "1e-16,0.5,1"
+  
 args$cores <- 1
 args$fixed_first <- TRUE
 args$weighting_scheme = "B_SE"
 args$output <- "/work-zfs/abattle4/ashton/snp_networks/scratch/udler_td2/processed_data/gwasMF_"
 args$converged_obj_change <- 1
+args$scaled_sparsity <- TRUE
+args$posF <- FALSE
 
-  
 }
 #Read in the hyperparameters to explore
-alphas <- scan(text = args$alphas, what = character(), sep = ',', quiet = TRUE)
-lambdas <- scan(text = args$lambdas, what = character(), sep = ',', quiet = TRUE)
+alphas <- as.numeric(scan(text = args$alphas, what = character(), sep = ',', quiet = TRUE))
+lambdas <- as.numeric(scan(text = args$lambdas, what = character(), sep = ',', quiet = TRUE))
 output <- args$output
 
 #Load the effect size data
@@ -79,7 +85,12 @@ if(args$trait_names == "")
 } else{
     names <- scan(args$trait_names, what = character(), quiet = TRUE)
 }
+
 effects <- effects[,-1]
+
+
+
+
 #Look at the weighting scheme options...
 if(args$weighting_scheme == "Z" || args$weighting_scheme == "B")
 {
@@ -150,19 +161,64 @@ run_stats <- list()
 type_ <- args$weighting_scheme 
 run_stats <- list()
 name_list <- c()
-if(args$debug)
-{
-  message(alphas)
-  message(lambdas)
-  message(head(W))
-  message(head(X))
-  message("Debug okay?")
-  quit()
-}
+
 a_plot <- c()
 l_plot <- c()
 iter_count <- 1
+
+#3/24
+#If you want the sparsity to be between 0 and 1 always, trying this
+if(args$scaled_sparsity & FALSE)
+{
+  Y_ <- as.matrix(X) * as.matrix(W)
+  pca <- svd(Y_)
+  lambda_max_L <- t(pca$u) %*% Y_ #equiviland to diag(d) %*% t(V)
+  reg_norm_f <- norm(lambda_max_L, "I")#This goes to lambda
+  
+  lambda_max_f <- t(diag(pca$d) %*% pca$v) %*% t(Y_) 
+  reg_norm_l <- norm(lambda_max_f, "I") #this goes to alpha
+  
+  #update the alphas and others..
+  alphas <- as.numeric(alphas) * reg_norm_l
+  lambdas <- as.numeric(lambdas) * reg_norm_f
+  #tests:
+  #Sparsity of 1 should really kill everything. If there is leftover, its not high enough on either side...
+  #SParsity of 0 should have none
+  #this didn't work- we didn't quite achieve the max, and we were definately too sparse....
+  #I could try with +1, and then run. It should short out if its too big though!
+  max( abs(t(Y - mean(Y)*(1-mean(Y))) %*% X ) )/ ( alpha * n) # largest lambda value
+  max(abs(((Y_ - mean(Y_)*(1-mean(Y_))) %*% lambda_max_L) / dim(Y_)[1]))
+  out <-c()
+  for(i in 1:93)
+  {
+    out <- c(out, glmnet(x=lambda_max_L,y=Y_[i,],alpha = 1,standardize=FALSE)$lambda[1])
+  }
+  
+  #not the case my frined. 11.25319 is too small. Way too small.
+}
+
+
 #Actually run the factorization
+
+#recommend
+#3/28 attempt
+option$calibrate_sparsity <- TRUE
+max_sparsity <- Update_FL(as.matrix(X), as.matrix(W), option)
+if(option$calibrate_sparsity)
+{
+  if(all(alphas <= 1 & alphas >= 0 & lambdas <= 1 & lambdas >= 0) & option$calibrate_sparsity)
+  {
+    alphas <- alphas * max_sparsity$alpha
+    
+    lambdas <- lambdas * max_sparsity$lambda
+    
+    option$calibrate_sparsity <- FALSE
+  }else
+  {
+    message('Inputed sparsity parameters must be between 0 and 1 to use the "calibrate_sparsity option".')
+    quit()
+  }
+}
 for(a in alphas){
   for (l in lambdas){
     option[['alpha1']] <- as.numeric(a)
@@ -180,22 +236,35 @@ for(a in alphas){
         fname = paste0(output, "A", a, "_L", l, "_","K", args$ type_, ".NO_OUTPUT.png")
     } else
     {
-        fname = paste0(output, "A", a, "_L", l, "_", type_, ".png")   
+      message(paste0("Sparsity params: F ", l, ", L ", a))  
+      message(paste0("Current F sparsity: ", run$F_sparsity))  
+      message(paste0("Current L sparsity: ", run$L_sparsity))  
+      message(paste0("Number of active factors:", ncol(run$F)))
+      fname = paste0(output, "A", a, "_L", l, "_", type_, ".png")
+        title_ = paste0("A", a, "_L", l, " Type = ", args$weighting_scheme )
+          #p <- plotFactors(run[[1]],trait_names = names, title = title_)
+          print(plotFactors(run[[1]],trait_names = names, title = title_))
+          #ggsave(filename = fname, plot = p, device = "png", width = 10, height = 8)
+          #Lazy bookeeping nonsense for plots
+          name_list <- c(name_list,  paste0("A", a, "_L", l))
+          a_plot <- c(a_plot, a)
+          l_plot <- c(l_plot, l)   
     } 
-    title_ = paste0("A", a, "_L", l, " Type = ", args$weighting_scheme )
-    p <- plotFactors(run[[1]],trait_names = names, title = title_)
-    ggsave(filename = fname, plot = p, device = "png", width = 10, height = 8)
-    #Lazy bookeeping nonsense for plots
-    name_list <- c(name_list,  paste0("A", a, "_L", l))
-    a_plot <- c(a_plot, a)
-    l_plot <- c(l_plot, l)
+
   }
 }
 #Save all the data...
 #We actually need output information
 save(run_stats, file = paste0(output, "runDat.RData"))
 writeFactorMatrices(alphas, lambdas, names, run_stats,output)
-
+check_stats = max(sapply(run_stats, length))
+print(check_stats)
+print(run_stats)
+if(check_stats == 1)
+{
+  message("No runs completed. Terminating")
+  quit()
+}
 if(args$overview_plots)
 {
   factor_sparsities <- data.frame("alpha" = a_plot, "lambda" = l_plot, 

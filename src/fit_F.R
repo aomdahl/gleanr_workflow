@@ -30,7 +30,7 @@ fit_F <- function(X, W, L, option, formerF = NULL){
 	tStart   = Sys.time();
 	FactorM  = NULL;
 	r.v <- c()
-	
+	lambda_list <- c()
 	## fit each factor one by one -- because of the element-wise multiplication from weights!
 	for(col in seq(1, ncol(X))){
         
@@ -49,8 +49,12 @@ fit_F <- function(X, W, L, option, formerF = NULL){
 		# unpenalized = ~0 - suppress the intercept
 		# positive = TRUE  - constrains the estimated regression coefficients of all penalized covariates to be non-negative
 		# lambda2=1e-10    - avoid singularity in fitting
-		
-		if(option[["reweighted"]])
+		if(option$calibrate_sparsity){
+		  f <- recommendRange(response = X, penalized = dat_i[,paste0('F', seq(1, ncol(Lp)))], data=dat_i,
+		                      unpenalized = ~0, lambda1 =option[['lambda1']], lambda2=1e-10,
+		                      positive = option$posF)
+		  
+		}	else if(option[["reweighted"]])
 		{
 		  fit = penalized(response = X, penalized = dat_i[,paste0('F', seq(1, ncol(Lp)))], data=dat_i,
 		                  unpenalized = ~0, lambda1 = option[['lambda1']], lambda2=1e-10,
