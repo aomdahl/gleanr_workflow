@@ -1,5 +1,11 @@
+################################################################################################################################
+## March 2022
+## Ashton Omdahl
+## Series of scripts for approximating the sparsity parameters. This allows a user to specify a paramter space between 0 and 1, rather than exploring a wide range
+##
+################################################################################################################################
 
-
+# Helpful stuff for debugging in Rstudio.
 if(FALSE)
 {
   #source("/Users/ashton/Documents/JHU/Research/LocalData/snp_network/quickLoadData.R")
@@ -21,11 +27,16 @@ if(FALSE)
   option$K <- 5
 }
 
+
+#This is the top-level function for approximating sparsity
+#@param X: input betas of effect sizes
+#@param W: weights for the betas
+#@param option: options associated with the funciton call
+#@return max sparsity setting for L and for F
+#@Todo: allow for flexibility on the sparsity settings.
 approximateSparsity <- function(X, W, option){
-  # number of features - to avoid using T in R
-  D = ncol(X)
-  FactorM = NULL 
-  message("estimnating sparsity parameters with SVD")
+
+  message("Estimating sparsity parameters with SVD")
   Z <- X * W
   decomp <- svd(Z,nu = option$K, nv = option$K)
   L.mat <- decomp$u
@@ -36,6 +47,10 @@ approximateSparsity <- function(X, W, option){
   return(list("alpha" = max(lsparsity), "lambda" = max(fsparsity)))
 }
 
+#Estimate the MAX sparsity paramters for the loading matrix
+#@param Z: input Z scores (scaled to what will be in run)
+#@param FactorM: The F matrix we regress on
+#@return max sparsity settings for each row of Z
 sparsityL<- function(Z, FactorM, option){
   L = NULL
   tS = Sys.time()
@@ -47,14 +62,22 @@ sparsityL<- function(Z, FactorM, option){
   return(L)
 }
 
+#Helper function for individual row-wise sparsity; called by sparsityL
+#@param z: single row ofo the Z scores
+#@param FactorM: The F matrix we regress on
+#@return: the recommend range for a single row
 rowiseSparsity <- function(z, FactorM, option){
   dat_i = as.data.frame(cbind((z), FactorM));
   colnames(dat_i) = c('X', paste0('F', seq(1, ncol(FactorM))));
   
-  fit = recommendRange(response = X, penalized = dat_i[,paste0('F', seq(1, ncol(FactorM)))], data=dat_i,
+  recommendRange(response = X, penalized = dat_i[,paste0('F', seq(1, ncol(FactorM)))], data=dat_i,
                        unpenalized = ~0, lambda1 =lambdas, lambda2=1e-10)
 }
 
+#Estimate the MAX sparsity paramters for the Factor matrix
+#@param Z: input Z scores (scaled to what will be in run)
+#@param L: The Floadingmatrix we regress on
+#@return max sparsity settings for each col of Z
 sparsityF <- function(Z, L, option){
   FactorM  = NULL;
   r.v <- c()
@@ -68,22 +91,25 @@ sparsityF <- function(Z, L, option){
                         unpenalized = ~0, lambda1 =option[['lambda1']], lambda2=1e-10,
                         positive = option$posF)
     FactorM = rbind(FactorM, f);
-  
   }
   return(FactorM)
 }
 
 
 
-#Range recommender
-recommendRange <- function (response, penalized, unpenalized, lambda1 = 100, lambda2 = 0, 
-                         positive = FALSE, data, fusedl = FALSE, startbeta, startgamma, 
-                         steps = 1, epsilon = 1e-10, maxiter) 
+#Range recommender function. The workhorse that suggests the max
+# Code was yanked from penalized
+#@param response: the response variable
+#@param penalized- which variables have weights on them
+#@param unpenalized- which have no weights on them
+recommendRange <- function (response, penalized, unpenalized, lambda1 = 100, lambda2 = 0, data,  startbeta, startgamma, 
+                         steps = 1, epsilon = 1e-10, maxiter, positive = FALSE) 
 {
   trace <- FALSE
   standardize <- FALSE
   park <- FALSE
   steps = 100
+  fusedl = FALSE
   if (missing(maxiter)) 
     maxiter <- if (lambda1 == 0 && lambda2 == 0 && !positive) 
       25
@@ -129,6 +155,8 @@ recommendRange <- function (response, penalized, unpenalized, lambda1 = 100, lam
 
 
 
+#Helper function for looking ath teguts of the penalized function.
+#copied from their code base
 penalizedDEBUG <- function (response, penalized, unpenalized, lambda1 = 0, lambda2 = 0, 
                             positive = FALSE, data, fusedl = FALSE, model = c("cox", 
                                                                               "logistic", "linear", "poisson"), startbeta, startgamma, 
