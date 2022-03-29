@@ -8,7 +8,7 @@ source("/work-zfs/abattle4/ashton/snp_networks/custom_l1_factorization/src/fit_L
 source("/work-zfs/abattle4/ashton/snp_networks/custom_l1_factorization/src/plot_functions.R")
 source('/work-zfs/abattle4/ashton/snp_networks/custom_l1_factorization/src/compute_obj.R')
 source('/work-zfs/abattle4/ashton/snp_networks/custom_l1_factorization/src/buildFactorMatrices.R')
-
+source('/work-zfs/abattle4/ashton/snp_networks/custom_l1_factorization/src/sparsity_scaler.R')
 
 quickSort <- function(tab, col = 1)
 {
@@ -26,7 +26,7 @@ parser$add_argument("--alphas", type = 'character', help = "Specify which alphas
 parser$add_argument("--lambdas", type = 'character', help = "Specify which lambdas to do, all in quotes, separated by ',' character")
 parser$add_argument("--scaled_sparsity", type = "logical", action = "store_true", default = FALSE, help = "Specify this to scale the sparsity params by dataset to be between 0 and 1")
 parser$add_argument("--output", type = "character", help = "Source file location")
-parser$add_argument("--cores", type = "numeric", help = "Number of cores", default = 2)
+parser$add_argument("--cores", type = "numeric", help = "Number of cores", default = 1)
 parser$add_argument("--fixed_first", type = "logical", help = "if want to remove L1 prior on first factor", action = "store_true", default = FALSE)
 parser$add_argument("--debug", type = "logical", help = "if want debug run", action = "store_true", default = FALSE)
 parser$add_argument("--overview_plots", type = "logical", help = "To include plots showing the objective, sparsity, etc for each run", action = "store_true", default = FALSE)
@@ -170,44 +170,14 @@ a_plot <- c()
 l_plot <- c()
 iter_count <- 1
 
-#3/24
-#If you want the sparsity to be between 0 and 1 always, trying this
-if(args$scaled_sparsity & FALSE)
-{
-  Y_ <- as.matrix(X) * as.matrix(W)
-  pca <- svd(Y_)
-  lambda_max_L <- t(pca$u) %*% Y_ #equiviland to diag(d) %*% t(V)
-  reg_norm_f <- norm(lambda_max_L, "I")#This goes to lambda
-  
-  lambda_max_f <- t(diag(pca$d) %*% pca$v) %*% t(Y_) 
-  reg_norm_l <- norm(lambda_max_f, "I") #this goes to alpha
-  
-  #update the alphas and others..
-  alphas <- as.numeric(alphas) * reg_norm_l
-  lambdas <- as.numeric(lambdas) * reg_norm_f
-  #tests:
-  #Sparsity of 1 should really kill everything. If there is leftover, its not high enough on either side...
-  #SParsity of 0 should have none
-  #this didn't work- we didn't quite achieve the max, and we were definately too sparse....
-  #I could try with +1, and then run. It should short out if its too big though!
-  max( abs(t(Y - mean(Y)*(1-mean(Y))) %*% X ) )/ ( alpha * n) # largest lambda value
-  max(abs(((Y_ - mean(Y_)*(1-mean(Y_))) %*% lambda_max_L) / dim(Y_)[1]))
-  out <-c()
-  for(i in 1:93)
-  {
-    out <- c(out, glmnet(x=lambda_max_L,y=Y_[i,],alpha = 1,standardize=FALSE)$lambda[1])
-  }
-  
-  #not the case my frined. 11.25319 is too small. Way too small.
-}
-
 
 #Actually run the factorization
 
 #recommend
 #3/28 attempt
 
-max_sparsity <- Update_FL(as.matrix(X), as.matrix(W), option)
+#max_sparsity <- Update_FL(as.matrix(X), as.matrix(W), option)
+max_sparsity <- approximateSparsity(as.matrix(X), as.matrix(W), option)
 if(option$calibrate_sparsity)
 {
   if(all(alphas <= 1 & alphas >= 0 & lambdas <= 1 & lambdas >= 0) & option$calibrate_sparsity)
@@ -219,9 +189,9 @@ if(option$calibrate_sparsity)
     option$calibrate_sparsity <- FALSE
     message("Scaled amounts are:")
     message("    Lambdas:")
-    message(lambdas)
+    message(round(lambdas, digits = 3))
     message("    Alphas:")
-    message(alphas)
+    message(round(alphas, digits = 3))
   }else
   {
     message('Inputed sparsity parameters must be between 0 and 1 to use the "calibrate_sparsity option".')
@@ -256,7 +226,7 @@ for(a in alphas){
           print(plotFactors(run[[1]],trait_names = names, title = title_))
           ggsave(filename = fname, plot = p, device = "png", width = 10, height = 8)
           #Lazy bookeeping nonsense for plots
-          name_list <- c(name_list,  paste0("A", a, "_L", l))
+          name_list <- c(name_list,  paste0("A", round(a, digits = 3), "_L", round(l, digits = 3)))
           a_plot <- c(a_plot, a)
           l_plot <- c(l_plot, l)   
     } 
