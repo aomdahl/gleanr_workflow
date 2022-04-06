@@ -1,7 +1,7 @@
 #Source everything you need:
 
 #... you know, I am pretty sure yuan has a setup for this already. like to specify the desired sparsity or whatever.
-pacman::p_load(tidyr, dplyr, ggplot2, stringr, penalized, cowplot, parallel, doParallel, Xmisc)
+pacman::p_load(tidyr, dplyr, ggplot2, stringr, penalized, cowplot, parallel, doParallel, Xmisc, logr)
 source("/work-zfs/abattle4/ashton/snp_networks/custom_l1_factorization/src/fit_F.R")
 source("/work-zfs/abattle4/ashton/snp_networks/custom_l1_factorization/src/update_FL.R")
 source("/work-zfs/abattle4/ashton/snp_networks/custom_l1_factorization/src/fit_L.R")
@@ -13,6 +13,17 @@ source('/work-zfs/abattle4/ashton/snp_networks/custom_l1_factorization/src/spars
 quickSort <- function(tab, col = 1)
 {
   tab[order(tab[,..col], decreasing = TRUE),]
+}
+
+updateStatement  <- function(l,a,l_og, a_og, run,time)
+{
+  
+  log_print(paste0("Run complete. (Time: ", time, ")"))
+  log_print(paste0("Sparsity params: F ", l, ", L ", a))  
+  log_print(paste0("Sparsity scale: F ", l_og, ", L ", a_og))  
+  log_print(paste0("Current F sparsity: ", run$F_sparsity))  
+  log_print(paste0("Current L sparsity: ", run$L_sparsity))  
+  log_print(paste0("Number of active factors:", ncol(run$F)))
 }
 
 
@@ -34,6 +45,8 @@ parser$add_argument("-k", "--nfactors", type = "numeric", help = "specify the nu
 parser$add_argument("-i", "--niter", type = "numeric", help = "specify the number of iterations", default = 30)
 parser$add_argument("--posF", type = "logical", default = FALSE,  help = "Specify if you want to use the smei-nonnegative setup.", action = "store_true")
 parser$add_argument("--scale_n", type = "character", default = "",  help = "Specify the path to a matrix of sample sizes if you want to scale by sqrtN as well as W")
+parser$add_argument("--IRNT", type = "logical", default = FALSE,  help = "If you want to transform the effect sizes ", action = "store_true")
+parser$add_argument("--autofit", type = "character", default = "",  help = "Specify a 1 if you want to autofit sparsity parameter for the whole thing..")
 parser$add_argument("-f", "--converged_F_change", type="double", default=0.02,help="Change in factor matrix to call convergence")
 parser$add_argument("-o", "--converged_obj_change", type="double", default=1,help="Relative change in the objective function to call convergence")
 parser$add_argument("--no_SNP_col", type="logical", default= FALSE, action = "store_true", help="Specify this option if there is NOT first column there...")
@@ -41,6 +54,7 @@ parser$add_argument('--help',type='logical',action='store_true',help='Print the 
 parser$helpme()
 args <- parser$get_args()
 message("Please make sure the first column of input data is SNP/RSIDs.")
+lf <- log_open(paste0(args$output, "/gwasMF_log.", Sys.Date(), ".txt"))
 #TODO:
     #add in functionality in the event the objective begins to increase again. Don't want that....
   #finesse functionality to allow for trait-specific variance to be learned (?)
@@ -63,12 +77,18 @@ args$converged_obj_change <- 1
 args$scaled_sparsity <- TRUE
 args$posF <- FALSE
 args$scaled_sparsity <- TRUE
-
 }
+lf <- log_open(paste0(args$output, "/gwasMF_log.", Sys.Date(), ".txt"))
+
+
 #Read in the hyperparameters to explore
-alphas <- as.numeric(scan(text = args$alphas, what = character(), sep = ',', quiet = TRUE))
-lambdas <- as.numeric(scan(text = args$lambdas, what = character(), sep = ',', quiet = TRUE))
+alphas_og <- as.numeric(scan(text = args$alphas, what = character(), sep = ',', quiet = TRUE))
+lambdas_og <- as.numeric(scan(text = args$lambdas, what = character(), sep = ',', quiet = TRUE))
 output <- args$output
+log_print("Input sparsity settings")
+log_print(paste0("Alphas: ", alphas))
+log_print(paste0("Lambdas: ", lambdas))
+
 
 #Load the effect size data
 effects <- fread(args$gwas_effects) %>% drop_na()
@@ -86,7 +106,11 @@ if(args$trait_names == "")
 }
 
 effects <- effects[,-1]
-
+if(args$IRNT)
+{
+  library(RNOmni)
+  effects <- apply(effects, 2, RankNorm)
+}
 
 
 
@@ -121,10 +145,10 @@ if(args$weighting_scheme == "Z" || args$weighting_scheme == "B")
 
 if(args$scale_n != "")
 {
-  N <- fread(args$scale_n) %>% drop_na() %>% filter(unlist(.[,1]) %in% all_ids) %>% quickSort(.) %>% select(-1)
+  N <- fread(args$scale_n) %>% drop_na() %>% filter(unlist(.[,1]) %in% all_ids) %>% quickSort(.)
   stopifnot(!any(all_ids != N[,1]))
   N <- N %>% select(-1)
-  W <- W * 1/sqrt(N)
+  W <- W * (1/sqrt(N))
 }
 
 #set up settings
@@ -150,6 +174,7 @@ option[["parallel"]] <- FALSE
 option[["fastReg"]] <- FALSE
 option[["ridge_L"]] <- FALSE
 option[["posF"]] <- args$posF
+option[["autofit"]] <- args$autofit
 option$intercept_ubiq <- FALSE
 option$traitSpecificVar <- FALSE
 option$calibrate_sparsity <- args$scaled_sparsity
@@ -178,13 +203,21 @@ iter_count <- 1
 
 #max_sparsity <- Update_FL(as.matrix(X), as.matrix(W), option)
 max_sparsity <- approximateSparsity(as.matrix(X), as.matrix(W), option)
+
+log_print("Scaling sparsity by an SVD-based max.")
+log_print(paste0("Max alpha: ", max_sparsity$alpha))
+log_print(paste0("Max lambda: ", max_sparsity$lambda))
+
+
 if(option$calibrate_sparsity)
 {
-  if(all(alphas <= 1 & alphas >= 0 & lambdas <= 1 & lambdas >= 0) & option$calibrate_sparsity)
+  option$max_alpha <- max_sparsity$alpha
+  option$max_lambda <- max_sparsity$lambda
+  if(all(alphas_og <= 1 & alphas_og >= 0 & lambdas_og <= 1 & lambdas_og >= 0) & option$calibrate_sparsity)
   {
-    alphas <- alphas * max_sparsity$alpha
+    alphas <- alphas_og * max_sparsity$alpha
     
-    lambdas <- lambdas * max_sparsity$lambda
+    lambdas <- lambdas_og * max_sparsity$lambda
     
     option$calibrate_sparsity <- FALSE
     message("Scaled amounts are:")
@@ -197,10 +230,15 @@ if(option$calibrate_sparsity)
     message('Inputed sparsity parameters must be between 0 and 1 to use the "calibrate_sparsity option".')
     quit()
   }
+} else{
+  alphas <- alphas_og
+  lambdas <- lambdas_og
 }
-
-for(a in alphas){
-  for (l in lambdas){
+#In the case of autofit, you wouldn't go through a bunch of starting points, would you? maybe. Actually not a bad idea, huh.
+for(i in 1:length(alphas)){
+  for (j in 1:length(lambdas)){
+    a <- alphas[i]
+    l <- lambdas[j]
     option[['alpha1']] <- as.numeric(a)
     option[['lambda1']] <- as.numeric(l)
     option[["parallel"]] <- FALSE
@@ -209,6 +247,7 @@ for(a in alphas){
     end <- Sys.time()
     time <- end-start
     run_stats[[iter_count]] <- c(run, time)
+    
     iter_count <- iter_count + 1
     #things for plots
     if(length(run) == 0)
@@ -216,14 +255,10 @@ for(a in alphas){
         fname = paste0(output, "A", a, "_L", l, "_","K", args$ type_, ".NO_OUTPUT.png")
     } else
     {
-      message(paste0("Sparsity params: F ", l, ", L ", a))  
-      message(paste0("Current F sparsity: ", run$F_sparsity))  
-      message(paste0("Current L sparsity: ", run$L_sparsity))  
-      message(paste0("Number of active factors:", ncol(run$F)))
+      updateStatement(l,a,lambdas_og[j],alphas_og[i], args$run,time)
       fname = paste0(output, "A", round(a, digits = 3), "_L", round(l, digits = 3), "_", type_, ".png")
         title_ = paste0("A", round(a, digits = 3), "_L", round(l, digits = 3), " Type = ", args$weighting_scheme )
           p <- plotFactors(run[[1]],trait_names = names, title = title_)
-          print(plotFactors(run[[1]],trait_names = names, title = title_))
           ggsave(filename = fname, plot = p, device = "png", width = 10, height = 8)
           #Lazy bookeeping nonsense for plots
           name_list <- c(name_list,  paste0("A", round(a, digits = 3), "_L", round(l, digits = 3)))
@@ -236,23 +271,28 @@ for(a in alphas){
   #Save all the data...
 #We actually need output information
 save(run_stats, file = paste0(output, "runDat.RData"))
-writeFactorMatrices(alphas, lambdas, names,all_ids, run_stats,output)
+log_print(paste0("Run data written out to: ", output, "runDat.RData"))
+writeFactorMatrices(round(alphas, digits = 3), round(lambdas, digits = 3), names,all_ids, run_stats,output)
 check_stats = max(sapply(run_stats, length))
-print(check_stats)
-print(run_stats)
 if(check_stats == 1)
 {
-  message("No runs completed. Terminating")
+  log_print("No runs completed. Terminating")
   quit()
 }
 if(args$overview_plots)
 {
+  valid_run_stats <- run_stats[which(sapply(run_stats, length) > 0)] #only do ones where a full run was completed.
+  if(length(valid_run_stats) == 0)
+  {
+    log_print("Unable to write out images... no completed runs.")
+    break
+  }
   factor_sparsities <- data.frame("alpha" = a_plot, "lambda" = l_plot, 
-                                  "sparsity" = unlist(lapply(run_stats, function(x) x[[4]])), 
-                                  "runtime" = unlist(lapply(run_stats, function(x) x[[7]])))
+                                  "sparsity" = unlist(lapply(valid_run_stats, function(x) x[[4]])), 
+                                  "runtime" = unlist(lapply(valid_run_stats, function(x) x[[7]])))
   loading_sparsities <- data.frame("alpha" = a_plot, "lambda" = l_plot, 
-                                  "sparsity" = unlist(lapply(run_stats, function(x) x[[3]])), 
-                                  "runtime" = unlist(lapply(run_stats, function(x) x[[7]])))
+                                  "sparsity" = unlist(lapply(valid_run_stats, function(x) x[[3]])), 
+                                  "runtime" = unlist(lapply(valid_run_stats, function(x) x[[7]])))
   message(paste0(output, "factor_sparsity.png"))
 
   ggplot(data = factor_sparsities, aes(x = alpha, y= lambda, fill = sparsity)) + geom_tile() + 
@@ -272,8 +312,6 @@ if(args$overview_plots)
     theme_minimal(15) + ggtitle("Objective function") + ylab("Objective score")
   ggsave(paste0(output, "objective.png"), device = "png")    
 }
-
-
-
-
-
+log_print("Option settings",console = FALSE)
+log_print(option,console = FALSE)
+log_close()

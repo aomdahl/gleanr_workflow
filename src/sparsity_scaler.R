@@ -27,6 +27,52 @@ if(FALSE)
   option$K <- 5
 }
 
+##Autofiting scripts
+#4/4 observation- the problem here is that one might start to go up, pusing all the sparsity into the other one.
+MAPfitLambda <- function(matin, dim, option)
+{
+  if(dim == 1){
+    return(singleDimMAPFit(matin, option$max_lambda, option$K, option$lambda1))
+  }else{
+    print("Not yet implemented")
+  }
+}
+
+MAPfitAlpha <- function(matin, dim, option)
+{
+  if(dim == 1){
+    return(singleDimMAPFit(matin, option$max_alpha, option$K, option$alpha1))
+  }else{
+    print("Not yet implemented")
+  }
+}
+  #modified to control past going down into 
+  #this is going to the minimum at each update
+  #not sure if this is the best way to do it; an alternative would be to step along the gradient, as in 
+  #lambda - 0.01*(d/dlambda)- assume true lambda is unknown, so step towards it?
+  #This update only makes sense to prevent major jumps in this, prevent us from rapidly getting too sparse or not...
+  #I might like this other way better- it actually allows us to balance
+    singleDimMAPFit <- function(matin, max, K, curr, step_rate = 0.01)
+    {
+      #MLe approach directly
+      #If current is bigger than the new one, we step down. If map is bigger, we step up.
+      map <- (K * nrow(matin)) / (sum(abs(matin)))
+      f <- curr - sign(curr - map) * step_rate * (map)
+
+      #Gradient approach:
+      #d_dx <- (K * nrow(matin))/curr - (sum(abs(matin)))
+      #f <- curr - step_rate * d_dx
+      
+      if(f > max)
+      {
+        message("calibrated sparsity exceeds maximum estimate....")
+        print(paste("Max:", max))
+        print(paste("Estimate": f))
+        return(max)
+      } else{
+        return(f)
+      }
+    }
 
 #This is the top-level function for approximating sparsity
 #@param X: input betas of effect sizes
@@ -39,9 +85,10 @@ approximateSparsity <- function(X, W, option){
   message("Estimating sparsity parameters with SVD")
   Z <- X * W
   decomp <- svd(Z,nu = option$K, nv = option$K)
-  L.mat <- decomp$u
-  F.mat <- t(diag(decomp$d[1:option$K]) %*% t(decomp$v))
-  
+  L.mat <- decomp$u %*% diag(decomp$d[1:option$K])
+  #F.mat <- t(diag(decomp$d[1:option$K]) %*% t(decomp$v))
+  first <- svd(cor(Z))$u[,1]
+  F.mat <- cbind(sign(first), decomp$v[,1:(option$K - 1)])
   lsparsity <- sparsityL(Z, F.mat, option)
   fsparsity <- sparsityF(Z, L.mat, option)
   return(list("alpha" = max(lsparsity), "lambda" = max(fsparsity)))
