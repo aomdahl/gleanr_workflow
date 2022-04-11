@@ -1,30 +1,45 @@
-pacman::p_load(data.table, tidyr, dplyr, readr, ggplot2, stringr, penalized, cowplot, parallel, doParallel, flashr)
+pacman::p_load(data.table, tidyr, dplyr, ggplot2, stringr, penalized, cowplot, parallel, doParallel, flashr)
 #source("/Users/ashton/Documents/JHU/Research/LocalData/snp_network/sn-spMF/gwas_spMF/src/fit_F.R")
 #source("/Users/ashton/Documents/JHU/Research/LocalData/snp_network/sn-spMF/gwas_spMF/src/update_FL.R")
 #source("/Users/ashton/Documents/JHU/Research/LocalData/snp_network/sn-spMF/gwas_spMF/src/fit_L.R")
 #source("/Users/ashton/Documents/JHU/Research/LocalData/snp_network/sn-spMF/gwas_spMF/src/plot_functions.R")
 #source('/Users/ashton/Documents/JHU/Research/LocalData/snp_network/sn-spMF/gwas_spMF/src/compute_obj.R')
-quickLoadFactorization <- function(error_type)
+quickLoadFactorization <- function(error_type, local)
 {
-  z_scores <- fread("~/Documents/JHU/Research/LocalData/snp_network/seed2_thresh0.9_h2-0.1_vars1e-5/seed2_thresh0.9_h2-0.1_vars1e-5.FULL_LIST.1e-5.z.tsv") %>% drop_na() %>% arrange(ids)
-  names <- scan("~/Documents/JHU/Research/LocalData/snp_network/seed2_thresh0.9_h2-0.1_vars1e-5/seed2_thresh0.9_h2-0.1.names.tsv", what = character())
+  if(local == "MARCC")
+  {
+    dir = "/work-zfs/abattle4/ashton/snp_networks/gwas_decomp_ldsc/gwas_extracts/"
+    names <- scan("/work-zfs/abattle4/ashton/snp_networks/gwas_decomp_ldsc/trait_selections/seed2_thresh0.9_h2-0.1.names.tsv", what = character())
+    n <- names
+    samp.size <- fread("/work-zfs/abattle4/ashton/snp_networks/gwas_decomp_ldsc/gwas_extracts/seed2_thresh0.9_h2-0.1_vars1e-5/seed2_thresh0.9_h2-0.1_vars1e-5.n.tsv")
+  }else
+  {
+    dir = "~/Documents/JHU/Research/LocalData/snp_network/"
+    names <- scan("~/Documents/JHU/Research/LocalData/snp_network/seed2_thresh0.9_h2-0.1_vars1e-5/seed2_thresh0.9_h2-0.1.names.tsv", what = character())
+    n <- scan("/Users/ashton/Documents/JHU/Research/LocalData/snp_network/matrix_sparsification/seed2_thresh0.9_h2-0.1.names.tsv", what = character())
+  }
+  z_scores <- fread(paste0(dir, "seed2_thresh0.9_h2-0.1_vars1e-5/seed2_thresh0.9_h2-0.1_vars1e-5.FULL_LIST.1e-5.z.tsv")) %>% drop_na() %>% arrange(ids)
+  pvals <- fread(paste0(dir, "seed2_thresh0.9_h2-0.1_vars1e-5/seed2_thresh0.9_h2-0.1_vars1e-5.FULL_LIST.1e-5.p.tsv")) %>% drop_na() %>% arrange(ids)
+  pvals <- as.matrix(pvals %>% select(-ids))
   z <- as.matrix(z_scores %>% select(-ids))
   any(duplicated(z_scores$ids))
+  samp.sizes <- fread(paste0(dir, "seed2_thresh0.9_h2-0.1_vars1e-5/seed2_thresh0.9_h2-0.1_vars1e-5.FULL_LIST.1e-5.z.tsv")) %>% drop_na() %>% arrange(ids)
+  rsid_map <- fread(paste0(dir, "/seed2_thresh0.9_h2-0.1_vars1e-5/seed2_thresh0.9_h2-0.1_vars1e-5.pruned_rsids.txt"), header =FALSE) %>% rename("ids" = V1, "rsids" = V2) %>% 
+    filter(ids %in% z_scores$ids) %>% .[!duplicated(.$ids),] %>% arrange(ids)
+stopifnot(!any(rsid_map$ids != z_scores$ids))
   
-  rsid_map <- fread("~/Documents/JHU/Research/LocalData/snp_network/seed2_thresh0.9_h2-0.1_vars1e-5/seed2_thresh0.9_h2-0.1_vars1e-5.pruned_rsids.txt", header =FALSE) %>% rename("ids" = V1, "rsids" = V2)
-  
-  W_se <- fread("~/Documents/JHU/Research/LocalData/snp_network/seed2_thresh0.9_h2-0.1_vars1e-5/seed2_thresh0.9_h2-0.1_vars1e-5.FULL_LIST.1e-5.se.tsv") %>% 
+  W_se <- fread(paste0(dir, "seed2_thresh0.9_h2-0.1_vars1e-5/seed2_thresh0.9_h2-0.1_vars1e-5.FULL_LIST.1e-5.se.tsv")) %>% 
     drop_na() %>% filter(ids %in% z_scores$ids) %>% arrange(ids) %>% select(-ids) %>% as.matrix()
   W_se <- 1/ W_se
   
-  W_maf <- fread("~/Documents/JHU/Research/LocalData/snp_network/seed2_thresh0.9_h2-0.1_vars1e-5/seed2_thresh0.9_h2-0.1_vars1e-5.FULL_LIST.1e-5.maf.tsv") %>% drop_na() %>% filter(ids %in% z_scores$ids) %>% arrange(ids) %>% select(-ids) %>% as.matrix()
+  W_maf <- fread(paste0(dir, "seed2_thresh0.9_h2-0.1_vars1e-5/seed2_thresh0.9_h2-0.1_vars1e-5.FULL_LIST.1e-5.maf.tsv")) %>% 
+    drop_na() %>% filter(ids %in% z_scores$ids) %>% arrange(ids) %>% select(-ids) %>% as.matrix()
   
   W_varmaf <- 1/matrix(apply(W_maf, 2, function(x) 2*x*(1-x)), nrow = nrow(W_maf), ncol = ncol(W_maf))
   
-  betas <- fread("~/Documents/JHU/Research/LocalData/snp_network/seed2_thresh0.9_h2-0.1_vars1e-5/seed2_thresh0.9_h2-0.1_vars1e-5.FULL_LIST.1e-5.beta.tsv") %>% drop_na() %>% filter(ids %in% z_scores$ids) %>% arrange(ids) %>% select(-ids) %>% as.matrix() 
-  all_ids <- fread("~/Documents/JHU/Research/LocalData/snp_network/seed2_thresh0.9_h2-0.1_vars1e-5/seed2_thresh0.9_h2-0.1_vars1e-5.FULL_LIST.1e-5.beta.tsv") %>% drop_na() %>% filter(ids %in% z_scores$ids) %>% arrange(ids) %>% select(ids)
+  betas <- fread(paste0(dir, "seed2_thresh0.9_h2-0.1_vars1e-5/seed2_thresh0.9_h2-0.1_vars1e-5.FULL_LIST.1e-5.beta.tsv")) %>% drop_na() %>% filter(ids %in% z_scores$ids) %>% arrange(ids) %>% select(-ids) %>% as.matrix() 
+  all_ids <- fread(paste0(dir, "/seed2_thresh0.9_h2-0.1_vars1e-5/seed2_thresh0.9_h2-0.1_vars1e-5.FULL_LIST.1e-5.beta.tsv")) %>% drop_na() %>% filter(ids %in% z_scores$ids) %>% arrange(ids) %>% select(ids)
   W_ones <- matrix(1,nrow = nrow(W_maf), ncol = ncol(W_maf))
-  n <- scan("/Users/ashton/Documents/JHU/Research/LocalData/snp_network/matrix_sparsification/seed2_thresh0.9_h2-0.1.names.tsv", what = character())
   #id like to have the sample sizes too....  
   if(error_type == "B_SE")
   {
@@ -62,5 +77,5 @@ quickLoadFactorization <- function(error_type)
   option[['fastReg']] <- FALSE
   option$traitSpecificVar <- TRUE
   #Store stats here
-  return(list("option" = option, "X" = ret_dat, "W" = ret_err, "names" = n))
+  return(list("option" = option, "X" = ret_dat, "W" = ret_err, "names" = n, "pvals" = pvals, "vars" = rsid_map, "MAF"=W_maf))
 }
