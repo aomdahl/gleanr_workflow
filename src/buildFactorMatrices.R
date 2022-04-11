@@ -10,15 +10,26 @@ writeFactorMatrices <- function(specs1, specs2, studies, snps, run_stats, out_pr
   {
     index <- which(entry == r)
     curr_run <-  run_stats[[index]]
-    f_dat <- data.frame("rownames" = studies, curr_run[[1]])
-    #write_tsv(f_dat, paste0(out_prefix, gsub(" ", "_", r), ".factors.txt"))
-    write.table(f_dat, file = paste0(out_prefix, gsub(" ", "_", r), ".factors.txt"), sep = "\t", quote = FALSE, row.names=FALSE)
-    #how about loadings you ninny?
-    l_dat <- data.frame("snps" = snps,curr_run[[2]])
-    write.table(l_dat, file = paste0(out_prefix, gsub(" ", "_", r), ".loadings.txt"), sep = "\t", quote = FALSE, row.names=FALSE)
+    writeFactorMatrix(studies, snps, curr_run, out_prefix)
+    
   }
 }
 
+writeFactorMatrix <- function(studies, snps, curr_run,identifier, out_prefix)
+{
+  f_dat <- data.frame("rownames" = studies, curr_run[[1]])
+  #write_tsv(f_dat, paste0(out_prefix, gsub(" ", "_", r), ".factors.txt"))
+  write.table(f_dat, file = paste0(out_prefix, gsub(" ", "_", identifier), ".factors.txt"), sep = "\t", quote = FALSE, row.names=FALSE)
+  #print(paste0(out_prefix, gsub(" ", "_", identifier), ".factors.txt"))
+  #how about loadings you ninny?
+  if(length(curr_run) > 1)
+  {
+    l_dat <- data.frame("snps" = snps,curr_run[[2]])
+    write.csv(x = l_dat, file = paste0(out_prefix, gsub(" ", "_", identifier), ".loadings.txt"), quote = FALSE, row.names=FALSE)
+  }else{
+    message("No L matrix generated for this run, F too sparse.")
+  }
+}
 
 #args = commandArgs(trailingOnly=TRUE)
 #library(readr)

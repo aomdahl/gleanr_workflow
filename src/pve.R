@@ -101,7 +101,8 @@ approxPVE <- function(V,U,X,K,D = NULL)
 }
 
 
-
+#FlashR method 
+#why the 2 different ones? ppooh
 approxPVE_init <- function(X, F, L)
 {
   d = scaledMats(F,L)$d

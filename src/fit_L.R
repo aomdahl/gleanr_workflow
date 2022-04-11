@@ -99,7 +99,7 @@
     else if(option[["fixed_ubiq"]])
     {
       lambdas <- c(0, rep(option[['alpha1']], (ncol(FactorMp) - 1))) #no lasso on that first column
-      #browser()
+        #browser()
       #Okay, it seems like this is working now to estimate the max. Track over all the rows, then get the max
       fit = penalized(response = X, penalized = dat_i[,paste0('F', seq(1, ncol(FactorMp)))], data=dat_i,
                       unpenalized = ~0, lambda1 =lambdas, lambda2=1e-10,

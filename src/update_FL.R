@@ -98,8 +98,7 @@ Update_FL <- function(X, W, option, preF = NULL, preL = NULL){
     lambda = fit_F(X, W, temp_l, option, FactorM)
     return(list("alpha" = alpha, "lambda" = max(lambda)))
   }
-  
-  
+
   if(option[['parallel']]) #This is not working at all. Can't tell you why. But its not. Need to spend some time debugging at some point.
   {
     #print("Fitting L")	
@@ -142,10 +141,27 @@ Update_FL <- function(X, W, option, preF = NULL, preL = NULL){
   
   
   trait.var <- matrix(NA, option[['iter']], ncol(X))
-
+  lambda_track <- c(option[['lambda1']])
+  alpha_track <- c(option[['alpha1']])
   for (iii in seq(1, option[['iter']])){
     message(paste0("Currently on iteration ", iii))
     ## update F
+    if(option$autofit > 0 &  iii > 1)
+    {
+        #F
+        message(paste0("Current lambda: ", option$lambda1))
+        option[['lambda1']] <- MAPfitLambda(FactorM,option$autofit, option)
+        message(paste0("Updated lambda: ", option[['lambda1']]))
+        #L
+        message(paste0  ("Current alpha: ", option$alpha1))
+        option[['alpha1']] <- MAPfitAlpha(L,option$autofit,option)
+        message(paste0("Updated alpha: ", option[['alpha1']]))
+        lambda_track <- c(lambda_track, option[['lambda1']])
+        alpha_track <- c(alpha_track, option[['alpha1']])
+    }
+
+
+
     if(iii == 1)
     {
       og_option <- option[['reweighted']]
@@ -176,8 +192,13 @@ Update_FL <- function(X, W, option, preF = NULL, preL = NULL){
       L_sparsity = 1;
       factor_corr = 1;
       Nfactor = 0;
-      if(length(non_empty_f) == 0) {return();}
-      else {break}
+      if(length(non_empty_f) == 0) {
+        return()
+        }
+      else {
+        L = matrix(0, ncol(FactorM), 1)
+        break
+        }
     }
     colnames(FactorM) = seq(1, ncol(FactorM));
     
@@ -247,6 +268,10 @@ Update_FL <- function(X, W, option, preF = NULL, preL = NULL){
     }
   }
   retlist <- list("F" = FactorM, "L" = L, "L_sparsity" = L_sparsity, "F_sparsity" = F_sparsity, "K" = Nfactor, "obj" = objective, "study_var" = trait.var)
+  print("lambdas")
+  print(lambda_track)
+  print("alphas")
+  print(alpha_track)
   tEnd0 = Sys.time()
   cat('\n')
   message('Total time used for optimization: ');

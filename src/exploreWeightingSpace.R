@@ -18,7 +18,7 @@ parser$add_argument("--cores", type = "numeric", help = "Number of cores", defau
 parser$add_argument("--fixed_first", type = "logical", help = "if want to remove l1 prior on first factor", action = "store_true", default = FALSE)
 parser$add_argument("--debug", type = "logical", help = "if want debug run", action = "store_true", default = FALSE)
 parser$add_argument("-k", "--nfactors", type = "numeric", help = "specify the number of factors", default = 15)
-parser$add_argument("-i", "--niter", type = "numeric", help = "specify the number of iterations", default = 15)
+parser$add_argument("-i", "--niter", type = "numeric", help = "specify the number of iterations", default = 30)
 parser$add_argument('--help',type='logical',action='store_true',help='Print the help page')
 parser$helpme()
 args <- parser$get_args()
@@ -91,14 +91,17 @@ option[['ones_eigenvect']] <- TRUE
 option[['ones_plain']] <- FALSE
 option[['reweighted']] <- FALSE
 option[["glmnet"]] <- FALSE
-option[["parallel"]] <- TRUE
+option[["parallel"]] <- FALSE
 option[["ncores"]] <- args$cores
 option[["fixed_ubiq"]] <- args$fixed_first
+option[["intercept_ubiq"]] <- TRUE #10/14 added in, trying to account for you
 option$traitSpecificVar <- FALSE
 option$preinitialize <- FALSE
 option$ridge_L <- FALSE
 option$fastReg <- FALSE
 #Store stats here
+print(option)
+readline()
 run_stats <- list()
 
 target <- 0.87
@@ -123,11 +126,13 @@ for(a in alphas){
     option[['lambda1']] <- as.numeric(l)
     start <- Sys.time()
     run <- Update_FL(X, W, option)
+    print(run)
+    print(run[[1]])
+    readline()
     end <- Sys.time()
     time <- end-start
     run_stats[[iter_count]] <- c(run, time)
     iter_count <- iter_count + 1
-    
     if(length(run) == 0)
     {
         fname = paste0(output, "A", a, "_L", l, "_","K", args$ type_, ".NO_OUTPUT.png")
@@ -138,7 +143,8 @@ for(a in alphas){
     title_ = paste0("A", a, "_L", l, " Type = ", args$weighting_scheme )
     p <- plotFactors(run[[1]],trait_names = names, title = title_)
     ggsave(filename = fname, plot = p, device = "png", width = 10, height = 8)
-    
+    write_tsv(data.frame(run[[2]]), paste0(output, "A", a, "_L", l, "_","K", args$ type_, ".loadings.txt"))
+    write_tsv(data.frame(run[[1]]), paste0(output, "A", a, "_L", l, "_","K", args$ type_, ".Factors.txt"))
     #Lazy bookeeping nonsense for plots
     name_list <- c(name_list,  paste0("A", a, "_L", l))
     a_plot <- c(a_plot, a)

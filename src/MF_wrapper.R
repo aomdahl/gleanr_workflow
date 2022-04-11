@@ -263,7 +263,8 @@ for(i in 1:length(alphas)){
           #Lazy bookeeping nonsense for plots
           name_list <- c(name_list,  paste0("A", round(a, digits = 3), "_L", round(l, digits = 3)))
           a_plot <- c(a_plot, a)
-          l_plot <- c(l_plot, l)   
+          l_plot <- c(l_plot, l)
+        writeFactorMatrix(names, all_ids, run,  paste0("A", round(a, digits = 3), "_L", round(l, digits = 3), "_", type_), output)
     } 
 
   }
