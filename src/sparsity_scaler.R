@@ -118,7 +118,7 @@ rowiseSparsity <- function(z, FactorM, option){
   colnames(dat_i) = c('X', paste0('F', seq(1, ncol(FactorM))));
   
   recommendRange(response = X, penalized = dat_i[,paste0('F', seq(1, ncol(FactorM)))], data=dat_i,
-                       unpenalized = ~0, lambda1 =lambdas, lambda2=1e-10)
+                       unpenalized = ~0, lambda2=1e-10)
 }
 
 #Estimate the MAX sparsity paramters for the Factor matrix
