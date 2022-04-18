@@ -2,13 +2,15 @@
 
 #... you know, I am pretty sure yuan has a setup for this already. like to specify the desired sparsity or whatever.
 pacman::p_load(tidyr, dplyr, ggplot2, stringr, penalized, cowplot, parallel, doParallel, Xmisc, logr)
-source("/work-zfs/abattle4/ashton/snp_networks/custom_l1_factorization/src/fit_F.R")
-source("/work-zfs/abattle4/ashton/snp_networks/custom_l1_factorization/src/update_FL.R")
-source("/work-zfs/abattle4/ashton/snp_networks/custom_l1_factorization/src/fit_L.R")
-source("/work-zfs/abattle4/ashton/snp_networks/custom_l1_factorization/src/plot_functions.R")
-source('/work-zfs/abattle4/ashton/snp_networks/custom_l1_factorization/src/compute_obj.R')
-source('/work-zfs/abattle4/ashton/snp_networks/custom_l1_factorization/src/buildFactorMatrices.R')
-source('/work-zfs/abattle4/ashton/snp_networks/custom_l1_factorization/src/sparsity_scaler.R')
+dir ="/work-zfs/abattle4/ashton/snp_networks/custom_l1_factorization/src/"
+dir = "/Users/aomdahl/Documents/Research/LocalData/snp_networks/gwas_spMF/src/"
+source(paste0(dir, "fit_F.R"))
+source(paste0(dir, "update_FL.R"))
+source(paste0(dir, "fit_L.R"))
+source(paste0(dir, "plot_functions.R"))
+source(paste0(dir, 'compute_obj.R'))
+source(paste0(dir, 'buildFactorMatrices.R'))
+source(paste0(dir, 'sparsity_scaler.R'))
 
 quickSort <- function(tab, col = 1)
 {
@@ -54,16 +56,18 @@ parser$add_argument('--help',type='logical',action='store_true',help='Print the 
 parser$helpme()
 args <- parser$get_args()
 message("Please make sure the first column of input data is SNP/RSIDs.")
-lf <- log_open(paste0(args$output, "/gwasMF_log.", Sys.Date(), ".txt"))
+#lf <- log_open(paste0(args$output, "gwasMF_log.", Sys.Date(), ".txt"))
 #TODO:
     #add in functionality in the event the objective begins to increase again. Don't want that....
   #finesse functionality to allow for trait-specific variance to be learned (?)
 #easy enough to add in.
-if(FALSE) #For debug functionality
+if(FALSE) #For debug functionality on MARCC- this is currently loading the udler data.
 {
+  datdir <- "/work-zfs/abattle4/ashton/snp_networks/scratch/udler_td2/processed_data/"
+  datdir <- "/Users/aomdahl/Documents/Research/LocalData/snp_networks/datasets/"
   args <- list()
-  args$gwas_effects <- "/work-zfs/abattle4/ashton/snp_networks/scratch/udler_td2/processed_data/beta_signed_matrix.tsv"
-  args$uncertainty <- "/work-zfs/abattle4/ashton/snp_networks/scratch/udler_td2/processed_data/se_matrix.tsv"
+  args$gwas_effects <- paste0(datdir, "beta_signed_matrix.tsv")
+  args$uncertainty <-  paste0(datdir, "se_matrix.tsv")
   args$nfactors <- 6
   args$niter <- 10
   args$alphas <- "1e-16,0.001,0.005,0.01" #using 0.00001 since it doesn't like 0
@@ -77,8 +81,10 @@ args$converged_obj_change <- 1
 args$scaled_sparsity <- TRUE
 args$posF <- FALSE
 args$scaled_sparsity <- TRUE
+args$autofit <- 0
 }
-lf <- log_open(paste0(args$output, "/gwasMF_log.", Sys.Date(), ".txt"))
+
+lf <- log_open(paste0(args$output, "gwasMF_log.", Sys.Date(), ".txt"))
 
 
 #Read in the hyperparameters to explore

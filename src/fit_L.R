@@ -147,20 +147,14 @@
     doParallel::registerDoParallel(cl)
     L <- foreach(row =seq(1,nrow(X)), .combine = 'rbind', .packages = 'penalized') %dopar% {
       x = X[row, ];
-      print("c1")
       w = W[row, ];
-      print("c2")
-      xp = t(w * x); #elementwise multiplication
-      print("c3")
+      xp = matrix(w * x, nrow = nrow(FactorM), ncol = 1); #elementwise multiplication
       FactorMp = diag(w) %*% FactorM;  #what are we doing here?
-      print("c4")
-      dat_i = as.data.frame(cbind((xp), FactorMp));
-      print("c5")
+      dat_i = data.frame(cbind(xp, FactorMp));
       colnames(dat_i) = c('X', paste0('F', seq(1, ncol(FactorMp))));
       fit = penalized(response = X, penalized = dat_i[,paste0('F', seq(1,ncol(FactorMp)))], data=dat_i,
                       unpenalized = ~0, lambda1 = option[['alpha1']], lambda2=1e-10,
                       positive = FALSE, standardize = FALSE, trace = FALSE);
-      print("c6")
       l = coef(fit, 'all');
       #should be able to do with a one_fit command here, once we figure out why this isn't working....
       l
