@@ -25,63 +25,103 @@ if(FALSE)
   option$K <- 5
 }
 
+      #fast matrix correlation help
+library(coop)
+cor2 <- function(x) {
+1/(NROW(x)-1) * crossprod(scale(x, TRUE, TRUE))
+}
+      
+
 Update_FL <- function(X, W, option, preF = NULL, preL = NULL){
   # number of features - to avoid using T in R
   D = ncol(X)
   tStart0 = Sys.time()
   FactorM = NULL 
   #Random initialization of F
-  if(!option[['preinitialize']])
+  if(option$init_L != "")
   {
-    FactorM   = matrix(runif(D*(option[['K']] - 1)), nrow = D);
-    #Ashton added in- option to include column of 1s
-    if(option[['ones_plain']])
+      message("Initializing L rather than F.")
+      nsnps = nrows(X)
+
+      L   = matrix(runif(D*(option[['K']] - 1)), nrow = nsnps);
+      if(option$init_L == 'ones_plain')
+      {
+        message("Initializing ubiquitous factor with all ones...")
+        FactorM = cbind(rep(1, nsnps), FactorM);
+
+      }	else if(option$init_L == 'ones_eigenvect') {
+        message("1st column based on direction of svd of cor")
+        cor_struct <- cor2(t(X))
+        svd <- svd(cor_struct, nu = 1) #fortunately its symmetric, so  U and V are the same here!
+        ones <- sign(svd$u)
+      } else if(option$init_L == 'plieotropy')
+      {
+        message("1st column based svd of cor(|Z|), since plieotropy has no direction.")
+        cor_struct <- cor2(abs(t(X)))
+        svd <- svd(cor_struct, nu = 1) #fortunately its symmetric, so  U and V are the same here!
+        ones <- svd$u
+      } else {
+        #FactorM   = matrix(runif(D*(option[['K']])), nrow = D);
+        ones = matrix(runif(D*(option[['K']])), nrow = D)[,1]
+      }
+      L = cbind(ones, L);
+      # First round of optimization
+      message('Start optimization ...')
+      message(paste0('K = ', (option[['K']]), '; alpha1 = ', (option[['alpha1']]),'; lambda1 = ', (option[['lambda1']])));
+      
+      FactorM = fit_F(X, W, L, option)
+      
+  } else{
+    if(!option[['preinitialize']])
     {
-      message("Initializing ubiquitous factor with all ones...")
-      FactorM = cbind(rep(1, D), FactorM);
-    }	else if(option[['ones_eigenvect']]) {
-      message("1st column based on direction of svd of cor")
-      cor_struct <- cor(X)
-      svd <- svd(cor_struct, nu = 1) #fortunately its symmetric, so  U and V are the same here!
-      ones <- sign(svd$u)
-    } else if(option[['plieotropy']])
+      FactorM   = matrix(runif(D*(option[['K']] - 1)), nrow = D);
+      #Ashton added in- option to include column of 1s
+      if(option[['f_init']] == 'ones_plain')
+      {
+        message("Initializing ubiquitous factor with all ones...")
+        FactorM = cbind(rep(1, D), FactorM);
+      }	else if(option[['f_init']] == 'ones_eigenvect') {
+        message("1st column based on direction of svd of cor")
+        cor_struct <- cor(X)
+        svd <- svd(cor_struct, nu = 1) #fortunately its symmetric, so  U and V are the same here!
+        ones <- sign(svd$u)
+      } else if(option[['f_init']] == 'plieotropy')
+      {
+        message("1st column based svd of cor(|Z|), since plieotropy has no direction.")
+        cor_struct <- cor(abs(X))
+        svd <- svd(cor_struct, nu = 1) #fortunately its symmetric, so  U and V are the same here!
+        ones <- svd$u
+      } else {
+        #FactorM   = matrix(runif(D*(option[['K']])), nrow = D);
+        ones = matrix(runif(D*(option[['K']])), nrow = D)[,1]
+      }
+      FactorM = cbind(ones, FactorM);
+    } else #you pre-provide the first F.
     {
-      message("1st column based svd of cor(|Z|), since plieotropy has no direction.")
-      cor_struct <- cor(abs(X))
-      svd <- svd(cor_struct, nu = 1) #fortunately its symmetric, so  U and V are the same here!
-      ones <- svd$u
-    } else {
-      #FactorM   = matrix(runif(D*(option[['K']])), nrow = D);
-      ones = matrix(runif(D*(option[['K']])), nrow = D)[,1]
+      FactorM   = preF;
     }
-    FactorM = cbind(ones, FactorM);
-  } else #you pre-provide the first F.
-  {
-    FactorM   = preF;
-  }
   if(option$posF)
   {
     message("Performing semi-non-negative factorization today....")
     FactorM = abs(FactorM)
   }
-
-  # First round of optimization
-  message('Start optimization ...')
-  message(paste0('K = ', (option[['K']]), '; alpha1 = ', (option[['alpha1']]),'; lambda1 = ', (option[['lambda1']])));
-  
-  #Need to adjust for first run- no reweighting (obvi.)
-  og_option <- option[['reweighted']]
-  option[['reweighted']] <- FALSE
-
-  if(option[['parallel']]) #This is not working at all. Can't tell you why. But its not. Need to spend some time debugging at some point.
-  {
-    print("Fitting L in parallel")	
-    L = fit_L_parallel(X, W, FactorM, option, formerL = preL); #preL is by default Null, unless yo specify!
+    # First round of optimization
+    message('Start optimization ...')
+    message(paste0('K = ', (option[['K']]), '; alpha1 = ', (option[['alpha1']]),'; lambda1 = ', (option[['lambda1']])));
+    
+    #Need to adjust for first run- no reweighting (obvi.)
+    og_option <- option[['reweighted']]
+    option[['reweighted']] <- FALSE
   }
-  else
-  {
-    L = fit_L(X, W, FactorM, option, formerL = preL);
-  }
+    if(option[['parallel']]) #This is not working at all. Can't tell you why. But its not. Need to spend some time debugging at some point.
+    {
+      print("Fitting L in parallel")	
+      L = fit_L_parallel(X, W, FactorM, option, formerL = preL); #preL is by default Null, unless yo specify!
+    }
+    else
+    {
+      L = fit_L(X, W, FactorM, option, formerL = preL);
+    }
   
   option[['reweighted']] <- og_option
   objective = c(NA, compute_obj(X, W, L, FactorM, option));
@@ -133,8 +173,6 @@ Update_FL <- function(X, W, option, preF = NULL, preL = NULL){
         lambda_track <- c(lambda_track, option[['lambda1']])
         alpha_track <- c(alpha_track, option[['alpha1']])
     }
-
-
 
     if(iii == 1)
     {

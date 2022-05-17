@@ -1,7 +1,7 @@
 #Source everything you need:
 
 #... you know, I am pretty sure yuan has a setup for this already. like to specify the desired sparsity or whatever.
-pacman::p_load(tidyr, dplyr, ggplot2, stringr, penalized, cowplot, parallel, doParallel, Xmisc, logr)
+pacman::p_load(tidyr, dplyr, ggplot2, stringr, penalized, cowplot, parallel, doParallel, Xmisc, logr, coop)
 dir ="/work-zfs/abattle4/ashton/snp_networks/custom_l1_factorization/src/"
 dir = "/Users/aomdahl/Documents/Research/LocalData/snp_networks/gwas_spMF/src/"
 source(paste0(dir, "fit_F.R"))
