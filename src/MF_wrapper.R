@@ -35,6 +35,8 @@ parser$add_argument("--gwas_effects", type = 'character', help = "Specify the Z 
 parser$add_argument("--uncertainty", type = 'character', help = "Specify the path to the SE or other uncertainty file, depending on the weightin scheme.irst column is ids of each variant, column names specify the trait")
 parser$add_argument("--trait_names", type = 'character', help = "Human readable trait names, used for plotting. Ensure order is the same as the orderr in the input tables.", default = "")
 parser$add_argument("--weighting_scheme", type = 'character', help = "Specify either Z, B, B_SE, B_MAF", default = "B_SE")
+parser$add_argument("--init_F", type = 'character', default = "ones_eigenvect", help = "Specify how the F matrix should be initialized. Options are [ones_eigenvect (svd(cor(z))_1), ones_plain (alls 1s), plieotropy (svd(cor(|z|))_1)]")
+parser$add_argument("--init_L", type = 'character', default = "ones_eigenvect", help = "Specify this option to start by initializing L rather than F. Options are [random, pleiotropy]. Use empty string for none (default)", default = "")
 parser$add_argument("--alphas", type = 'character', help = "Specify which alphas to do, all in quotes, separated by ',' character")
 parser$add_argument("--lambdas", type = 'character', help = "Specify which lambdas to do, all in quotes, separated by ',' character")
 parser$add_argument("--scaled_sparsity", type = "logical", action = "store_true", default = FALSE, help = "Specify this to scale the sparsity params by dataset to be between 0 and 1")
@@ -163,17 +165,13 @@ option[['K']] <- args$nfactors
 option[['iter']] <- args$niter
 option[['convF']] <- 0
 option[['convO']] <- args$converged_obj_change
-option[['ones_mixed_std']] <- FALSE
-option[['ones_mixed_ref']] <- FALSE
 option[['ones']] <- FALSE
 option[['disp']] <- FALSE
 option[['convF']] <- 0
 option[['convO']] <- 0
-option[['ones_mixed_std']] <- FALSE
+#F matrix initialization
+option[['f_init']] <- args$init_F 
 option[["preinitialize"]] <- FALSE
-option[["ones_mixed_ref"]] <- FALSE
-option[['ones_eigenvect']] <- TRUE
-option[['ones_plain']] <- FALSE
 option[['reweighted']] <- FALSE
 option[["glmnet"]] <- FALSE
 option[["parallel"]] <- FALSE
