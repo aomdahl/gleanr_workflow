@@ -3,7 +3,7 @@
 #... you know, I am pretty sure yuan has a setup for this already. like to specify the desired sparsity or whatever.
 pacman::p_load(tidyr, dplyr, ggplot2, stringr, penalized, cowplot, parallel, doParallel, Xmisc, logr, coop)
 dir ="/work-zfs/abattle4/ashton/snp_networks/custom_l1_factorization/src/"
-dir = "/Users/aomdahl/Documents/Research/LocalData/snp_networks/gwas_spMF/src/"
+#dir = "/Users/aomdahl/Documents/Research/LocalData/snp_networks/gwas_spMF/src/"
 source(paste0(dir, "fit_F.R"))
 source(paste0(dir, "update_FL.R"))
 source(paste0(dir, "fit_L.R"))
@@ -36,7 +36,7 @@ parser$add_argument("--uncertainty", type = 'character', help = "Specify the pat
 parser$add_argument("--trait_names", type = 'character', help = "Human readable trait names, used for plotting. Ensure order is the same as the orderr in the input tables.", default = "")
 parser$add_argument("--weighting_scheme", type = 'character', help = "Specify either Z, B, B_SE, B_MAF", default = "B_SE")
 parser$add_argument("--init_F", type = 'character', default = "ones_eigenvect", help = "Specify how the F matrix should be initialized. Options are [ones_eigenvect (svd(cor(z))_1), ones_plain (alls 1s), plieotropy (svd(cor(|z|))_1)]")
-parser$add_argument("--init_L", type = 'character', default = "ones_eigenvect", help = "Specify this option to start by initializing L rather than F. Options are [random, pleiotropy]. Use empty string for none (default)", default = "")
+parser$add_argument("--init_L", type = 'character', help = "Specify this option to start by initializing L rather than F. Options are [random, pleiotropy]. Use empty string for none (default)", default = "")
 parser$add_argument("--alphas", type = 'character', help = "Specify which alphas to do, all in quotes, separated by ',' character")
 parser$add_argument("--lambdas", type = 'character', help = "Specify which lambdas to do, all in quotes, separated by ',' character")
 parser$add_argument("--scaled_sparsity", type = "logical", action = "store_true", default = FALSE, help = "Specify this to scale the sparsity params by dataset to be between 0 and 1")
@@ -171,6 +171,7 @@ option[['convF']] <- 0
 option[['convO']] <- 0
 #F matrix initialization
 option[['f_init']] <- args$init_F 
+option[['l_init']] <- args$init_L
 option[["preinitialize"]] <- FALSE
 option[['reweighted']] <- FALSE
 option[["glmnet"]] <- FALSE
@@ -208,7 +209,7 @@ iter_count <- 1
 #max_sparsity <- Update_FL(as.matrix(X), as.matrix(W), option)
 max_sparsity <- approximateSparsity(as.matrix(X), as.matrix(W), option)
 
-log_print("Scaling sparsity by an SVD-based max.")
+log_print("Estimating sparsity maximums based on an SVD approximation.")
 log_print(paste0("Max alpha: ", max_sparsity$alpha))
 log_print(paste0("Max lambda: ", max_sparsity$lambda))
 
@@ -277,7 +278,7 @@ for(i in 1:length(alphas)){
 #We actually need output information
 save(run_stats, file = paste0(output, "runDat.RData"))
 log_print(paste0("Run data written out to: ", output, "runDat.RData"))
-writeFactorMatrices(round(alphas, digits = 3), round(lambdas, digits = 3), names,all_ids, run_stats,output)
+#writeFactorMatrices(round(alphas, digits = 3), round(lambdas, digits = 3), names,all_ids, run_stats,output)
 check_stats = max(sapply(run_stats, length))
 if(check_stats == 1)
 {
