@@ -38,31 +38,32 @@ Update_FL <- function(X, W, option, preF = NULL, preL = NULL){
   tStart0 = Sys.time()
   FactorM = NULL 
   #Random initialization of F
-  if(option$init_L != "")
+  if(option$l_init != "")
   {
       message("Initializing L rather than F.")
-      nsnps = nrows(X)
+      nsnps = nrow(X)
+      library(irlba)
 
-      L   = matrix(runif(D*(option[['K']] - 1)), nrow = nsnps);
-      if(option$init_L == 'ones_plain')
+      L   = matrix(runif(nsnps*(option[['K']] - 1)), nrow = nsnps);
+      if(option$l_init == 'ones_plain')
       {
         message("Initializing ubiquitous factor with all ones...")
         FactorM = cbind(rep(1, nsnps), FactorM);
 
-      }	else if(option$init_L == 'ones_eigenvect') {
+      }	else if(option$l_init == 'ones_eigenvect') {
         message("1st column based on direction of svd of cor")
         cor_struct <- cor2(t(X))
-        svd <- svd(cor_struct, nu = 1) #fortunately its symmetric, so  U and V are the same here!
+        svd <- irlba(cor_struct, 1) #fortunately its symmetric, so  U and V are the same here!
         ones <- sign(svd$u)
-      } else if(option$init_L == 'plieotropy')
+      } else if(option$l_init == 'plieotropy')
       {
         message("1st column based svd of cor(|Z|), since plieotropy has no direction.")
         cor_struct <- cor2(abs(t(X)))
-        svd <- svd(cor_struct, nu = 1) #fortunately its symmetric, so  U and V are the same here!
+        svd <- irlba(cor_struct, 1) #fortunately its symmetric, so  U and V are the same here!
         ones <- svd$u
       } else {
         #FactorM   = matrix(runif(D*(option[['K']])), nrow = D);
-        ones = matrix(runif(D*(option[['K']])), nrow = D)[,1]
+        ones = matrix(runif(nsnps*(option[['K']])), nrow = D)[,1]
       }
       L = cbind(ones, L);
       # First round of optimization
@@ -100,29 +101,30 @@ Update_FL <- function(X, W, option, preF = NULL, preL = NULL){
     {
       FactorM   = preF;
     }
-  if(option$posF)
-  {
-    message("Performing semi-non-negative factorization today....")
-    FactorM = abs(FactorM)
-  }
-    # First round of optimization
-    message('Start optimization ...')
-    message(paste0('K = ', (option[['K']]), '; alpha1 = ', (option[['alpha1']]),'; lambda1 = ', (option[['lambda1']])));
-    
-    #Need to adjust for first run- no reweighting (obvi.)
-    og_option <- option[['reweighted']]
-    option[['reweighted']] <- FALSE
-  }
-    if(option[['parallel']]) #This is not working at all. Can't tell you why. But its not. Need to spend some time debugging at some point.
+    if(option$posF)
     {
-      print("Fitting L in parallel")	
-      L = fit_L_parallel(X, W, FactorM, option, formerL = preL); #preL is by default Null, unless yo specify!
+      message("Performing semi-non-negative factorization today....")
+      FactorM = abs(FactorM)
     }
-    else
-    {
-      L = fit_L(X, W, FactorM, option, formerL = preL);
-    }
+  }
   
+# First round of optimization
+message('Start optimization ...')
+message(paste0('K = ', (option[['K']]), '; alpha1 = ', (option[['alpha1']]),'; lambda1 = ', (option[['lambda1']])));
+
+#Need to adjust for first run- no reweighting (obvi.)
+og_option <- option[['reweighted']]
+option[['reweighted']] <- FALSE
+if(option[['ncores']] > 1) #This is not working at all. Can't tell you why. But its not. Need to spend some time debugging at some point.
+{
+  print("Fitting L in parallel")	
+  L = fit_L_parallel(X, W, FactorM, option, formerL = preL); #preL is by default Null, unless yo specify!
+}
+else
+{
+  L = fit_L(X, W, FactorM, option, formerL = preL);
+}
+
   option[['reweighted']] <- og_option
   objective = c(NA, compute_obj(X, W, L, FactorM, option));
   objective_change = c(1, 1);
@@ -142,7 +144,7 @@ Update_FL <- function(X, W, option, preF = NULL, preL = NULL){
     return()
   }
   #Alternatively, if L has only the one factor and we are doing the unwighted ubiq mode...
-  if(ncol(L) == 1 & option[["fixed_ubiq"]])
+  if(option[["fixed_ubiq"]] & (ncol(L) == 1  | ncol(FactorM) == 1))
   {
     message("Only the ubiquitous factor remains, when we are removing any L1 prior on it")
     FactorM = NULL;
@@ -269,8 +271,10 @@ Update_FL <- function(X, W, option, preF = NULL, preL = NULL){
     }
     
     oc1 = abs(objective_change[length(objective_change)])
+    #print(paste0("Objective change", oc1))
+    #print(paste0("Target objective change:",option[['convO']]))
     if(option[['convO']] >= oc1){
-      message("Ojbective function change threshold achieved!")
+      message("Objective function change threshold achieved!")
       message(paste0('Objective function converges at iteration ', iii));
       break
     }

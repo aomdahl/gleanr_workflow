@@ -40,8 +40,6 @@
     if(option$traitSpecificVar && !is.null(r.v))
     {
       xp = x / sqrt(r.v);
-      #print("In here...")
-      #xp = x #I don't think we weight the samples by the variance, do we?
       FactorMp = diag(1/sqrt(r.v)) %*% FactorM;
     }else{
       xp = unlist(w * x);
@@ -157,7 +155,7 @@
                       positive = FALSE, standardize = FALSE, trace = FALSE);
       l = coef(fit, 'all');
       #should be able to do with a one_fit command here, once we figure out why this isn't working....
-      l
+      print(l)
     }
     
     tE = Sys.time();

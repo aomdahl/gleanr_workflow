@@ -1,7 +1,7 @@
 #Source everything you need:
 
 #... you know, I am pretty sure yuan has a setup for this already. like to specify the desired sparsity or whatever.
-pacman::p_load(tidyr, dplyr, ggplot2, stringr, penalized, cowplot, parallel, doParallel, Xmisc, logr, coop)
+pacman::p_load(tidyr, dplyr, ggplot2, stringr, penalized, cowplot, parallel, doParallel, Xmisc, logr, coop, data.table)
 dir ="/work-zfs/abattle4/ashton/snp_networks/custom_l1_factorization/src/"
 #dir = "/Users/aomdahl/Documents/Research/LocalData/snp_networks/gwas_spMF/src/"
 source(paste0(dir, "fit_F.R"))
@@ -23,16 +23,37 @@ updateStatement  <- function(l,a,l_og, a_og, run,time)
   log_print(paste0("Run complete. (Time: ", time, ")"))
   log_print(paste0("Sparsity params: F ", l, ", L ", a))  
   log_print(paste0("Sparsity scale: F ", l_og, ", L ", a_og))  
-  log_print(paste0("Current F sparsity: ", run$F_sparsity))  
-  log_print(paste0("Current L sparsity: ", run$L_sparsity))  
+  log_print(paste0("Current F sparsity: ", run$F_sparsity), console = FALSE)  
+  log_print(paste0("Current L sparsity: ", run$L_sparsity), console = FALSE)  
   log_print(paste0("Number of active factors:", ncol(run$F)))
 }
 
+cleanUp <- function(matin, type = "beta")
+{
+    print(dim(matin))
+    lister <- as.vector(unlist(matin))
+  if(type == "beta")
+  {
+    bad <- is.na(lister)
+    lister[bad] <- 0
+    bad <- is.infinite(lister)
+    lister[bad] <- 0
+  }
+  if(type == "se")
+  {
+      bad <- is.infinite(lister)
+      lister[bad] <- 1000
+      bad <- is.na(lister)
+      lister[bad] <- 1
+  }
+  return(matrix(lister, nrow = nrow(matin)))
+}
 
 parser <- ArgumentParser$new()
 parser$add_description("Script to run matrix factorization")
 parser$add_argument("--gwas_effects", type = 'character', help = "Specify the Z or B file, depending on specified weighting scheme. First column is ids of each variant, column names specify the trait")
 parser$add_argument("--uncertainty", type = 'character', help = "Specify the path to the SE or other uncertainty file, depending on the weightin scheme.irst column is ids of each variant, column names specify the trait")
+parser$add_argument("--lambda_gc", type = 'character', help = "Specify the path to the genomic correction coefficients. If none provided, none used", default = "")
 parser$add_argument("--trait_names", type = 'character', help = "Human readable trait names, used for plotting. Ensure order is the same as the orderr in the input tables.", default = "")
 parser$add_argument("--weighting_scheme", type = 'character', help = "Specify either Z, B, B_SE, B_MAF", default = "B_SE")
 parser$add_argument("--init_F", type = 'character', default = "ones_eigenvect", help = "Specify how the F matrix should be initialized. Options are [ones_eigenvect (svd(cor(z))_1), ones_plain (alls 1s), plieotropy (svd(cor(|z|))_1)]")
@@ -68,21 +89,24 @@ if(FALSE) #For debug functionality on MARCC- this is currently loading the udler
   datdir <- "/work-zfs/abattle4/ashton/snp_networks/scratch/udler_td2/processed_data/"
   datdir <- "/Users/aomdahl/Documents/Research/LocalData/snp_networks/datasets/"
   args <- list()
-  args$gwas_effects <- paste0(datdir, "beta_signed_matrix.tsv")
-  args$uncertainty <-  paste0(datdir, "se_matrix.tsv")
+  #args$gwas_effects <- paste0(datdir, "beta_signed_matrix.tsv")
+  #args$uncertainty <-  paste0(datdir, "se_matrix.tsv")
+  
+  args$gwas_effects <-"/work-zfs/abattle4/ashton/snp_networks/scratch/udler_td2/variant_lists/hm3.pruned.beta.txt"
+  args$uncertainty <- "/work-zfs/abattle4/ashton/snp_networks/scratch/udler_td2/variant_lists/hm3.pruned.se.txt"
+  
+  
   args$nfactors <- 6
   args$niter <- 10
-  args$alphas <- "1e-16,0.001,0.005,0.01" #using 0.00001 since it doesn't like 0
-  args$lambdas <- "1e-16,0.001,0.005,0.01"
-
+  args$alphas <- "0.01,0.05,0.1,0.15,0.2" #using 0.00001 since it doesn't like 0
+  args$lambdas <- "0.01,0.05,0.1,0.15,0.2"
 args$cores <- 1
 args$fixed_first <- TRUE
 args$weighting_scheme = "B_SE"
-args$output <- "/work-zfs/abattle4/ashton/snp_networks/scratch/udler_td2/processed_data/gwasMF_"
+args$output <- "/work-zfs/abattle4/ashton/snp_networks/scratch/udler_td2/processed_data/gwasMF_hm3.tmp"
 args$converged_obj_change <- 1
 args$scaled_sparsity <- TRUE
 args$posF <- FALSE
-args$scaled_sparsity <- TRUE
 args$autofit <- 0
 }
 
@@ -103,17 +127,16 @@ effects <- fread(args$gwas_effects) %>% drop_na()
 effects <- effects[order(effects[,1], decreasing = TRUE),]
 all_ids <- unlist(effects[,1])
 
-
 #Get the trait names out
 if(args$trait_names == "")
 {
   message("No trait names provided. Using the identifiers in the tabular effect data instead.")
-  names <- names(effects)[-1]
+  names <- unlist(names(effects)[-1])
 } else{
     names <- scan(args$trait_names, what = character(), quiet = TRUE)
 }
 
-effects <- effects[,-1]
+effects <- as.matrix(effects[,-1])
 if(args$IRNT)
 {
   library(RNOmni)
@@ -133,7 +156,7 @@ if(args$weighting_scheme == "Z" || args$weighting_scheme == "B")
 {
   message("Scaling by 1/SE.")
   W_se <- fread(args$uncertainty) %>% drop_na() %>% filter(unlist(.[,1]) %in% all_ids) %>% quickSort(.)
-  stopifnot(!any(all_ids != W_se[,1]))
+  stopifnot(all(all_ids == W_se[,1]))
   W_se <- W_se %>% select(-1)
   W <- 1/ W_se
   X <- effects
@@ -154,21 +177,19 @@ if(args$weighting_scheme == "Z" || args$weighting_scheme == "B")
 if(args$scale_n != "")
 {
   N <- fread(args$scale_n) %>% drop_na() %>% filter(unlist(.[,1]) %in% all_ids) %>% quickSort(.)
-  stopifnot(!any(all_ids != N[,1]))
+  stopifnot(all(all_ids == N[,1]))
   N <- N %>% select(-1)
   W <- W * (1/sqrt(N))
 }
-
 #set up settings
 option <- list()
 option[['K']] <- args$nfactors
 option[['iter']] <- args$niter
 option[['convF']] <- 0
+
 option[['convO']] <- args$converged_obj_change
 option[['ones']] <- FALSE
 option[['disp']] <- FALSE
-option[['convF']] <- 0
-option[['convO']] <- 0
 #F matrix initialization
 option[['f_init']] <- args$init_F 
 option[['l_init']] <- args$init_L
@@ -207,7 +228,9 @@ iter_count <- 1
 #3/28 attempt
 
 #max_sparsity <- Update_FL(as.matrix(X), as.matrix(W), option)
-max_sparsity <- approximateSparsity(as.matrix(X), as.matrix(W), option)
+X <- cleanUp(X)
+W <- cleanUp(W, type = "se")
+max_sparsity <- approximateSparsity(X, W, option)
 
 log_print("Estimating sparsity maximums based on an SVD approximation.")
 log_print(paste0("Max alpha: ", max_sparsity$alpha))
@@ -240,6 +263,11 @@ if(option$calibrate_sparsity)
   lambdas <- lambdas_og
 }
 #In the case of autofit, you wouldn't go through a bunch of starting points, would you? maybe. Actually not a bad idea, huh.
+
+
+
+
+
 for(i in 1:length(alphas)){
   for (j in 1:length(lambdas)){
     a <- alphas[i]
@@ -260,16 +288,16 @@ for(i in 1:length(alphas)){
         fname = paste0(output, "A", a, "_L", l, "_","K", args$ type_, ".NO_OUTPUT.png")
     } else
     {
-      updateStatement(l,a,lambdas_og[j],alphas_og[i], args$run,time)
+      updateStatement(l,a,lambdas_og[j],alphas_og[i], run,time)
       fname = paste0(output, "A", round(a, digits = 3), "_L", round(l, digits = 3), "_", type_, ".png")
         title_ = paste0("A", round(a, digits = 3), "_L", round(l, digits = 3), " Type = ", args$weighting_scheme )
-          p <- plotFactors(run[[1]],trait_names = names, title = title_)
+          p <- plotFactors(run[[1]],trait_names = names, title = title_, scale.cols = TRUE)
           ggsave(filename = fname, plot = p, device = "png", width = 10, height = 8)
           #Lazy bookeeping nonsense for plots
-          name_list <- c(name_list,  paste0("A", round(a, digits = 3), "_L", round(l, digits = 3)))
+          name_list <- c(name_list,  paste0("A", round(a, digits = 6), "_L", round(l, digits = 6)))
           a_plot <- c(a_plot, a)
           l_plot <- c(l_plot, l)
-        writeFactorMatrix(names, all_ids, run,  paste0("A", round(a, digits = 3), "_L", round(l, digits = 3), "_", type_), output)
+        writeFactorMatrix(names, all_ids, run,  paste0("A", round(a, digits = 6), "_L", round(l, digits = 6), "_", type_), output)
     } 
 
   }
@@ -313,7 +341,10 @@ if(args$overview_plots)
 
   objectives <- data.frame(lapply(run_stats, function(x) x[[6]])) %>% drop_na() 
   colnames(objectives) <- name_list
+  print(objectives)
+  readline()
   objectives <- objectives %>% mutate("iteration" =1:nrow(objectives)) %>% reshape2::melt(., id.vars = "iteration")
+  print(objectives)
   ggplot(data = objectives, aes(x = iteration, y = value, color = variable)) + geom_point() + geom_line() + 
     theme_minimal(15) + ggtitle("Objective function") + ylab("Objective score")
   ggsave(paste0(output, "objective.png"), device = "png")    
