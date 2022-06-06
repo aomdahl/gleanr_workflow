@@ -26,7 +26,7 @@
   
   suppressWarnings(library(penalized))
   library(foreach)
-  library(parallel)
+  library(doParallel)
   
   #Function for running the fitting step. Options include
   #reweighted: this uses the previous iteration to initialize the current one. Thought it might provide a speed boost, but the difference seemed to be minimal.
@@ -138,11 +138,23 @@
 
 #Something is jacked up with this.
   fit_L_parallel <- function(X, W, FactorM, option, formerL){
+
     L = NULL
     tS = Sys.time()
-    cl <- parallel::makeCluster(option[["ncores"]])
+    cl <- parallel::makeCluster(option[["ncores"]], outfile = "TEST.txt")
+    iterations <- nrow(X)
     doParallel::registerDoParallel(cl)
+    #pb <- txtProgressBar(0, iterations, style = 2)
+    writeLines(c(""), "log.txt")
     L <- foreach(row =seq(1,nrow(X)), .combine = 'rbind', .packages = 'penalized') %dopar% {
+      #setTxtProgressBar(pb, row)
+      if(row %% 10 == 0)
+       {
+        sink("log.txt", append=TRUE)
+      cat(paste("Starting iteration",row,"\n"))
+      sink()
+}
+      
       x = X[row, ];
       w = W[row, ];
       xp = matrix(w * x, nrow = nrow(FactorM), ncol = 1); #elementwise multiplication
@@ -153,8 +165,7 @@
                       unpenalized = ~0, lambda1 = option[['alpha1']], lambda2=1e-10,
                       positive = FALSE, standardize = FALSE, trace = FALSE);
       l = coef(fit, 'all');
-      #should be able to do with a one_fit command here, once we figure out why this isn't working....
-      print(l)
+      l
     }
     
     tE = Sys.time();

@@ -1,7 +1,7 @@
 #Source everything you need:
 
 #... you know, I am pretty sure yuan has a setup for this already. like to specify the desired sparsity or whatever.
-pacman::p_load(tidyr, dplyr, ggplot2, stringr, penalized, cowplot, parallel, doParallel, Xmisc, logr, coop, data.table)
+pacman::p_load(tidyr, plyr, dplyr, ggplot2, stringr, penalized, cowplot, parallel, doParallel, Xmisc, logr, coop, data.table)
 dir ="/work-zfs/abattle4/ashton/snp_networks/custom_l1_factorization/src/"
 #dir = "/Users/aomdahl/Documents/Research/LocalData/snp_networks/gwas_spMF/src/"
 source(paste0(dir, "fit_F.R"))
@@ -11,6 +11,7 @@ source(paste0(dir, "plot_functions.R"))
 source(paste0(dir, 'compute_obj.R'))
 source(paste0(dir, 'buildFactorMatrices.R'))
 source(paste0(dir, 'sparsity_scaler.R'))
+source(paste0(dir, 'cophenetic_calc.R'))
 
 quickSort <- function(tab, col = 1)
 {
@@ -75,6 +76,9 @@ parser$add_argument("--autofit", type = "character", default = "",  help = "Spec
 parser$add_argument("-f", "--converged_F_change", type="double", default=0.02,help="Change in factor matrix to call convergence")
 parser$add_argument("-o", "--converged_obj_change", type="double", default=1,help="Relative change in the objective function to call convergence")
 parser$add_argument("--no_SNP_col", type="logical", default= FALSE, action = "store_true", help="Specify this option if there is NOT first column there...")
+parser$add_argument("--parameter_optimization", type="numeric", default= 1, action = "store_true", help="Specify how many iterations to run to get the cophenetic optimization, etc. ")
+parser$add_argument("--genomic_correction", type="character", default= "", help="Specify path to genomic correction data, one per snp.TODO: Also has the flexibility to expand")
+
 parser$add_argument('--help',type='logical',action='store_true',help='Print the help page')
 parser$helpme()
 args <- parser$get_args()
@@ -94,8 +98,8 @@ if(FALSE) #For debug functionality on MARCC- this is currently loading the udler
   
   args$gwas_effects <-"/work-zfs/abattle4/ashton/snp_networks/scratch/udler_td2/variant_lists/hm3.pruned.beta.txt"
   args$uncertainty <- "/work-zfs/abattle4/ashton/snp_networks/scratch/udler_td2/variant_lists/hm3.pruned.se.txt"
-  
-  
+  args$scale_n <- "/work-zfs/abattle4/ashton/snp_networks/scratch/udler_td2/variant_lists/hm3.pruned.N.txt"
+  args$genomic_correction <- "/work-zfs/abattle4/ashton/snp_networks/scratch/udler_td2/variant_lists/hm3.pruned.GC.txt"
   args$nfactors <- 6
   args$niter <- 10
   args$alphas <- "0.01,0.05,0.1,0.15,0.2" #using 0.00001 since it doesn't like 0
@@ -123,8 +127,8 @@ log_print(paste0("Lambdas: ", lambdas))
 
 
 #Load the effect size data
-effects <- fread(args$gwas_effects) %>% drop_na()
-effects <- effects[order(effects[,1], decreasing = TRUE),]
+effects <- fread(args$gwas_effects) %>% drop_na() %>% quickSort(.)
+#effects <- effects[order(effects[,1], decreasing = TRUE),]
 all_ids <- unlist(effects[,1])
 
 #Get the trait names out
@@ -137,6 +141,7 @@ if(args$trait_names == "")
 }
 
 effects <- as.matrix(effects[,-1])
+
 if(args$IRNT)
 {
   library(RNOmni)
@@ -177,9 +182,33 @@ if(args$weighting_scheme == "Z" || args$weighting_scheme == "B")
 if(args$scale_n != "")
 {
   N <- fread(args$scale_n) %>% drop_na() %>% filter(unlist(.[,1]) %in% all_ids) %>% quickSort(.)
-  stopifnot(all(all_ids == N[,1]))
-  N <- N %>% select(-1)
+  if(!all(all_ids == N[,1]))
+{
+    #This would occur if we are missing variants.
+    message("Counts not provided for all variants. Using the average where variants missing")
+    vars <- all_ids[!(all_ids %in% unlist(N[,1]))]
+    m <- colMeans(N[,-1])
+    ndiff <- nrow(X) - nrow(N)
+    pre <- lapply(1:ndiff, function(x) unlist(m))
+    
+    first <- do.call("rbind", pre)
+    new_rows <- cbind("SNP" = vars,first)
+    N <- rbind(N, new_rows) %>% quickSort(.)
+    stopifnot(all(all_ids == N[,1]))
+}
+  N <- as.matrix(N %>% select(-1) %>% apply(., 2, as.numeric))
   W <- W * (1/sqrt(N))
+}
+
+if(args$genomic_correction != "")
+{
+  log_print("Including genomic correction in factorization...")
+  GC <-  fread(args$genomic_correction) %>% drop_na() %>% filter(unlist(.[,1]) %in% all_ids) %>% quickSort(.)
+  if(!all(all_ids == GC[,1])) {
+    message("genomic correction values not in correct order, please advise...")
+    GC <- as.matrix(GC %>% select(-1) %>% apply(., 2, as.numeric))
+    W <- W * (1/sqrt(GC))
+  }
 }
 #set up settings
 option <- list()
@@ -211,21 +240,8 @@ if(args$cores > 1)
 }
 option[["ncores"]] <- args$cores
 option[["fixed_ubiq"]] <- args$fixed_first
-#Store stats here
-run_stats <- list()
-type_ <- args$weighting_scheme 
-run_stats <- list()
-name_list <- c()
-
-a_plot <- c()
-l_plot <- c()
-iter_count <- 1
 
 
-#Actually run the factorization
-
-#recommend
-#3/28 attempt
 
 #max_sparsity <- Update_FL(as.matrix(X), as.matrix(W), option)
 X <- cleanUp(X)
@@ -241,16 +257,15 @@ if(option$calibrate_sparsity)
 {
   option$max_alpha <- max_sparsity$alpha
   option$max_lambda <- max_sparsity$lambda
-  if(all(alphas_og <= 1 & alphas_og >= 0 & lambdas_og <= 1 & lambdas_og >= 0) & option$calibrate_sparsity)
+  if(all(alphas_og <= 1) & all(alphas_og >= 0) & all(lambdas_og <= 1) & all(lambdas_og >= 0) & option$calibrate_sparsity)
   {
     alphas <- alphas_og * max_sparsity$alpha
-    
     lambdas <- lambdas_og * max_sparsity$lambda
     
     option$calibrate_sparsity <- FALSE
     message("Scaled amounts are:")
     message("    Lambdas:")
-    message(round(lambdas, digits = 3))
+    message(paste(round(lambdas, digits = 2)))
     message("    Alphas:")
     message(round(alphas, digits = 3))
   }else
@@ -262,93 +277,152 @@ if(option$calibrate_sparsity)
   alphas <- alphas_og
   lambdas <- lambdas_og
 }
-#In the case of autofit, you wouldn't go through a bunch of starting points, would you? maybe. Actually not a bad idea, huh.
 
 
-
-
-
-for(i in 1:length(alphas)){
-  for (j in 1:length(lambdas)){
-    a <- alphas[i]
-    l <- lambdas[j]
-    option[['alpha1']] <- as.numeric(a)
-    option[['lambda1']] <- as.numeric(l)
-    option[["parallel"]] <- FALSE
-    start <- Sys.time()
-    run <- Update_FL(as.matrix(X), as.matrix(W), option)
-    end <- Sys.time()
-    time <- end-start
-    run_stats[[iter_count]] <- c(run, time)
-    
-    iter_count <- iter_count + 1
-    #things for plots
-    if(length(run) == 0)
-    {
+for(opti in 1:args$parameter_optimization) 
+{
+  message(paste0("On optimization run number: ", opti))
+  #Store stats here
+  run_stats <- list()
+  type_ <- args$weighting_scheme 
+  run_stats <- list()
+  name_list <- c()
+  
+  a_plot <- c()
+  l_plot <- c()
+  iter_count <- 1
+  #In the case of autofit, you wouldn't go through a bunch of starting points, would you? maybe. Actually not a bad idea, huh.
+  
+  for(i in 1:length(alphas)){
+    for (j in 1:length(lambdas)){
+      a <- alphas[i]
+      l <- lambdas[j]
+      option[['alpha1']] <- as.numeric(a)
+      option[['lambda1']] <- as.numeric(l)
+      option[["parallel"]] <- FALSE
+      start <- Sys.time()
+      run <- Update_FL(as.matrix(X), as.matrix(W), option)
+      end <- Sys.time()
+      time <- end-start
+      run_stats[[iter_count]] <- c(run, time)
+      
+      iter_count <- iter_count + 1
+      #things for plots
+      if(length(run) == 0)
+      {
         fname = paste0(output, "A", a, "_L", l, "_","K", args$ type_, ".NO_OUTPUT.png")
-    } else
-    {
-      updateStatement(l,a,lambdas_og[j],alphas_og[i], run,time)
-      fname = paste0(output, "A", round(a, digits = 3), "_L", round(l, digits = 3), "_", type_, ".png")
-        title_ = paste0("A", round(a, digits = 3), "_L", round(l, digits = 3), " Type = ", args$weighting_scheme )
-          p <- plotFactors(run[[1]],trait_names = names, title = title_, scale.cols = TRUE)
-          ggsave(filename = fname, plot = p, device = "png", width = 10, height = 8)
-          #Lazy bookeeping nonsense for plots
-          name_list <- c(name_list,  paste0("A", round(a, digits = 6), "_L", round(l, digits = 6)))
-          a_plot <- c(a_plot, a)
-          l_plot <- c(l_plot, l)
-        writeFactorMatrix(names, all_ids, run,  paste0("A", round(a, digits = 6), "_L", round(l, digits = 6), "_", type_), output)
-    } 
-
+      } else
+      {
+        updateStatement(l,a,lambdas_og[j],alphas_og[i], run,time)
+        fname = paste0(output, "A", round(a, digits = 4), "_L", round(l, digits = 4), "_", type_,".", opti, ".png")
+        title_ = paste0("A", round(a, digits = 4), "_L", round(l, digits = 4), " Type = ", args$weighting_scheme )
+        p <- plotFactors(run[[1]],trait_names = names, title = title_, scale.cols = TRUE)
+        ggsave(filename = fname, plot = p, device = "png", width = 10, height = 8)
+        #Lazy bookeeping nonsense for plots
+        name_list <- c(name_list,  paste0("A", round(a, digits = 6), "_L", round(l, digits = 6)))
+        a_plot <- c(a_plot, a)
+        l_plot <- c(l_plot, l)
+        writeFactorMatrix(names, all_ids, run,  paste0("A", round(a, digits = 6), "_L", round(l, digits = 6), "_", type_, ".", opti), output)
+      } 
+      
+    }
   }
-}
   #Save all the data...
-#We actually need output information
-save(run_stats, file = paste0(output, "runDat.RData"))
-log_print(paste0("Run data written out to: ", output, "runDat.RData"))
-#writeFactorMatrices(round(alphas, digits = 3), round(lambdas, digits = 3), names,all_ids, run_stats,output)
-check_stats = max(sapply(run_stats, length))
-if(check_stats == 1)
-{
-  log_print("No runs completed. Terminating")
-  quit()
-}
-if(args$overview_plots)
-{
-  valid_run_stats <- run_stats[which(sapply(run_stats, length) > 0)] #only do ones where a full run was completed.
-  if(length(valid_run_stats) == 0)
+  #We actually need output information
+  save(run_stats, file = paste0(output, "runDat.", opti, ".RData"))
+  log_print(paste0("Run data written out to: ", output, "runDat.RData"))
+  #writeFactorMatrices(round(alphas, digits = 3), round(lambdas, digits = 3), names,all_ids, run_stats,output)
+  check_stats = max(sapply(run_stats, length))
+  if(check_stats == 1)
   {
-    log_print("Unable to write out images... no completed runs.")
-    break
+    log_print("No runs completed. Terminating")
+    quit()
   }
-  factor_sparsities <- data.frame("alpha" = a_plot, "lambda" = l_plot, 
-                                  "sparsity" = unlist(lapply(valid_run_stats, function(x) x[[4]])), 
-                                  "runtime" = unlist(lapply(valid_run_stats, function(x) x[[7]])))
-  loading_sparsities <- data.frame("alpha" = a_plot, "lambda" = l_plot, 
-                                  "sparsity" = unlist(lapply(valid_run_stats, function(x) x[[3]])), 
-                                  "runtime" = unlist(lapply(valid_run_stats, function(x) x[[7]])))
-  message(paste0(output, "factor_sparsity.png"))
-
-  ggplot(data = factor_sparsities, aes(x = alpha, y= lambda, fill = sparsity)) + geom_tile() + 
-    theme_minimal(15) + scale_fill_gradient(low="white", high="navy") + ggtitle("Factor Sparsity")
-  ggsave(paste0(output, "factor_sparsity.png"), device = "png")  
-
-  ggplot(data = loading_sparsities, aes(x = alpha, y= lambda, fill = sparsity)) + geom_tile() + 
-    theme_minimal(15) + scale_fill_gradient2(low="white", high="navy", limits = c(0,max(loading_sparsities$sparsity))) + ggtitle("Loading Sparsity")
-  ggsave(paste0(output, "loading_sparsity.png"), device = "png")  
-
-  #Plot the change in objective function for each one too....
-
-  objectives <- data.frame(lapply(run_stats, function(x) x[[6]])) %>% drop_na() 
-  colnames(objectives) <- name_list
-  print(objectives)
-  readline()
-  objectives <- objectives %>% mutate("iteration" =1:nrow(objectives)) %>% reshape2::melt(., id.vars = "iteration")
-  print(objectives)
-  ggplot(data = objectives, aes(x = iteration, y = value, color = variable)) + geom_point() + geom_line() + 
-    theme_minimal(15) + ggtitle("Objective function") + ylab("Objective score")
-  ggsave(paste0(output, "objective.png"), device = "png")    
+  if(args$overview_plots)
+  {
+    valid_run_stats <- run_stats[which(sapply(run_stats, length) > 0)] #only do ones where a full run was completed.
+    if(length(valid_run_stats) == 0)
+    {
+      log_print("Unable to write out images... no completed runs.")
+      break
+    }
+    factor_sparsities <- data.frame("alpha" = a_plot, "lambda" = l_plot, 
+                                    "sparsity" = unlist(lapply(valid_run_stats, function(x) x[[4]])), 
+                                    "runtime" = unlist(lapply(valid_run_stats, function(x) x[[7]])))
+    loading_sparsities <- data.frame("alpha" = a_plot, "lambda" = l_plot, 
+                                     "sparsity" = unlist(lapply(valid_run_stats, function(x) x[[3]])), 
+                                     "runtime" = unlist(lapply(valid_run_stats, function(x) x[[7]])))
+    message(paste0(output, "factor_sparsity", opti, ".png"))
+    
+    ggplot(data = factor_sparsities, aes(x = alpha, y= lambda, fill = sparsity)) + geom_tile() + 
+      theme_minimal(15) + scale_fill_gradient(low="white", high="navy") + ggtitle("Factor Sparsity")
+    ggsave(paste0(output, "factor_sparsity.", opti, ".png"), device = "png")  
+    
+    ggplot(data = loading_sparsities, aes(x = alpha, y= lambda, fill = sparsity)) + geom_tile() + 
+      theme_minimal(15) + scale_fill_gradient2(low="white", high="navy", limits = c(0,max(loading_sparsities$sparsity))) + ggtitle("Loading Sparsity")
+    ggsave(paste0(output, "loading_sparsity", opti, ".png"), device = "png")  
+    
+    #Plot the change in objective function for each one too....
+    
+   # objectives <- data.frame(lapply(run_stats, function(x) x[[6]])) %>% drop_na() 
+   # colnames(objectives) <- name_list
+   # objectives <- objectives %>% mutate("iteration" =1:nrow(objectives)) %>% reshape2::melt(., id.vars = "iteration")
+   # ggplot(data = objectives, aes(x = iteration, y = value, color = variable)) + geom_point() + geom_line() + 
+      theme_minimal(15) + ggtitle("Objective function") + ylab("Objective score")
+   # ggsave(paste0(output, "objective.", opti, ".png"), device = "png")    
+  }
+  log_print(paste0("Completed iteration number ", opti))
+  log_print("----------------------------------")
+  log_print("")
 }
+
+####Propose the optimal solution
+param.combos <- unlist(lapply(alphas, function(x) 
+  lapply(lambdas, function(y) paste0("A", x, "_L", y))))
+
+original.combos <- unlist(lapply(alphas_og, function(x) 
+  lapply(lambdas_og, function(y) paste0("A", x, "_L", y))))
+
+if(args$parameter_optimization > 1)
+{
+  #Go through all the attempted parameter options
+  fmats <- list()
+  #lmats <- list()
+  #initialize storage
+  len.tries = length(alphas) * length(lambdas)
+  for(i in 1:len.tries)
+  {
+    fmats[[i]] <- list()
+    #lmats[[i]] <- list()
+  }
+  
+  for(opti in 1:args$parameter_optimization)
+  {
+    #drop ones with only one factor
+    dpath = paste0(output, "runDat.", opti, ".RData")
+    load(dpath)
+    for(paramcombo in 1:len.tries)
+    {
+      fmats[[paramcombo]][[opti]] <- run_stats[[paramcombo]][[1]]
+      #lmats[[paramcombo]][[opti]] <- run_stats[[paramcombo]][[2]]
+    }
+    rm(run_stats)
+  }
+  coph.results <- lapply(fmats, copheneticAssessment) #give a list of the 30
+  corr.results <- lapply(fmats, correlationAssessment) #give a list of the 30
+  
+  #plot cophenetic results
+  top.result <- which.max(coph.results)
+  message("Based on finished results, we recommend raw ALPHA, LAMBDA: ", param.combos[top.result])
+  message("This corresponds to scaled values of ALPHA, LAMBDA: ", original.combos[top.result])
+  
+  #report the average across these runs for that one.
+  out <- data.frame("Coph" = unlist(coph.results), "Corr_frob" = unlist(corr.results), "R" =param.combos, "R_og" =  original.combos)
+  write.table(out, file =  paste0(output, "performance_summary_file.txt"), sep = "\t", quote = FALSE, row.names=FALSE)
+  print(out %>% filter(Coph > 0.9) %>% arrange(Corr_frob))
+ 
+}
+
 log_print("Option settings",console = FALSE)
 log_print(option,console = FALSE)
 log_close()
