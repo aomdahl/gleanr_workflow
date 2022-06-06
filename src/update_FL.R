@@ -271,9 +271,9 @@ else
     }
     
     oc1 = abs(objective_change[length(objective_change)])
-    #print(paste0("Objective change", oc1))
-    #print(paste0("Target objective change:",option[['convO']]))
-    if(option[['convO']] >= oc1){
+    print(paste0("Objective change: ", oc1))
+    print(paste0("Target objective change: ",option[['convO']]))
+    if(oc1 < option[['convO']]){
       message("Objective function change threshold achieved!")
       message(paste0('Objective function converges at iteration ', iii));
       break
@@ -284,10 +284,6 @@ else
     }
   }
   retlist <- list("F" = FactorM, "L" = L, "L_sparsity" = L_sparsity, "F_sparsity" = F_sparsity, "K" = Nfactor, "obj" = objective, "study_var" = trait.var)
-  print("lambdas")
-  print(lambda_track)
-  print("alphas")
-  print(alpha_track)
   tEnd0 = Sys.time()
   cat('\n')
   message('Total time used for optimization: ');

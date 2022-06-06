@@ -141,7 +141,6 @@
     L = NULL
     tS = Sys.time()
     cl <- parallel::makeCluster(option[["ncores"]])
-    print("c-1")
     doParallel::registerDoParallel(cl)
     L <- foreach(row =seq(1,nrow(X)), .combine = 'rbind', .packages = 'penalized') %dopar% {
       x = X[row, ];
