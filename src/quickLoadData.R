@@ -8,10 +8,10 @@ quickLoadFactorization <- function(error_type, local)
 {
   if(local == "MARCC")
   {
-    dir = "/work-zfs/abattle4/ashton/snp_networks/gwas_decomp_ldsc/gwas_extracts/"
-    names <- scan("/work-zfs/abattle4/ashton/snp_networks/gwas_decomp_ldsc/trait_selections/seed2_thresh0.9_h2-0.1.names.tsv", what = character())
+    dir = "/scratch16/abattle4/ashton/snp_networks/gwas_decomp_ldsc/gwas_extracts/"
+    names <- scan("/scratch16/abattle4/ashton/snp_networks/gwas_decomp_ldsc/trait_selections/seed2_thresh0.9_h2-0.1.names.tsv", what = character())
     n <- names
-    samp.size <- fread("/work-zfs/abattle4/ashton/snp_networks/gwas_decomp_ldsc/gwas_extracts/seed2_thresh0.9_h2-0.1_vars1e-5/seed2_thresh0.9_h2-0.1_vars1e-5.n.tsv")
+    samp.size <- fread("/scratch16/abattle4/ashton/snp_networks/gwas_decomp_ldsc/gwas_extracts/seed2_thresh0.9_h2-0.1_vars1e-5/seed2_thresh0.9_h2-0.1_vars1e-5.n.tsv")
   }else
   {
     dir = "~/Documents/JHU/Research/LocalData/snp_network/"
@@ -23,11 +23,14 @@ quickLoadFactorization <- function(error_type, local)
   pvals <- as.matrix(pvals %>% select(-ids))
   z <- as.matrix(z_scores %>% select(-ids))
   any(duplicated(z_scores$ids))
-  samp.sizes <- fread(paste0(dir, "seed2_thresh0.9_h2-0.1_vars1e-5/seed2_thresh0.9_h2-0.1_vars1e-5.FULL_LIST.1e-5.z.tsv")) %>% drop_na() %>% arrange(ids)
+  
+  samp.sizes <- fread(paste0(dir, "seed2_thresh0.9_h2-0.1_vars1e-5/seed2_thresh0.9_h2-0.1_vars1e-5.n.tsv")) %>% drop_na() %>% arrange(ids)
+  
+  
   rsid_map <- fread(paste0(dir, "/seed2_thresh0.9_h2-0.1_vars1e-5/seed2_thresh0.9_h2-0.1_vars1e-5.pruned_rsids.txt"), header =FALSE) %>% rename("ids" = V1, "rsids" = V2) %>% 
     filter(ids %in% z_scores$ids) %>% .[!duplicated(.$ids),] %>% arrange(ids)
 stopifnot(!any(rsid_map$ids != z_scores$ids))
-  
+  sample_sizes <- fread(paste0(dir, "seed2_thresh0.9_h2-0.1_vars1e-5/seed2_thresh0.9_h2-0.1_vars1e-5.FULL_LIST.1e-5.se.tsv")) 
   W_se <- fread(paste0(dir, "seed2_thresh0.9_h2-0.1_vars1e-5/seed2_thresh0.9_h2-0.1_vars1e-5.FULL_LIST.1e-5.se.tsv")) %>% 
     drop_na() %>% filter(ids %in% z_scores$ids) %>% arrange(ids) %>% select(-ids) %>% as.matrix()
   W_se <- 1/ W_se
@@ -77,5 +80,5 @@ stopifnot(!any(rsid_map$ids != z_scores$ids))
   option[['fastReg']] <- FALSE
   option$traitSpecificVar <- TRUE
   #Store stats here
-  return(list("option" = option, "X" = ret_dat, "W" = ret_err, "names" = n, "pvals" = pvals, "vars" = rsid_map, "MAF"=W_maf))
+  return(list("option" = option, "X" = ret_dat, "W" = ret_err, "names" = n, "pvals" = pvals, "vars" = rsid_map, "MAF"=W_maf, "N"= samp.sizes))
 }
