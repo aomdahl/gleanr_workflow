@@ -2,7 +2,7 @@
 
 #... you know, I am pretty sure yuan has a setup for this already. like to specify the desired sparsity or whatever.
 pacman::p_load(tidyr, plyr, dplyr, ggplot2, stringr, penalized, cowplot, parallel, doParallel, Xmisc, logr, coop, data.table)
-dir ="/work-zfs/abattle4/ashton/snp_networks/custom_l1_factorization/src/"
+dir ="/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/src/"
 #dir = "/Users/aomdahl/Documents/Research/LocalData/snp_networks/gwas_spMF/src/"
 source(paste0(dir, "fit_F.R"))
 source(paste0(dir, "update_FL.R"))
@@ -90,16 +90,16 @@ message("Please make sure the first column of input data is SNP/RSIDs.")
 #easy enough to add in.
 if(FALSE) #For debug functionality on MARCC- this is currently loading the udler data.
 {
-  datdir <- "/work-zfs/abattle4/ashton/snp_networks/scratch/udler_td2/processed_data/"
+  datdir <- "/scratch16/abattle4/ashton/snp_networks/scratch/udler_td2/processed_data/"
   datdir <- "/Users/aomdahl/Documents/Research/LocalData/snp_networks/datasets/"
   args <- list()
   #args$gwas_effects <- paste0(datdir, "beta_signed_matrix.tsv")
   #args$uncertainty <-  paste0(datdir, "se_matrix.tsv")
   
-  args$gwas_effects <-"/work-zfs/abattle4/ashton/snp_networks/scratch/udler_td2/variant_lists/hm3.pruned.beta.txt"
-  args$uncertainty <- "/work-zfs/abattle4/ashton/snp_networks/scratch/udler_td2/variant_lists/hm3.pruned.se.txt"
-  args$scale_n <- "/work-zfs/abattle4/ashton/snp_networks/scratch/udler_td2/variant_lists/hm3.pruned.N.txt"
-  args$genomic_correction <- "/work-zfs/abattle4/ashton/snp_networks/scratch/udler_td2/variant_lists/hm3.pruned.GC.txt"
+  args$gwas_effects <-"/scratch16/abattle4/ashton/snp_networks/scratch/udler_td2/variant_lists/hm3.pruned.beta.txt"
+  args$uncertainty <- "/scratch16/abattle4/ashton/snp_networks/scratch/udler_td2/variant_lists/hm3.pruned.se.txt"
+  args$scale_n <- "/scratch16/abattle4/ashton/snp_networks/scratch/udler_td2/variant_lists/hm3.pruned.N.txt"
+  args$genomic_correction <- "/scratch16/abattle4/ashton/snp_networks/scratch/udler_td2/variant_lists/hm3.pruned.GC.txt"
   args$nfactors <- 6
   args$niter <- 10
   args$alphas <- "0.01,0.05,0.1,0.15,0.2" #using 0.00001 since it doesn't like 0
@@ -107,7 +107,7 @@ if(FALSE) #For debug functionality on MARCC- this is currently loading the udler
 args$cores <- 1
 args$fixed_first <- TRUE
 args$weighting_scheme = "B_SE"
-args$output <- "/work-zfs/abattle4/ashton/snp_networks/scratch/udler_td2/processed_data/gwasMF_hm3.tmp"
+args$output <- "/scratch16/abattle4/ashton/snp_networks/scratch/udler_td2/processed_data/gwasMF_hm3.tmp"
 args$converged_obj_change <- 1
 args$scaled_sparsity <- TRUE
 args$posF <- FALSE
@@ -116,100 +116,14 @@ args$autofit <- 0
 
 lf <- log_open(paste0(args$output, "gwasMF_log.", Sys.Date(), ".txt"))
 
+output <- args$output
 
 #Read in the hyperparameters to explore
-alphas_og <- as.numeric(scan(text = args$alphas, what = character(), sep = ',', quiet = TRUE))
-lambdas_og <- as.numeric(scan(text = args$lambdas, what = character(), sep = ',', quiet = TRUE))
-output <- args$output
+hp <- readInParamterSpace(args)
 log_print("Input sparsity settings")
-log_print(paste0("Alphas: ", alphas))
-log_print(paste0("Lambdas: ", lambdas))
+log_print(paste0("Alphas: ", hp$a))
+log_print(paste0("Lambdas: ", hp$l))
 
-
-#Load the effect size data
-effects <- fread(args$gwas_effects) %>% drop_na() %>% quickSort(.)
-#effects <- effects[order(effects[,1], decreasing = TRUE),]
-all_ids <- unlist(effects[,1])
-
-#Get the trait names out
-if(args$trait_names == "")
-{
-  message("No trait names provided. Using the identifiers in the tabular effect data instead.")
-  names <- unlist(names(effects)[-1])
-} else{
-    names <- scan(args$trait_names, what = character(), quiet = TRUE)
-}
-
-effects <- as.matrix(effects[,-1])
-
-if(args$IRNT)
-{
-  library(RNOmni)
-  effects <- apply(effects, 2, RankNorm)
-}
-
-
-
-#Look at the weighting scheme options...
-if(args$weighting_scheme == "Z" || args$weighting_scheme == "B")
-{
-  message("No scaling by standard error will take place. Input to uncertainty being ignored.")
-  W <- matrix(1,nrow = nrow(z), ncol = ncol(z))
-  X <- effects
-  
-} else if(args$weighting_scheme == "B_SE")
-{
-  message("Scaling by 1/SE.")
-  W_se <- fread(args$uncertainty) %>% drop_na() %>% filter(unlist(.[,1]) %in% all_ids) %>% quickSort(.)
-  stopifnot(all(all_ids == W_se[,1]))
-  W_se <- W_se %>% select(-1)
-  W <- 1/ W_se
-  X <- effects
-  
-} else if(args$weighting_scheme == "B_MAF")
-{
-  message("Scaling by 1/var(MAF)")
-  W_maf <- fread(args$uncertainty) %>% drop_na() %>% 
-    filter(ids %in% all_ids) %>% arrange(ids) %>% select(-ids) 
-  W <- 1/matrix(apply(W_maf, 2, function(x) 2*x*(1-x)), nrow = nrow(W_maf), ncol = ncol(W_maf))
-  X <- effects 
-} else
-{
-  message("No form selected. Please try again.")
-  quit()
-}
-
-if(args$scale_n != "")
-{
-  N <- fread(args$scale_n) %>% drop_na() %>% filter(unlist(.[,1]) %in% all_ids) %>% quickSort(.)
-  if(!all(all_ids == N[,1]))
-{
-    #This would occur if we are missing variants.
-    message("Counts not provided for all variants. Using the average where variants missing")
-    vars <- all_ids[!(all_ids %in% unlist(N[,1]))]
-    m <- colMeans(N[,-1])
-    ndiff <- nrow(X) - nrow(N)
-    pre <- lapply(1:ndiff, function(x) unlist(m))
-    
-    first <- do.call("rbind", pre)
-    new_rows <- cbind("SNP" = vars,first)
-    N <- rbind(N, new_rows) %>% quickSort(.)
-    stopifnot(all(all_ids == N[,1]))
-}
-  N <- as.matrix(N %>% select(-1) %>% apply(., 2, as.numeric))
-  W <- W * (1/sqrt(N))
-}
-
-if(args$genomic_correction != "")
-{
-  log_print("Including genomic correction in factorization...")
-  GC <-  fread(args$genomic_correction) %>% drop_na() %>% filter(unlist(.[,1]) %in% all_ids) %>% quickSort(.)
-  if(!all(all_ids == GC[,1])) {
-    message("genomic correction values not in correct order, please advise...")
-    GC <- as.matrix(GC %>% select(-1) %>% apply(., 2, as.numeric))
-    W <- W * (1/sqrt(GC))
-  }
-}
 #set up settings
 option <- list()
 option[['K']] <- args$nfactors
@@ -247,7 +161,7 @@ option[["fixed_ubiq"]] <- args$fixed_first
 X <- cleanUp(X)
 W <- cleanUp(W, type = "se")
 max_sparsity <- approximateSparsity(X, W, option)
-
+#TODO: remove effect sizes that are majorly outlying, chi-squared stat that is obese > 90 or so
 log_print("Estimating sparsity maximums based on an SVD approximation.")
 log_print(paste0("Max alpha: ", max_sparsity$alpha))
 log_print(paste0("Max lambda: ", max_sparsity$lambda))
@@ -371,6 +285,7 @@ for(opti in 1:args$parameter_optimization)
       theme_minimal(15) + ggtitle("Objective function") + ylab("Objective score")
    # ggsave(paste0(output, "objective.", opti, ".png"), device = "png")    
   }
+  rm(run_stats)
   log_print(paste0("Completed iteration number ", opti))
   log_print("----------------------------------")
   log_print("")
@@ -417,7 +332,7 @@ if(args$parameter_optimization > 1)
   message("This corresponds to scaled values of ALPHA, LAMBDA: ", original.combos[top.result])
   
   #report the average across these runs for that one.
-  out <- data.frame("Coph" = unlist(coph.results), "Corr_frob" = unlist(corr.results), "R" =param.combos, "R_og" =  original.combos)
+  out <- data.frame("Coph" = unlist(coph.results), "Corr_frob" = unlist(corr.results), "R" =param.combos, "R_og" =  original.combos) %>% arrange(Coph, Corr_frob)
   write.table(out, file =  paste0(output, "performance_summary_file.txt"), sep = "\t", quote = FALSE, row.names=FALSE)
   print(out %>% filter(Coph > 0.9) %>% arrange(Corr_frob))
  
