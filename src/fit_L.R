@@ -1,6 +1,6 @@
   ################################################################################################################################
   ## Update the factor matrix L during the alternative optimization
-  ##
+  ## Based originally on Yuan He's code, with some speed-up improvements and tweaks made by Ashton 2019-2022
   ## Input:
   ##              - X: the matrix to be decomposed (N x T, N is the number of data points, T is the number of features)
   ##              - F: learned factor matrix  (T x K, T is the number of features, K is the number of factors)
@@ -45,12 +45,6 @@
       xp = unlist(w * x);
       FactorMp = diag(w) %*% FactorM; #scaling this way is much smaller
     }
-     #elementwise multiplication
-    #if(option$parallel)
-    #{
-    #  xp = t(w * x)
-    #}
-
     # Fit: xp' = FactorMp %*% l with l1 penalty on l -- |alpha1 * l|
     #Removed the transpose on X, getting the wrong dimensions
     dat_i = as.data.frame(cbind((xp), FactorMp));
@@ -126,8 +120,8 @@
   		}		else {
   		  l = one_fit(x, w, as.matrix(FactorM), option, NULL, r.v);
   		}
-  		L = rbind(L, l);
-  		#print(row)
+  		#L = rbind(L, l);
+      L = bind_rows(L, l)
   	}
   	tE = Sys.time();
   	print(paste0('Updating Loading matrix takes ', round((tE - tS)/60, 2), 'min'));
@@ -144,28 +138,31 @@
     cl <- parallel::makeCluster(option[["ncores"]], outfile = "TEST.txt")
     iterations <- nrow(X)
     doParallel::registerDoParallel(cl)
-    #pb <- txtProgressBar(0, iterations, style = 2)
     writeLines(c(""), "log.txt")
-    L <- foreach(row =seq(1,nrow(X)), .combine = 'rbind', .packages = 'penalized') %dopar% {
-      #setTxtProgressBar(pb, row)
-      if(row %% 10 == 0)
-       {
-        sink("log.txt", append=TRUE)
-      cat(paste("Starting iteration",row,"\n"))
-      sink()
-}
-      
-      x = X[row, ];
-      w = W[row, ];
-      xp = matrix(w * x, nrow = nrow(FactorM), ncol = 1); #elementwise multiplication
-      FactorMp = diag(w) %*% FactorM;  #what are we doing here?
-      dat_i = data.frame(cbind(xp, FactorMp));
-      colnames(dat_i) = c('X', paste0('F', seq(1, ncol(FactorMp))));
-      fit = penalized(response = X, penalized = dat_i[,paste0('F', seq(1,ncol(FactorMp)))], data=dat_i,
-                      unpenalized = ~0, lambda1 = option[['alpha1']], lambda2=1e-10,
-                      positive = FALSE, standardize = FALSE, trace = FALSE);
-      l = coef(fit, 'all');
-      l
+
+    #6/13/2022
+    #We split the tasks across cores, so multiple regression steps per core; you aren't switching nearly as much.
+    n.per.group <- ceiling(nrow(fin.X)/nsplits)
+    oo <- n.per.group - 1
+    split_lines <- lapply(1:(nsplits-1), function(x) (x*n.per.group - oo) :(x*n.per.group))
+    split_lines[[nsplits]] <- (split_lines[[(nsplits-1)]][n.per.group]+1):nrow(fin.matrix)
+
+    L <- foreach(rows = split_lines, .combine = 'bind_rows', .packages = c('penalized', 'dplyr')) %dopar% {
+      sub_l <- NULL
+      for(row in rows)
+      {
+        x = X[row, ];
+        w = W[row, ];
+        xp = matrix(w * x, nrow = nrow(FactorM), ncol = 1); #elementwise multiplication
+        FactorMp = diag(w) %*% FactorM;  #what are we doing here?
+        dat_i = data.frame(cbind(xp, FactorMp));
+        colnames(dat_i) = c('X', paste0('F', seq(1, ncol(FactorMp))));
+        fit = penalized(response = X, penalized = dat_i[,paste0('F', seq(1,ncol(FactorMp)))], data=dat_i,
+                        unpenalized = ~0, lambda1 = option[['alpha1']], lambda2=1e-10,
+                        positive = FALSE, standardize = FALSE, trace = FALSE);
+        sub_l <- bind_rows(sub_l, coef(fit, 'all')
+      }
+      sub_l
     }
     
     tE = Sys.time();
@@ -173,4 +170,10 @@
     return(L)
   }
 
-  
+
+#      if(row %% 100 == 0)
+#      {
+#        sink("log.txt", append=TRUE)
+#        cat(paste("Starting iteration",row,"\n"))
+#        sink()
+#      }
