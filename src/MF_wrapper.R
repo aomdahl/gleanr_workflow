@@ -12,6 +12,7 @@ source(paste0(dir, 'compute_obj.R'))
 source(paste0(dir, 'buildFactorMatrices.R'))
 source(paste0(dir, 'sparsity_scaler.R'))
 source(paste0(dir, 'cophenetic_calc.R'))
+source(paste0(dir, 'read_in_tools.R'))
 
 quickSort <- function(tab, col = 1)
 {
@@ -21,13 +22,15 @@ quickSort <- function(tab, col = 1)
 updateStatement  <- function(l,a,l_og, a_og, run,time)
 {
   
-  log_print(paste0("Run complete. (Time: ", time, ")"))
+  log_print(paste0("Run complete. (Time: ", time, " min)"))
   log_print(paste0("Sparsity params: F ", l, ", L ", a))  
   log_print(paste0("Sparsity scale: F ", l_og, ", L ", a_og))  
   log_print(paste0("Current F sparsity: ", run$F_sparsity), console = FALSE)  
   log_print(paste0("Current L sparsity: ", run$L_sparsity), console = FALSE)  
-  log_print(paste0("Number of active factors:", ncol(run$F)))
+  log_print(paste0("Number of active factors: ", ncol(run$F)))
 }
+
+
 
 parser <- ArgumentParser$new()
 parser$add_description("Script to run matrix factorization")
@@ -57,6 +60,7 @@ parser$add_argument("-o", "--converged_obj_change", type="double", default=1,hel
 parser$add_argument("--no_SNP_col", type="logical", default= FALSE, action = "store_true", help="Specify this option if there is NOT first column there...")
 parser$add_argument("--parameter_optimization", type="numeric", default= 1, action = "store_true", help="Specify how many iterations to run to get the cophenetic optimization, etc. ")
 parser$add_argument("--genomic_correction", type="character", default= "", help="Specify path to genomic correction data, one per snp.TODO: Also has the flexibility to expand")
+parser$add_argument("-v", "--verbosity", type="numeric", default= 1, help="How much output information to give in report? 0 is quiet, 1 is loud")
 
 parser$add_argument('--help',type='logical',action='store_true',help='Print the help page')
 parser$helpme()
@@ -100,14 +104,17 @@ output <- args$output
 #Read in the hyperparameters to explore
 hp <- readInParamterSpace(args)
 log_print("Input sparsity settings")
-log_print(paste0("Alphas: ", hp$a))
-log_print(paste0("Lambdas: ", hp$l))
+log_print("Alphas: ")
+log_print(hp$a)
+log_print("Lambdas: ")
+log_print(hp$l)
 
 #set up settings
 option <- readInSettings(args)
+log_print("Succesfully loaded program options....")
 #read in the data
 input.dat <- readInData(args)
-X <- input.dat$X; W <- input.dat$W; all_ids <- input.dat$ids
+X <- input.dat$X; W <- input.dat$W; all_ids <- input.dat$ids; names <- input.dat$trait_names
 
 #Estimate sparsity space (doesn't work too well.)
 max_sparsity <- approximateSparsity(X, W, option)
@@ -120,25 +127,25 @@ if(option$calibrate_sparsity)
 {
   option$max_alpha <- max_sparsity$alpha
   option$max_lambda <- max_sparsity$lambda
-  if(all(alphas_og <= 1) & all(alphas_og >= 0) & all(lambdas_og <= 1) & all(lambdas_og >= 0) & option$calibrate_sparsity)
+  if(all(hp$a <= 1) & all(hp$a >= 0) & all(hp$l <= 1) & all(hp$l >= 0) & option$calibrate_sparsity)
   {
-    alphas <- alphas_og * max_sparsity$alpha
-    lambdas <- lambdas_og * max_sparsity$lambda
+    alphas <- hp$a * max_sparsity$alpha
+    lambdas <- hp$l * max_sparsity$lambda
     
     option$calibrate_sparsity <- FALSE
-    message("Scaled amounts are:")
-    message("    Lambdas:")
-    message(paste(round(lambdas, digits = 2)))
-    message("    Alphas:")
-    message(round(alphas, digits = 3))
+    updateLog("Scaled amounts are:", option$V)
+    updateLog("    Lambdas:", option$V)
+    updateLog(paste(round(lambdas, digits = 2)), option$V)
+    updateLog("    Alphas:", option$V)
+    updateLog(round(alphas, digits = 3), option$V)
   }else
   {
     message('Inputed sparsity parameters must be between 0 and 1 to use the "calibrate_sparsity option".')
     quit()
   }
 } else{
-  alphas <- alphas_og
-  lambdas <- lambdas_og
+  alphas <- hp$a
+  lambdas <- hp$l
 }
 
 
@@ -165,8 +172,7 @@ for(opti in 1:args$parameter_optimization)
       option[["parallel"]] <- FALSE
       start <- Sys.time()
       run <- Update_FL(as.matrix(X), as.matrix(W), option)
-      end <- Sys.time()
-      time <- end-start
+      time <-  round(difftime(Sys.time(), start, units = "mins"), digits = 3)
       run_stats[[iter_count]] <- c(run, time)
       
       iter_count <- iter_count + 1
@@ -176,7 +182,7 @@ for(opti in 1:args$parameter_optimization)
         fname = paste0(output, "A", a, "_L", l, "_","K", args$ type_, ".NO_OUTPUT.png")
       } else
       {
-        updateStatement(l,a,lambdas_og[j],alphas_og[i], run,time)
+        updateStatement(l,a,hp$l[j],hp$a[i], run,time)
         fname = paste0(output, "A", round(a, digits = 4), "_L", round(l, digits = 4), "_", type_,".", opti, ".png")
         title_ = paste0("A", round(a, digits = 4), "_L", round(l, digits = 4), " Type = ", args$weighting_scheme )
         p <- plotFactors(run[[1]],trait_names = names, title = title_, scale.cols = TRUE)
@@ -231,7 +237,7 @@ for(opti in 1:args$parameter_optimization)
    # colnames(objectives) <- name_list
    # objectives <- objectives %>% mutate("iteration" =1:nrow(objectives)) %>% reshape2::melt(., id.vars = "iteration")
    # ggplot(data = objectives, aes(x = iteration, y = value, color = variable)) + geom_point() + geom_line() + 
-      theme_minimal(15) + ggtitle("Objective function") + ylab("Objective score")
+   #   theme_minimal(15) + ggtitle("Objective function") + ylab("Objective score")
    # ggsave(paste0(output, "objective.", opti, ".png"), device = "png")    
   }
   rm(run_stats)
@@ -244,8 +250,8 @@ for(opti in 1:args$parameter_optimization)
 param.combos <- unlist(lapply(alphas, function(x) 
   lapply(lambdas, function(y) paste0("A", x, "_L", y))))
 
-original.combos <- unlist(lapply(alphas_og, function(x) 
-  lapply(lambdas_og, function(y) paste0("A", x, "_L", y))))
+original.combos <- unlist(lapply(hp$a, function(x) 
+  lapply(hp$l, function(y) paste0("A", x, "_L", y))))
 
 if(args$parameter_optimization > 1)
 {

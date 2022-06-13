@@ -123,14 +123,13 @@
   		#L = rbind(L, l);
       L = bind_rows(L, l)
   	}
-  	tE = Sys.time();
-  	print(paste0('Updating Loading matrix takes ', round((tE - tS)/60, 2), 'min'));
+  	updateLog(paste0('Updating Loading matrix takes ', round(difftime(Sys.time(), tS, units = "mins"), digits = 3), ' min'), option$V);
   
-  	return(L)
+  	return(as.matrix(L))
   }
   
 
-#Something is jacked up with this.
+#Should be working fine... need to do some testing though!
   fit_L_parallel <- function(X, W, FactorM, option, formerL){
 
     L = NULL
@@ -160,14 +159,13 @@
         fit = penalized(response = X, penalized = dat_i[,paste0('F', seq(1,ncol(FactorMp)))], data=dat_i,
                         unpenalized = ~0, lambda1 = option[['alpha1']], lambda2=1e-10,
                         positive = FALSE, standardize = FALSE, trace = FALSE);
-        sub_l <- bind_rows(sub_l, coef(fit, 'all')
+        sub_l <- bind_rows(sub_l, coef(fit, 'all'))
       }
       sub_l
     }
-    
-    tE = Sys.time();
-    message(paste0('Updating Loading matrix takes ', round((tE - tS)/60, 2), 'min'));
-    return(L)
+  
+    updateLog(paste0('Updating Loading matrix takes ',  round(difftime(Sys.time(), tS, units = "mins"), digits = 3), ' min'), option$V);
+    return(as.matrix(L))
   }
 
 

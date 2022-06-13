@@ -94,8 +94,7 @@ fit_F <- function(X, W, L, option, formerF = NULL){
 		#print(col)
 	}
 
-	tEnd = Sys.time();
-	message(paste0('Updating Factor matrix takes ', round((tEnd - tStart)/60, 2), 'min'));
+	updateLog(paste0('Updating Factor matrix takes ',  round(difftime(Sys.time(), tStart, units = "mins"), digits = 3), ' min'), option$V)
 	if(option$traitSpecificVar)
 	{
 	  ret <- list()
