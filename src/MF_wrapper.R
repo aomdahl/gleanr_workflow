@@ -29,27 +29,6 @@ updateStatement  <- function(l,a,l_og, a_og, run,time)
   log_print(paste0("Number of active factors:", ncol(run$F)))
 }
 
-cleanUp <- function(matin, type = "beta")
-{
-    print(dim(matin))
-    lister <- as.vector(unlist(matin))
-  if(type == "beta")
-  {
-    bad <- is.na(lister)
-    lister[bad] <- 0
-    bad <- is.infinite(lister)
-    lister[bad] <- 0
-  }
-  if(type == "se")
-  {
-      bad <- is.infinite(lister)
-      lister[bad] <- 1000
-      bad <- is.na(lister)
-      lister[bad] <- 1
-  }
-  return(matrix(lister, nrow = nrow(matin)))
-}
-
 parser <- ArgumentParser$new()
 parser$add_description("Script to run matrix factorization")
 parser$add_argument("--gwas_effects", type = 'character', help = "Specify the Z or B file, depending on specified weighting scheme. First column is ids of each variant, column names specify the trait")
@@ -114,7 +93,7 @@ args$posF <- FALSE
 args$autofit <- 0
 }
 
-lf <- log_open(paste0(args$output, "gwasMF_log.", Sys.Date(), ".txt"))
+lf <- log_open(paste0(args$output, "gwasMF_log.", Sys.Date(), ".txt"), show_notes = FALSE)
 
 output <- args$output
 
@@ -125,43 +104,13 @@ log_print(paste0("Alphas: ", hp$a))
 log_print(paste0("Lambdas: ", hp$l))
 
 #set up settings
-option <- list()
-option[['K']] <- args$nfactors
-option[['iter']] <- args$niter
-option[['convF']] <- 0
+option <- readInSettings(args)
+#read in the data
+input.dat <- readInData(args)
+X <- input.dat$X; W <- input.dat$W; all_ids <- input.dat$ids
 
-option[['convO']] <- args$converged_obj_change
-option[['ones']] <- FALSE
-option[['disp']] <- FALSE
-#F matrix initialization
-option[['f_init']] <- args$init_F 
-option[['l_init']] <- args$init_L
-option[["preinitialize"]] <- FALSE
-option[['reweighted']] <- FALSE
-option[["glmnet"]] <- FALSE
-option[["parallel"]] <- FALSE
-option[["fastReg"]] <- FALSE
-option[["ridge_L"]] <- FALSE
-option[["posF"]] <- args$posF
-option[["autofit"]] <- args$autofit
-option$intercept_ubiq <- FALSE
-option$traitSpecificVar <- FALSE
-option$calibrate_sparsity <- args$scaled_sparsity
-if(args$cores > 1)
-{
-  message(paste("Running in parallel on", args$cores, "cores"))
-  option[["parallel"]] <- TRUE
-}
-option[["ncores"]] <- args$cores
-option[["fixed_ubiq"]] <- args$fixed_first
-
-
-
-#max_sparsity <- Update_FL(as.matrix(X), as.matrix(W), option)
-X <- cleanUp(X)
-W <- cleanUp(W, type = "se")
+#Estimate sparsity space (doesn't work too well.)
 max_sparsity <- approximateSparsity(X, W, option)
-#TODO: remove effect sizes that are majorly outlying, chi-squared stat that is obese > 90 or so
 log_print("Estimating sparsity maximums based on an SVD approximation.")
 log_print(paste0("Max alpha: ", max_sparsity$alpha))
 log_print(paste0("Max lambda: ", max_sparsity$lambda))

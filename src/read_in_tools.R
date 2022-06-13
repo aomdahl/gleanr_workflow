@@ -10,7 +10,69 @@ readInParamterSpace <- function(args)
   
 }
 
+#Holdover from previous version. May not be used
+cleanUp <- function(matin, type = "beta")
+{
+  print(dim(matin))
+  lister <- as.vector(unlist(matin))
+  if(type == "beta")
+  {
+    bad <- is.na(lister)
+    lister[bad] <- 0
+    bad <- is.infinite(lister)
+    lister[bad] <- 0
+  }
+  if(type == "se")
+  {
+    bad <- is.infinite(lister)
+    lister[bad] <- 1000
+    bad <- is.na(lister)
+    lister[bad] <- 1
+  }
+  return(matrix(lister, nrow = nrow(matin)))
+}
 
+#Zero out NA and extreme chi2
+#Param X, W
+#Return list with cleanX, cleanW
+matrixGWASQC <- function(X, W)
+{
+  #Now that we have the SE and the B, go ahead and filter out bad snps....
+  #Clean up NAs, etc.
+  #Sanity check for number ofo NAs. X*W gives Z scores
+  drop.chi2 <- apply(X*W,2, function(x) x^2 > 80) 
+  drop.nas <- apply(X*W,2, function(x) is.na(x))
+  all.drops <- drop.chi2 | drop.nas
+  #do we just zero those ones out or drop them all together?
+  #if more than 15% of SNPs for a particular trait are in this category, drop the trait instead
+  too.many.drops <- unlist(lapply(1:ncol(drop.chi2), function(i) (sum(drop.chi2[,i]) + sum(drop.nas[,i]))  > 0.20 * nrow(X)))
+  if(sum(too.many.drops) > 0)
+  {
+    for(w in which(too.many.drops))
+    {
+      log_print(paste0("Over 20% of SNPs in trait ",names[w], " are either missing or invalid. Consider removing this trait."))
+    }
+  }
+  log_print("Cells with invalid entries (NA, or excessive Chi^2 stat) will be given a weight of 0.")
+  log_print(paste0(sum(all.drops, " out of ", (nrow(all.drops) * ncol(all.drops)), " total cells are invalid and will be 0'd.")))
+  log_print(paste0("   Removing ", sum(drop.chi2), " entries with extreme chi^2 stats > 80"))
+  log_print(paste0("   Removing ", sum(drop.nas), " entries with NA"))
+  W[all.drops] <- 0
+  X[drop.nas] <- 0 #technically we don't need to drop them here, if they are being given a weight of 0. But if they are NAs we need to give them a value so they don't killus.
+  return(list("clean_X" = X, "clean_W" = W))
+}
+
+
+
+#Takes care of all the necessary data I/O
+#Procedures include:
+# Read in files
+# Specify the weighting scheme
+# "Drop" summary statistics with X^2 stat > 80 (set its weight to 0)
+# Scale by sqrt(N), if specified
+# Scale by sqrt(LDSC_int) if specified
+#@param args- argument object in R
+#@return a list containing the values, their corresponding weights, and the SNPS in the matching order
 readInData <- function(args)
 {
   #Load the effect size data
@@ -64,32 +126,13 @@ readInData <- function(args)
     quit()
   }
   
+  #remove NAs, extreme values.
+  r <- matrixGWASQC
+  X <- r$clean_X;   W <- r$clean_W
+  
   #At this point, we are assuming no ambiguous SNPs, but maybe we shouldn't....
   #NO AMBIGS
   #NO MAF < 0.01
-  #Now that we have the SE and the B, go ahead and filter out bad snps....
-  #Clean up NAs, etc.
-  #Sanity check for number ofo NAs
-  drop.chi2 <- apply(X*W,2, function(x) which(x^2 > 80))
-  drop.nas <- apply(X*W,2, function(x) which(is.na(x)))
-  #do we just zero those ones out or drop them all together?
-  #if more than 10% of SNPs for a particular trait are in this category, drop the trait instead
-  which(lapply(drop, function(x) length(drop))  > 0.1 * nrow(X))
-  
-  drop <- (apply(b[,-1]/se[,-1], 2, function(x) which(x^2 > 80)))
-  drop.traits <- which(lapply(drop, function(x) length(drop))  > 0.1 * nrow(z))
-  drop.vars <- unique(unlist(drop))
-  if(length(drop.vars) > ( 0.1 * nrow(z)))
-  {
-    message("Over 10% of SNPs have highly unusual Z-scores. WE recommend reveiwing your data.")
-    message("Rather than dropping them all, we will simply zero-out those particular entries.")
-  }
-  
-  
-  log_print(paste0("Removing ", length(drop), " variants with extreme chi^2 stats > 80"))
-  X <- X[-drop,]
-  W <- W[,-drop]
-  all_ids <- all_ids[-drop]
   
   if(args$scale_n != "")
   {
@@ -123,10 +166,42 @@ readInData <- function(args)
     }
   }
   
-  #max_sparsity <- Update_FL(as.matrix(X), as.matrix(W), option)
-  X <- cleanUp(X)
-  W <- cleanUp(W, type = "se")
-  
+
   return(list("X" = X, "W" = W, "ids" = all_ids))
   
+}
+
+
+readInSettings <- function(args)
+{
+  option <- list()
+  option[['K']] <- args$nfactors
+  option[['iter']] <- args$niter
+  option[['convF']] <- 0
+  
+  option[['convO']] <- args$converged_obj_change
+  option[['ones']] <- FALSE
+  option[['disp']] <- FALSE
+  #F matrix initialization
+  option[['f_init']] <- args$init_F 
+  option[['l_init']] <- args$init_L
+  option[["preinitialize"]] <- FALSE
+  option[['reweighted']] <- FALSE
+  option[["glmnet"]] <- FALSE
+  option[["parallel"]] <- FALSE
+  option[["fastReg"]] <- FALSE
+  option[["ridge_L"]] <- FALSE
+  option[["posF"]] <- args$posF
+  option[["autofit"]] <- args$autofit
+  option$intercept_ubiq <- FALSE
+  option$traitSpecificVar <- FALSE
+  option$calibrate_sparsity <- args$scaled_sparsity
+  if(args$cores > 1)
+  {
+    log_print(paste("Running in parallel on", args$cores, "cores"))
+    option[["parallel"]] <- TRUE
+  }
+  option[["ncores"]] <- args$cores
+  option[["fixed_ubiq"]] <- args$fixed_first
+  return(option)
 }
