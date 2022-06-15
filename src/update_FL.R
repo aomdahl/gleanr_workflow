@@ -7,11 +7,11 @@
 if(FALSE)
 {
   #source("/Users/ashton/Documents/JHU/Research/LocalData/snp_network/quickLoadData.R")
-  source("/work-zfs/abattle4/ashton/snp_networks/custom_l1_factorization/src/quickLoadData.R")
-  source("/work-zfs/abattle4/ashton/snp_networks/custom_l1_factorization/src/fit_F.R")
-  source("/work-zfs/abattle4/ashton/snp_networks/custom_l1_factorization/src/fit_L.R")
-  source("/work-zfs/abattle4/ashton/snp_networks/custom_l1_factorization/src/compute_obj.R")
-  source("/work-zfs/abattle4/ashton/snp_networks/custom_l1_factorization/src/plot_functions.R")
+  source("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/src/quickLoadData.R")
+  source("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/src/fit_F.R")
+  source("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/src/fit_L.R")
+  source("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/src/compute_obj.R")
+  source("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/src/plot_functions.R")
   all <- quickLoadFactorization("Z", "MARCC")
   X <- all$X
   W <- all$W
@@ -93,7 +93,6 @@ Update_FL <- function(X, W, option, preF = NULL, preL = NULL){
         svd <- svd(cor_struct, nu = 1) #fortunately its symmetric, so  U and V are the same here!
         ones <- svd$u
       } else {
-        #FactorM   = matrix(runif(D*(option[['K']])), nrow = D);
         ones = matrix(runif(D*(option[['K']])), nrow = D)[,1]
       }
       FactorM = cbind(ones, FactorM);
@@ -117,8 +116,9 @@ og_option <- option[['reweighted']]
 option[['reweighted']] <- FALSE
 if(option[['ncores']] > 1) #This is not working at all. Can't tell you why. But its not. Need to spend some time debugging at some point.
 {
-  print("Fitting L in parallel")	
+  log_print("Fitting L in parallel")	
   L = fit_L_parallel(X, W, FactorM, option, formerL = preL); #preL is by default Null, unless yo specify!
+
 }
 else
 {
@@ -200,8 +200,8 @@ else
     F_old = FactorM;
     non_empty_f = which(apply(FactorM, 2, function(x) sum(x!=0)) > 0)
     if(length(non_empty_f) == 0 | (non_empty_f[1] == 1 & option$fixed_ubiq & (length(non_empty_f) == 1))){
-      message('Finished');
-      message('F is completely empty or loaded only on ubiquitous factor, lambda1 too large')
+      updateLog('Finished', option$V);
+      updateLog('F is completely empty or loaded only on ubiquitous factor, lambda1 too large', option$V)
       F_sparsity = 1;
       L_sparsity = 1;
       factor_corr = 1;
@@ -228,8 +228,8 @@ else
     # if L is empty, stop
     non_empty_l = which(apply(L, 2, function(x) sum(x!=0)) > 0)
     if(length(non_empty_l) == 0){
-      message('Finished');
-      message('L is completely empty, alpha1 too large')
+      updateLog('Finished', option$V);
+      updateLog('L is completely empty, alpha1 too large', option$V)
       FactorM = NULL;
       F_sparsity = 1;
       L_sparsity = 1;
@@ -257,25 +257,24 @@ else
     
     if(option[['disp']]){
       cat('\n')
-      message(paste0('Iter', iii, ':'))
-      message(paste0('Objective change = ', obj_change))
-      message(paste0('Frobenius norm of (updated factor matrix - previous factor matrix) / number of factors  = ', F_change));
-      message(paste0('Loading Sparsity = ', L_sparsity, '; Factor sparsity = ', F_sparsity, '; ', Nfactor, ' factors remain')); 
+      updateLog(paste0('Iter', iii, ':'), option$V)
+      updateLog(paste0('Objective change = ', obj_change), option$V)
+      updateLog(paste0('Frobenius norm of (updated factor matrix - previous factor matrix) / number of factors  = ', F_change), option$V);
+      updateLog(paste0('Loading Sparsity = ', L_sparsity, '; Factor sparsity = ', F_sparsity, '; ', Nfactor, ' factors remain'), option$V); 
       cat('\n')
     }
     # converge if: 1). Change of the values in factor matrix is small. ie. The factor matrix is stable. 2). Change in the objective function becomes small; 3). reached maximum number of iterations
     if(option[['convF']] >= F_change){
-     
-      message(paste0('Factor matrix converges at iteration ', iii));
+      updateLog(paste0('Factor matrix converges at iteration ', iii), option$V);
       break
     }
     
     oc1 = abs(objective_change[length(objective_change)])
-    print(paste0("Objective change: ", oc1))
-    print(paste0("Target objective change: ",option[['convO']]))
-    if(oc1 < option[['convO']]){
-      message("Objective function change threshold achieved!")
-      message(paste0('Objective function converges at iteration ', iii));
+    updateLog(paste0("Objective change: ", oc1), option$V)
+    #updateLog(paste0("Target objective change: ",option[['convO']]))
+    if(oc1 < as.numeric(option[['convO']])){
+      updateLog(("Objective function change threshold achieved!"), option$V)
+      updateLog(paste0('Objective function converges at iteration ', iii), option$V);
       break
     }
     if(iii == option[['iter']]){
@@ -284,10 +283,9 @@ else
     }
   }
   retlist <- list("F" = FactorM, "L" = L, "L_sparsity" = L_sparsity, "F_sparsity" = F_sparsity, "K" = Nfactor, "obj" = objective, "study_var" = trait.var)
-  tEnd0 = Sys.time()
   cat('\n')
-  message('Total time used for optimization: ');
-  message(tEnd0 - tStart0);
+  updateLog(paste0('Total time used for optimization: ',  round(difftime(Sys.time(), tStart0, units = "mins"), digits = 3), ' min'), option$V);
+  
   cat('\n')
   # return L, F, sparsity in L and F, number of factors -- could be different from K!
     return(retlist) #F, L, l sparsity ,f_sparsity, K, obj, study_var, 

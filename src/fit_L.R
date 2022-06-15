@@ -141,10 +141,10 @@
 
     #6/13/2022
     #We split the tasks across cores, so multiple regression steps per core; you aren't switching nearly as much.
-    n.per.group <- ceiling(nrow(fin.X)/nsplits)
+    n.per.group <- ceiling(nrow(X)/option$nsplits)
     oo <- n.per.group - 1
-    split_lines <- lapply(1:(nsplits-1), function(x) (x*n.per.group - oo) :(x*n.per.group))
-    split_lines[[nsplits]] <- (split_lines[[(nsplits-1)]][n.per.group]+1):nrow(fin.matrix)
+    split_lines <- lapply(1:(option$nsplits-1), function(x) (x*n.per.group - oo) :(x*n.per.group))
+    split_lines[[option$nsplits]] <- (split_lines[[(option$nsplits-1)]][n.per.group]+1):nrow(X)
 
     L <- foreach(rows = split_lines, .combine = 'bind_rows', .packages = c('penalized', 'dplyr')) %dopar% {
       sub_l <- NULL
