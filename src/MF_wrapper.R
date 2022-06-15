@@ -60,7 +60,7 @@ parser$add_argument("-o", "--converged_obj_change", type="double", default=1,hel
 parser$add_argument("--no_SNP_col", type="logical", default= FALSE, action = "store_true", help="Specify this option if there is NOT first column there...")
 parser$add_argument("--parameter_optimization", type="numeric", default= 1, action = "store_true", help="Specify how many iterations to run to get the cophenetic optimization, etc. ")
 parser$add_argument("--genomic_correction", type="character", default= "", help="Specify path to genomic correction data, one per snp.TODO: Also has the flexibility to expand")
-parser$add_argument("-v", "--verbosity", type="numeric", default= 1, help="How much output information to give in report? 0 is quiet, 1 is loud")
+parser$add_argument("-v", "--verbosity", type="numeric", default= 0, help="How much output information to give in report? 0 is quiet, 1 is loud")
 
 parser$add_argument('--help',type='logical',action='store_true',help='Print the help page')
 parser$helpme()
