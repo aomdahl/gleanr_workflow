@@ -95,7 +95,8 @@
       #Okay, it seems like this is working now to estimate the max. Track over all the rows, then get the max
       fit = penalized(response = X, penalized = dat_i[,paste0('F', seq(1, ncol(FactorMp)))], data=dat_i,
                       unpenalized = ~0, lambda1 =lambdas, lambda2=1e-10,
-                      positive = FALSE, standardize = FALSE, trace = FALSE)
+                      positive = FALSE, standardize = FALSE, trace = FALSE, epsilon = option$epsilon)
+      #Note- some rudimentary testing done, setting maxiter doesn't necessarily help. 
       l = coef(fit, 'all')
     }		else {
       fit = penalized(response = X, penalized = dat_i[,paste0('F', seq(1,ncol(FactorMp)))], data=dat_i,
@@ -121,6 +122,11 @@
   		  l = one_fit(x, w, as.matrix(FactorM), option, NULL, r.v);
   		}
   		#L = rbind(L, l);
+  		if(length(l) == 1)
+  		{
+  		  l <- as.matrix(l)
+  		  colnames(l) <- "F1"
+  		}
       L = bind_rows(L, l)
   	}
   	updateLog(paste0('Updating Loading matrix takes ', round(difftime(Sys.time(), tS, units = "mins"), digits = 3), ' min'), option$V);
@@ -134,7 +140,7 @@
 
     L = NULL
     tS = Sys.time()
-    cl <- parallel::makeCluster(option[["ncores"]], outfile = "TEST.txt")
+    cl <- parallel::makeCluster(option[["ncores"]])#, outfile = "TEST.txt")
     iterations <- nrow(X)
     doParallel::registerDoParallel(cl)
     writeLines(c(""), "log.txt")
@@ -145,26 +151,27 @@
     oo <- n.per.group - 1
     split_lines <- lapply(1:(option$nsplits-1), function(x) (x*n.per.group - oo) :(x*n.per.group))
     split_lines[[option$nsplits]] <- (split_lines[[(option$nsplits-1)]][n.per.group]+1):nrow(X)
-
+      
     L <- foreach(rows = split_lines, .combine = 'bind_rows', .packages = c('penalized', 'dplyr')) %dopar% {
       sub_l <- NULL
       for(row in rows)
       {
         x = X[row, ];
         w = W[row, ];
+        
         xp = matrix(w * x, nrow = nrow(FactorM), ncol = 1); #elementwise multiplication
         FactorMp = diag(w) %*% FactorM;  #what are we doing here?
         dat_i = data.frame(cbind(xp, FactorMp));
         colnames(dat_i) = c('X', paste0('F', seq(1, ncol(FactorMp))));
         fit = penalized(response = X, penalized = dat_i[,paste0('F', seq(1,ncol(FactorMp)))], data=dat_i,
                         unpenalized = ~0, lambda1 = option[['alpha1']], lambda2=1e-10,
-                        positive = FALSE, standardize = FALSE, trace = FALSE);
+                        positive = FALSE, standardize = FALSE, trace = FALSE,epsilon = option$epsilon);
         sub_l <- bind_rows(sub_l, coef(fit, 'all'))
       }
       sub_l
     }
   
-    updateLog(paste0('Updating Loading matrix takes ',  round(difftime(Sys.time(), tS, units = "mins"), digits = 3), ' min'), option$V);
+    updateLog(paste0('Updating Loading matrix takes ',  as.character(round(difftime(Sys.time(), tS, units = "mins"), digits = 3), ' min')), option$V);
     return(as.matrix(L))
   }
 

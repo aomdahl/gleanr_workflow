@@ -60,6 +60,7 @@ parser$add_argument("-o", "--converged_obj_change", type="double", default=1,hel
 parser$add_argument("--no_SNP_col", type="logical", default= FALSE, action = "store_true", help="Specify this option if there is NOT first column there...")
 parser$add_argument("--parameter_optimization", type="numeric", default= 1, action = "store_true", help="Specify how many iterations to run to get the cophenetic optimization, etc. ")
 parser$add_argument("--genomic_correction", type="character", default= "", help="Specify path to genomic correction data, one per snp.TODO: Also has the flexibility to expand")
+parser$add_argument("--epsilon", type="numeric", default= 1e-10, help="The convergence criteria for the L1. If exploring the space, try making this larger to speed up runtime. ")
 parser$add_argument("-v", "--verbosity", type="numeric", default= 0, help="How much output information to give in report? 0 is quiet, 1 is loud")
 
 parser$add_argument('--help',type='logical',action='store_true',help='Print the help page')
@@ -84,10 +85,12 @@ if(FALSE) #For debug functionality on MARCC- this is currently loading the udler
   args$scale_n <- "/scratch16/abattle4/ashton/snp_networks/scratch/udler_td2/variant_lists/hm3.pruned.N.txt"
   args$genomic_correction <- "/scratch16/abattle4/ashton/snp_networks/scratch/udler_td2/variant_lists/hm3.pruned.GC.txt"
   args$nfactors <- 6
-  args$niter <- 10
+  args$trait_names = ""
+  args$niter <- 2
   args$alphas <- "0.01,0.05,0.1,0.15,0.2" #using 0.00001 since it doesn't like 0
   args$lambdas <- "0.01,0.05,0.1,0.15,0.2"
 args$cores <- 1
+args$IRNT <- FALSE
 args$fixed_first <- TRUE
 args$weighting_scheme = "B_SE"
 args$output <- "/scratch16/abattle4/ashton/snp_networks/scratch/udler_td2/processed_data/gwasMF_hm3.tmp"
@@ -95,6 +98,9 @@ args$converged_obj_change <- 1
 args$scaled_sparsity <- TRUE
 args$posF <- FALSE
 args$autofit <- 0
+args$init_F <- "ones_eigenvect"
+args$init_L <- ""
+
 }
 
 lf <- log_open(paste0(args$output, "gwasMF_log.", Sys.Date(), ".txt"), show_notes = FALSE)
@@ -148,6 +154,12 @@ if(option$calibrate_sparsity)
   lambdas <- hp$l
 }
 
+opti=1
+#Figure out the parallelism
+#Basically, if splitting across all the cores results in less than 1000 SNPs/core, I should just split this loop across other cores, i.e. 
+#if 20 cores specified, and only 10,000 SNPs
+#I should split this loop across 2 cores, and then gi
+
 
 for(opti in 1:args$parameter_optimization) 
 {
@@ -174,7 +186,6 @@ for(opti in 1:args$parameter_optimization)
       run <- Update_FL(as.matrix(X), as.matrix(W), option)
       time <-  round(difftime(Sys.time(), start, units = "mins"), digits = 3)
       run_stats[[iter_count]] <- c(run, time)
-      
       iter_count <- iter_count + 1
       #things for plots
       if(length(run) == 0)
