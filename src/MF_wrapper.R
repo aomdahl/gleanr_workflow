@@ -1,7 +1,7 @@
 #Source everything you need:
 
 #... you know, I am pretty sure yuan has a setup for this already. like to specify the desired sparsity or whatever.
-pacman::p_load(tidyr, plyr, dplyr, ggplot2, stringr, penalized, cowplot, parallel, doParallel, Xmisc, logr, coop, data.table)
+pacman::p_load(tidyr, plyr, dplyr, ggplot2, stringr, penalized, cowplot, parallel, doParallel, Xmisc, logr, coop, data.table, glmnet)
 dir ="/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/src/"
 #dir = "/Users/aomdahl/Documents/Research/LocalData/snp_networks/gwas_spMF/src/"
 source(paste0(dir, "fit_F.R"))
@@ -13,7 +13,7 @@ source(paste0(dir, 'buildFactorMatrices.R'))
 source(paste0(dir, 'sparsity_scaler.R'))
 source(paste0(dir, 'cophenetic_calc.R'))
 source(paste0(dir, 'read_in_tools.R'))
-
+source(paste0(dir, 'regressionUtils.R'))
 quickSort <- function(tab, col = 1)
 {
   tab[order(tab[,..col], decreasing = TRUE),]
@@ -41,8 +41,8 @@ parser$add_argument("--trait_names", type = 'character', help = "Human readable 
 parser$add_argument("--weighting_scheme", type = 'character', help = "Specify either Z, B, B_SE, B_MAF", default = "B_SE")
 parser$add_argument("--init_F", type = 'character', default = "ones_eigenvect", help = "Specify how the F matrix should be initialized. Options are [ones_eigenvect (svd(cor(z))_1), ones_plain (alls 1s), plieotropy (svd(cor(|z|))_1)]")
 parser$add_argument("--init_L", type = 'character', help = "Specify this option to start by initializing L rather than F. Options are [random, pleiotropy]. Use empty string for none (default)", default = "")
-parser$add_argument("--alphas", type = 'character', help = "Specify which alphas to do, all in quotes, separated by ',' character")
-parser$add_argument("--lambdas", type = 'character', help = "Specify which lambdas to do, all in quotes, separated by ',' character")
+parser$add_argument("--alphas", type = 'character', default = "", help = "Specify which alphas to do, all in quotes, separated by ',' character")
+parser$add_argument("--lambdas", type = 'character', default = "", help = "Specify which lambdas to do, all in quotes, separated by ',' character")
 parser$add_argument("--scaled_sparsity", type = "logical", action = "store_true", default = FALSE, help = "Specify this to scale the sparsity params by dataset to be between 0 and 1")
 parser$add_argument("--output", type = "character", help = "Source file location")
 parser$add_argument("--cores", type = "numeric", help = "Number of cores", default = 1)
@@ -54,13 +54,14 @@ parser$add_argument("-i", "--niter", type = "numeric", help = "specify the numbe
 parser$add_argument("--posF", type = "logical", default = FALSE,  help = "Specify if you want to use the smei-nonnegative setup.", action = "store_true")
 parser$add_argument("--scale_n", type = "character", default = "",  help = "Specify the path to a matrix of sample sizes if you want to scale by sqrtN as well as W")
 parser$add_argument("--IRNT", type = "logical", default = FALSE,  help = "If you want to transform the effect sizes ", action = "store_true")
-parser$add_argument("--autofit", type = "character", default = "",  help = "Specify a 1 if you want to autofit sparsity parameter for the whole thing..")
+parser$add_argument("--autofit", type = "logical", default = FALSE,  help = "Specify if you want to autofit sparsity parameter for the whole thing..")
 parser$add_argument("-f", "--converged_F_change", type="double", default=0.02,help="Change in factor matrix to call convergence")
 parser$add_argument("-o", "--converged_obj_change", type="double", default=1,help="Relative change in the objective function to call convergence")
 parser$add_argument("--no_SNP_col", type="logical", default= FALSE, action = "store_true", help="Specify this option if there is NOT first column there...")
 parser$add_argument("--parameter_optimization", type="numeric", default= 1, action = "store_true", help="Specify how many iterations to run to get the cophenetic optimization, etc. ")
+parser$add_argument("--regression_method", type="character", default= "penalized", help="Specify which regression method to use. Options are [penalized (Default), glmnet]")
 parser$add_argument("--genomic_correction", type="character", default= "", help="Specify path to genomic correction data, one per snp.TODO: Also has the flexibility to expand")
-parser$add_argument("--epsilon", type="numeric", default= 1e-10, help="The convergence criteria for the L1. If exploring the space, try making this larger to speed up runtime. ")
+parser$add_argument("--epsilon", type="numeric", default= 1e-8, help="The convergence criteria for the L1. If exploring the space, try making this larger to speed up runtime. ")
 parser$add_argument("-v", "--verbosity", type="numeric", default= 0, help="How much output information to give in report? 0 is quiet, 1 is loud")
 
 parser$add_argument('--help',type='logical',action='store_true',help='Print the help page')
@@ -80,27 +81,33 @@ if(FALSE) #For debug functionality on MARCC- this is currently loading the udler
   #args$gwas_effects <- paste0(datdir, "beta_signed_matrix.tsv")
   #args$uncertainty <-  paste0(datdir, "se_matrix.tsv")
   
-  args$gwas_effects <-"/scratch16/abattle4/ashton/snp_networks/scratch/udler_td2/variant_lists/hm3.pruned.beta.txt"
-  args$uncertainty <- "/scratch16/abattle4/ashton/snp_networks/scratch/udler_td2/variant_lists/hm3.pruned.se.txt"
-  args$scale_n <- "/scratch16/abattle4/ashton/snp_networks/scratch/udler_td2/variant_lists/hm3.pruned.N.txt"
-  args$genomic_correction <- "/scratch16/abattle4/ashton/snp_networks/scratch/udler_td2/variant_lists/hm3.pruned.GC.txt"
-  args$nfactors <- 6
+  args$gwas_effects <-"/scratch16/abattle4/ashton/snp_networks/scratch/infertility_analysis/p0.2_FULL/B.tsv"
+  args$uncertainty <- "/scratch16/abattle4/ashton/snp_networks/scratch/infertility_analysis/p0.2_FULL/SE.tsv"
+  args$scale_n <- "/scratch16/abattle4/ashton/snp_networks/scratch/infertility_analysis/p0.2_FULL/N.tsv"
+  args$scale_n <- ""
+  args$fixed_first <- TRUE
+  args$genomic_correction <- ""
+  args$nfactors <- 0
   args$trait_names = ""
-  args$niter <- 2
-  args$alphas <- "0.01,0.05,0.1,0.15,0.2" #using 0.00001 since it doesn't like 0
-  args$lambdas <- "0.01,0.05,0.1,0.15,0.2"
-args$cores <- 1
+  args$niter <- 15
+  #args$alphas <- "0.01,0.05,0.1,0.15,0.2" #using 0.00001 since it doesn't like 0
+  #args$lambdas <- "0.01,0.05,0.1,0.15,0.2"
+  args$alphas <- "0.001,0.005,0.01,0.05" #using 0.00001 since it doesn't like 0
+  args$lambdas <- "0.001,0.005,0.01,0.05"
+  args$autofit <- FALSE
+    args$cores <- 1
 args$IRNT <- FALSE
 args$fixed_first <- TRUE
 args$weighting_scheme = "B_SE"
-args$output <- "/scratch16/abattle4/ashton/snp_networks/scratch/udler_td2/processed_data/gwasMF_hm3.tmp"
+args$output <- "/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results/infertility/p0.2_FULL/TEST"
 args$converged_obj_change <- 1
 args$scaled_sparsity <- TRUE
 args$posF <- FALSE
-args$autofit <- 0
+#args$autofit <- 0
 args$init_F <- "ones_eigenvect"
 args$init_L <- ""
-
+args$epsilon <- 1e-8
+args$verbosity <- 1
 }
 
 lf <- log_open(paste0(args$output, "gwasMF_log.", Sys.Date(), ".txt"), show_notes = FALSE)
@@ -109,11 +116,14 @@ output <- args$output
 
 #Read in the hyperparameters to explore
 hp <- readInParamterSpace(args)
-log_print("Input sparsity settings")
-log_print("Alphas: ")
-log_print(hp$a)
-log_print("Lambdas: ")
-log_print(hp$l)
+if(!args$autofit)
+{
+  log_print("Input sparsity settings")
+  log_print("Alphas: ")
+  log_print(hp$a)
+  log_print("Lambdas: ")
+  log_print(hp$l)
+}
 
 #set up settings
 option <- readInSettings(args)
@@ -127,10 +137,26 @@ max_sparsity <- approximateSparsity(X, W, option)
 log_print("Estimating sparsity maximums based on an SVD approximation.")
 log_print(paste0("Max alpha: ", max_sparsity$alpha))
 log_print(paste0("Max lambda: ", max_sparsity$lambda))
+option$K <- max_sparsity$newK #sets K if not provided.
+
+#Use the max to set up autofit
+if(option$autofit)
+{
+  autofit.seed <- 0.001
+  alphas <- c(max_sparsity$alpha * autofit.seed)
+  lambdas <- c(max_sparsity$lambda * autofit.seed)
+  option$max_lambda = max_sparsity$lambda
+  option$max_alpha = max_sparsity$alpha
+}
 
 
 if(option$calibrate_sparsity)
 {
+  if(option$autofit)
+  {
+    log_print("Incompatible 'autofit' and 'calibrate_sparsity' settings specified. Program will terminate")
+    quit()
+  }
   option$max_alpha <- max_sparsity$alpha
   option$max_lambda <- max_sparsity$lambda
   if(all(hp$a <= 1) & all(hp$a >= 0) & all(hp$l <= 1) & all(hp$l >= 0) & option$calibrate_sparsity)
@@ -177,11 +203,10 @@ for(opti in 1:args$parameter_optimization)
   
   for(i in 1:length(alphas)){
     for (j in 1:length(lambdas)){
-      a <- alphas[i]
-      l <- lambdas[j]
-      option[['alpha1']] <- as.numeric(a)
-      option[['lambda1']] <- as.numeric(l)
-      option[["parallel"]] <- FALSE
+        a <- alphas[i]
+        l <- lambdas[j]
+        option[['alpha1']] <- as.numeric(a)
+        option[['lambda1']] <- as.numeric(l)
       start <- Sys.time()
       run <- Update_FL(as.matrix(X), as.matrix(W), option)
       time <-  round(difftime(Sys.time(), start, units = "mins"), digits = 3)
@@ -243,13 +268,14 @@ for(opti in 1:args$parameter_optimization)
     ggsave(paste0(output, "loading_sparsity", opti, ".png"), device = "png")  
     
     #Plot the change in objective function for each one too....
-    
-   # objectives <- data.frame(lapply(run_stats, function(x) x[[6]])) %>% drop_na() 
-   # colnames(objectives) <- name_list
-   # objectives <- objectives %>% mutate("iteration" =1:nrow(objectives)) %>% reshape2::melt(., id.vars = "iteration")
-   # ggplot(data = objectives, aes(x = iteration, y = value, color = variable)) + geom_point() + geom_line() + 
-   #   theme_minimal(15) + ggtitle("Objective function") + ylab("Objective score")
-   # ggsave(paste0(output, "objective.", opti, ".png"), device = "png")    
+   max_len <- max(unlist(lapply(valid_run_stats, function(x) length(x[[6]]))))
+   res <- lapply(valid_run_stats, function(x) c(x[[6]], rep(NA,max_len- length(x[[6]]))))
+  objectives <- data.frame("obj" = res)
+   colnames(objectives) <- name_list
+   objectives <- objectives %>% mutate("iteration" =1:nrow(objectives)) %>% reshape2::melt(., id.vars = "iteration")
+   ggplot(data = objectives, aes(x = iteration, y = value, color = variable)) + geom_point() + geom_line() + 
+      theme_minimal(15) + ggtitle("Objective function") + ylab("Objective score")
+    ggsave(paste0(output, "objective.", opti, ".png"), device = "png")    
   }
   rm(run_stats)
   log_print(paste0("Completed iteration number ", opti))

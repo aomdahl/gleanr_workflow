@@ -49,31 +49,26 @@ fit_F <- function(X, W, L, option, formerF = NULL){
 		# unpenalized = ~0 - suppress the intercept
 		# positive = TRUE  - constrains the estimated regression coefficients of all penalized covariates to be non-negative
 		# lambda2=1e-10    - avoid singularity in fitting
-		if(option$calibrate_sparsity){
-		  f <- recommendRange(response = X, penalized = dat_i[,paste0('F', seq(1, ncol(Lp)))], data=dat_i,
-		                      unpenalized = ~0, lambda1 =option[['lambda1']], lambda2=1e-10,
-		                      positive = option$posF)
-		  
-		}	else if(option[["reweighted"]])
+		if(option[["reweighted"]])
 		{
 		  fit = penalized(response = X, penalized = dat_i[,paste0('F', seq(1, ncol(Lp)))], data=dat_i,
 		                  unpenalized = ~0, lambda1 = option[['lambda1']], lambda2=1e-10,
 		                  positive = option$posF, standardize = FALSE, trace = FALSE, startbeta = formerF[col,] )
 		  f = coef(fit, 'all')
-		  #fit = penalized(response = X, penalized = dat_i[,paste0('F', seq(2, ncol(Lp)))], data=dat_i,
-		                  #unpenalized = ~0 + dat_i[,1], lambda1 = option[['lambda1']], lambda2=1e-10,
-		                  #positive = FALSE, standardize = FALSE, trace = FALSE, startbeta = formerF[col,] )
-		} else if(option[["glmnet"]])
-		{
-		  glm_fit <- glmnet(x = dat_i[,paste0('F', seq(1, ncol(Lp)))], y = xp, alpha = 1, lambda = c(option[['lambda1']]), intercept = FALSE)
-		  f = coef(glm_fit, 'all')[,1][-1]
-		} else if(option[["fixed_ubiq"]])
+		} 
+		else if(option[["regression_method"]] == "glmnet" & option[["fixed_ubiq"]]) 
+      	{
+		penalties <- c(0, rep(1, (ncol(L) - 1)))
+		f = glmnetLASSO(dat_i, xp, ncol(L), option[['lambda1']], penalties)
+		print("in here")
+		print(f)
+   		 } else if(option[["fixed_ubiq"]] & option[["regression_method"]] == "penalized")
 		{
 		  lambdas <- c(0, rep(option[['lambda1']], (ncol(Lp) - 1))) #no lasso on that first column
+
 		  fit = penalized(response = X, penalized = dat_i[,paste0('F', seq(1, ncol(Lp)))], data=dat_i,
 		                  unpenalized = ~0, lambda1 =lambdas, lambda2=1e-10,
-		                  positive = option$posF, standardize = FALSE, trace = FALSE)
-		  #glm_fit <- glmnet(x = dat_i[,paste0('F', seq(1, ncol(Lp)))], y = xp, alpha = 1, lambda = lambdas, intercept = FALSE)
+		                  positive = option$posF, standardize = FALSE, trace = FALSE, epsilon = option$epsilon)
 		  
 		  f = coef(fit, 'all')
 		} else {

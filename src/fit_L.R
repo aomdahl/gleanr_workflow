@@ -27,7 +27,30 @@
   suppressWarnings(library(penalized))
   library(foreach)
   library(doParallel)
-  
+ glmnetLASSO <- function(dat_i,xp, colcount, lambdas, penalties)
+{
+    out <- tryCatch(
+    expr = { penalties <- c(0, rep(1, (colcount - 1)))
+      fit <- glmnet(x = dat_i[,paste0('F', seq(1,colcount))], y = xp, alpha = 1, lambda = lambdas,
+                    intercept = FALSE, penalty.factor = penalties)
+      coef(fit, 'all')[,1][-1];
+        
+    },
+    error = function(e){
+	print(e)
+        print("Vals")
+        print(head(dat_i[,paste0('F', seq(1,colcount))]))
+        print("Outcomes")
+        print(xp)
+	readline()
+        rep(0,colcount)
+
+    },
+     warning = function(w){
+            message('Caught an warning!')
+            print(w)})
+    return(out)
+} 
   #Function for running the fitting step. Options include
   #reweighted: this uses the previous iteration to initialize the current one. Thought it might provide a speed boost, but the difference seemed to be minimal.
   #glmnet: This uses the glmnet function; just exploring options
@@ -57,12 +80,13 @@
                       positive = FALSE, standardize = FALSE, trace = FALSE, startbeta = formerL);
       l = coef(fit, 'all');
     } 
-    else if(option[["glmnet"]]) 
+    else if(option[["regression_method"]] == "glmnet" & option[["fixed_ubiq"]]) 
       {
-      
-      fit <- glmnet(x = dat_i[,paste0('F', seq(1,ncol(FactorMp)))], y = xp, alpha = 1, lambda = c(option[['alpha1']]), intercept = FALSE)
-      l = coef(fit, 'all')[,1][-1];
-      
+      penalties <- c(0, rep(1, (ncol(FactorMp) - 1)))
+      #fit <- glmnet(x = dat_i[,paste0('F', seq(1,ncol(FactorMp)))], y = xp, alpha = 1, lambda = option[['alpha1']], 
+                    #intercept = FALSE, penalty.factor = penalties)
+      #l = coef(fit, 'all')[,1][-1];
+      l = glmnetLASSO(dat_i, xp, ncol(FactorMp), option[['alpha1']], penalties)
     }	
     else if(option[["fastReg"]]){
       td <- t(dat_i[,paste0('F', seq(1,ncol(FactorMp)))])
@@ -81,21 +105,14 @@
       l = coef(fit, 'all');
       
     } 
-    else if(option$calibrate_sparsity)
-    {
-      fit = recommendRange(response = X, penalized = dat_i[,paste0('F', seq(1, ncol(FactorMp)))], data=dat_i,
-                           unpenalized = ~0, lambda1 =lambdas, lambda2=1e-10,
-                           positive = FALSE)
-      return(fit)
-    }
-    else if(option[["fixed_ubiq"]])
+    else if( option[["regression_method"]] == "penalized" & option[["fixed_ubiq"]])
     {
       lambdas <- c(0, rep(option[['alpha1']], (ncol(FactorMp) - 1))) #no lasso on that first column
         #browser()
       #Okay, it seems like this is working now to estimate the max. Track over all the rows, then get the max
       fit = penalized(response = X, penalized = dat_i[,paste0('F', seq(1, ncol(FactorMp)))], data=dat_i,
                       unpenalized = ~0, lambda1 =lambdas, lambda2=1e-10,
-                      positive = FALSE, standardize = FALSE, trace = FALSE, epsilon = option$epsilon)
+                      positive = FALSE, standardize = FALSE, trace = FALSE, epsilon = option$epsilon, maxiter = 10) #seet a limit on maxiter.
       #Note- some rudimentary testing done, setting maxiter doesn't necessarily help. 
       l = coef(fit, 'all')
     }		else {
@@ -121,13 +138,23 @@
   		}		else {
   		  l = one_fit(x, w, as.matrix(FactorM), option, NULL, r.v);
   		}
-  		#L = rbind(L, l);
+  		#Gettings some very bizarre errors about names and such, some weird hacks to work around it.
   		if(length(l) == 1)
   		{
   		  l <- as.matrix(l)
-  		  colnames(l) <- "F1"
+  		  suppressMessages(names(l) <- "F1")
   		}
-      L = bind_rows(L, l)
+      if(is.null(L))
+      {
+          L = l
+      } else if(is.null(L) & is.null(l)){
+          message("Matrix is empty...")
+          return(NULL)
+      }
+      else{
+          L = suppressMessages(bind_rows(L, l))
+        }
+      
   	}
   	updateLog(paste0('Updating Loading matrix takes ', round(difftime(Sys.time(), tS, units = "mins"), digits = 3), ' min'), option$V);
   
