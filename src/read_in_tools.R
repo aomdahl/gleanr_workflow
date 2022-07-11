@@ -27,7 +27,6 @@ readInParamterSpace <- function(args)
 #Holdover from previous version. May not be used
 cleanUp <- function(matin, type = "beta")
 {
-  print(dim(matin))
   lister <- as.vector(unlist(matin))
   if(type == "beta")
   {
@@ -49,7 +48,7 @@ cleanUp <- function(matin, type = "beta")
 #Zero out NA and extreme chi2
 #Param X, W
 #Return list with cleanX, cleanW
-matrixGWASQC <- function(X, W)
+matrixGWASQC <- function(X, W, na_thres = 0.5)
 {
   #Now that we have the SE and the B, go ahead and filter out bad snps....
   #Clean up NAs, etc.
@@ -65,6 +64,8 @@ matrixGWASQC <- function(X, W)
     drops = which(drop.nas.rows == ncol(X))
     log_print(paste0("Removed ",sum(drop.nas.rows == ncol(X)), " variants where all entries were NA..."))
   }
+  X <- as.matrix(X)
+  W <- as.matrix(W)
   drop.nas <- apply(X*W,2, function(x) is.na(x))
   drop.chi2 <- apply(X*W,2, function(x) x^2 > 80) 
   drop.chi2[drop.nas] <- FALSE
@@ -72,26 +73,33 @@ matrixGWASQC <- function(X, W)
   #do we just zero those ones out or drop them all together?
   #if more than 15% of SNPs for a particular trait are in this category, drop the trait instead
   too.many.drops <- unlist(lapply(1:ncol(drop.chi2), function(i) sum(drop.chi2[,i]) + sum(drop.nas[,i])))
+  drop.cols <- c()
   if(any(too.many.drops > 0.20 * nrow(X))) #greater than 20%
   {
-    drop.counts <- which(too.many.drops > 0.20 * nrow(X))
-    for(w in drop.counts)
+    warning.counts <- which(too.many.drops > (0.20 * nrow(X)))
+    drop.cols <- which(too.many.drops > (na_thres * nrow(X)))
+    for(w in warning.counts)
     {
-      
-      log_print(paste0(round(too.many.drops[w]/nrow(X) * 100, digits = 2), "% of SNPs in trait ",tnames[w], " are either missing or invalid. Consider removing this trait."))
+      na.proportion <- too.many.drops[w]/nrow(X)
+      log_print(paste0(round(too.many.drops[w]/nrow(X) * 100, digits = 2), "% of SNPs in trait ",tnames[w], " are either missing or invalid."))
     }
+    log_print(paste0("Traits with over ", na_thres*100, "% missing entries will be dropped automatically."))
   }
+
+  #TODO: fix this report, it isn't quite right.
   log_print("Cells with invalid entries (NA, or excessive Chi^2 stat) will be given a weight of 0.")
+  removed.cols <- length(drop.cols) * nrow(X)
   log_print(paste0(sum(all.drops), " out of ", (nrow(all.drops) * ncol(all.drops)), " total cells are invalid and will be 0'd."))
   log_print(paste0("   Zeroing out ", sum(drop.chi2), " entries with extreme chi^2 stats > 80"))
   log_print(paste0("   Zeroing out ", sum(drop.nas), " entries with NA"))
   W[all.drops] <- 0
   X[drop.nas] <- 0 #technically we don't need to drop them here, if they are being given a weight of 0. But if they are NAs we need to give them a value so they don't killus.
-  if(length(drops) == 0)
-  {
-	  drops = 0
-  }
-  return(list("clean_X" = X, "clean_W" = W, "dropped_rows"=drops))
+  if(length(drops) == 0){	  drops = 0  }
+  if(length(drop.cols) == 0){	  
+    return(list("clean_X" = X, "clean_W" = W, "dropped_rows"=drops, "dropped_cols" =  0))
+    }
+    return(list("clean_X" = X[, -drop.cols], "clean_W" = W[, -drop.cols], "dropped_rows"=drops, "dropped_cols" =  drop.cols))
+ 
 }
 
 
@@ -110,8 +118,7 @@ readInData <- function(args)
   #Load the effect size data
   effects <- fread(args$gwas_effects) %>% quickSort(.)
   all_ids <- unlist(effects[,1])
-  
-  #Get the trait names out
+    #Get the trait names out
   if(args$trait_names == "")
   {
     message("No trait names provided. Using the identifiers in the tabular effect data instead.")
@@ -119,7 +126,6 @@ readInData <- function(args)
   } else{
     names <- scan(args$trait_names, what = character(), quiet = TRUE)
   }
-  
   effects <- as.matrix(effects[,-1])
   #Do we IRNT normalize the input data
   if(args$IRNT)
@@ -159,11 +165,15 @@ readInData <- function(args)
   
   #remove NAs, extreme values.
   r <- matrixGWASQC(X,W)
-  X <- r$clean_X;   W <- r$clean_W; all_ids <- all_ids[-(r$dropped_rows)]
-  #browser()
-  #At this point, we are assuming no ambiguous SNPs, but maybe we shouldn't....
-  #NO AMBIGS
-  #NO MAF < 0.01
+  X <- r$clean_X;  W <- r$clean_W; 
+  if(length(r$dropped_rows) > 1 | r$dropped_rows != 0)
+  {
+  all_ids <- all_ids[-(r$dropped_rows)]
+  }
+    if(r$dropped_cols != 0)
+  {
+    names <- names[-(r$dropped_cols)]
+  }
   
   if(args$scale_n != "")
   {
@@ -183,26 +193,49 @@ readInData <- function(args)
       stopifnot(all(all_ids == N[,1]))
     }
     N <- as.matrix(N %>% select(-1) %>% apply(., 2, as.numeric))
+    N <- N[,-r$dropped_cols]
     W <- W * (1/sqrt(N))
   }
   
   if(args$genomic_correction != "")
   {
     log_print("Including genomic correction in factorization...")
-    GC <-  fread(args$genomic_correction) %>% filter(!row_number() %in% r$drops) %>% filter(unlist(.[,1]) %in% all_ids) %>% quickSort(.)
-    if(!all(all_ids == GC[,1])) {
-      message("genomic correction values not in correct order, please advise...")
-      GC <- as.matrix(GC %>% select(-1) %>% apply(., 2, as.numeric))
-      W <- W * (1/sqrt(GC))
+    #note- this can come in as a matrix or as a simple list
+    GC <-  fread(args$genomic_correction) 
+    if(nrow(GC) == ncol(X)) #we have a single entry for each
+    {
+      message("Testing that the ordering is the same")
+      ecol = 1
+      if(ncol(GC) == 2)  {   ecol = 2 } #the first one is names
+      if(!all(unlist(GC[,1]) == names))
+      {
+        if(any(!(unlist(GC[,1]) %in% names)))
+        {
+          updateLog("Mismatch in names, some don't align. Please check this", option)
+          quit()
+        }
+        GC <- GC %>% mutate("pheno_rank" = factor(phenotype, levels = names)) %>% arrange(pheno_rank) %>% select(-pheno_rank)
+        stopifnot(GC$phenotype == names)
+      }
+      lambdagc <- as.matrix((do.call("rbind", lapply(1:nrow(X), function(x) unlist(GC[,..ecol])))), nrow = nrow(X))
+        GC <- lambdagc
+    } else { #matrix version.
+        GC <- GC %>% filter(!row_number() %in% r$drops) %>% filter(unlist(.[,1]) %in% all_ids) %>% quickSort(.)
+      if(!all(all_ids == GC[,1])) {
+        message("genomic correction values not in correct order, please advise...")
+        GC <- as.matrix(GC %>% select(-1) %>% apply(., 2, as.numeric))
+        GC <- GC[,-r$dropped_cols]
     }
+       
+    }
+    print(head(GC))
+    print(head(X)) 
+    X <- X * (1/sqrt(GC)) # we don't weight by this, we actually adjust the effect sizes by this.
+    print(head(X)) 
   }
-  
-
   return(list("X" = X, "W" = W, "ids" = all_ids, "trait_names" = names))
   
 }
-
-
 readInSettings <- function(args)
 {
   option <- list()
