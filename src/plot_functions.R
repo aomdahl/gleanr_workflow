@@ -1,5 +1,5 @@
 #R plots data viz.
-pacman::p_load(data.table, tidyr, dplyr, ggplot2, stringr, Xmisc, cowplot, ashr)
+pacman::p_load(data.table, tidyr, dplyr, ggplot2, stringr, argparse, cowplot, ashr)
 
 orderFactors <- function(F, dist = "euclidean")
 {
@@ -47,25 +47,31 @@ plotFactorsBarplot <- function(F, trait_names, title, cluster = TRUE, t_order = 
 
 
 
-plotFactors <- function(F, trait_names, title, cluster = TRUE, t_order = NA)
+plotFactors <- function(Fmat, trait_names, title, cluster = TRUE, t_order = NA, scale.cols = FALSE)
 {
-  if(dim(F)[2] == 0)
+  if(dim(Fmat)[2] == 0)
     {
         print("No dim")
         return(ggplot() + theme_void())   
     }
-  new_names <- c(seq(1,ncol(F)), "trait")
+  new_names <- c(seq(1,ncol(Fmat)), "trait")
   if(!is.na(t_order))
   {
     ordering <- t_order
   }else if(cluster) {
-    ordering <- orderFactors(F)
+    ordering <- orderFactors(Fmat)
   }else{
-    ordering <- 1:nrow(F)
+    ordering <- 1:nrow(Fmat)
   }
-  factors_nn <- data.frame(F) %>% mutate("trait" = factor(trait_names, levels = trait_names[ordering]) )
+  #scale cols to unit norm if that's what we are doing
+  if(scale.cols)
+  {
+    Fmat <- apply(Fmat, 2, function(x) x/sqrt(sum(x^2)))
+  }
+  
+  factors_nn <- data.frame(Fmat) %>% mutate("trait" = factor(trait_names, levels = trait_names[ordering]) )
   names(factors_nn) <- new_names
-  nn <- tidyr::pivot_longer(factors_nn, cols = seq(1:ncol(F)), names_to = "x") %>%  arrange(value)
+  nn <- tidyr::pivot_longer(factors_nn, cols = seq(1:ncol(Fmat)), names_to = "x") %>%  arrange(value)
   nn$x <- as.factor(as.numeric(nn$x))
   p <- ggplot(nn, aes(x, trait, fill= value)) + geom_tile(color = "gray") +  scale_fill_gradient2(low = "blue", mid = "white", high = "red") + 
     xlab("Factors") + theme_minimal(15) + ggtitle(title)

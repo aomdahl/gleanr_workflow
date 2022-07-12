@@ -1,7 +1,23 @@
 #Source everything you need:
 
 #... you know, I am pretty sure yuan has a setup for this already. like to specify the desired sparsity or whatever.
-pacman::p_load(tidyr, plyr, dplyr, ggplot2, stringr, penalized, cowplot, parallel, doParallel, Xmisc, logr, coop, data.table, glmnet)
+#pacman::p_load(tidyr, plyr, dplyr, ggplot2, stringr, penalized, cowplot, parallel, doParallel, logr, coop, data.table, glmnet, svMisc, nFactors)
+suppressPackageStartupMessages(library("tidyr"))
+suppressPackageStartupMessages(library("plyr")) 
+suppressPackageStartupMessages(library("dplyr")) 
+suppressPackageStartupMessages(library("ggplot2")) 
+suppressPackageStartupMessages(library("stringr")) 
+suppressPackageStartupMessages(library("penalized")) 
+suppressPackageStartupMessages(library("cowplot")) 
+suppressPackageStartupMessages(library("parallel")) 
+suppressPackageStartupMessages(library("doParallel")) 
+suppressPackageStartupMessages(library("logr")) 
+suppressPackageStartupMessages(library("coop")) 
+suppressPackageStartupMessages(library("data.table")) 
+suppressPackageStartupMessages(library("glmnet")) 
+suppressPackageStartupMessages(library("svMisc")) 
+suppressPackageStartupMessages(library("nFactors")) 
+suppressPackageStartupMessages(library("argparse"))
 dir ="/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/src/"
 #dir = "/Users/aomdahl/Documents/Research/LocalData/snp_networks/gwas_spMF/src/"
 source(paste0(dir, "fit_F.R"))
@@ -14,6 +30,7 @@ source(paste0(dir, 'sparsity_scaler.R'))
 source(paste0(dir, 'cophenetic_calc.R'))
 source(paste0(dir, 'read_in_tools.R'))
 source(paste0(dir, 'regressionUtils.R'))
+
 quickSort <- function(tab, col = 1)
 {
   tab[order(tab[,..col], decreasing = TRUE),]
@@ -30,9 +47,7 @@ updateStatement  <- function(l,a,l_og, a_og, run,time)
   log_print(paste0("Number of active factors: ", ncol(run$F)))
 }
 
-
-
-parser <- ArgumentParser$new()
+parser <- ArgumentParser()
 parser$add_description("Script to run matrix factorization")
 parser$add_argument("--gwas_effects", type = 'character', help = "Specify the Z or B file, depending on specified weighting scheme. First column is ids of each variant, column names specify the trait")
 parser$add_argument("--uncertainty", type = 'character', help = "Specify the path to the SE or other uncertainty file, depending on the weightin scheme.irst column is ids of each variant, column names specify the trait")
@@ -49,7 +64,7 @@ parser$add_argument("--cores", type = "numeric", help = "Number of cores", defau
 parser$add_argument("--fixed_first", type = "logical", help = "if want to remove L1 prior on first factor", action = "store_true", default = FALSE)
 parser$add_argument("--debug", type = "logical", help = "if want debug run", action = "store_true", default = FALSE)
 parser$add_argument("--overview_plots", type = "logical", help = "To include plots showing the objective, sparsity, etc for each run", action = "store_true", default = FALSE)
-parser$add_argument("-k", "--nfactors", type = "numeric", help = "specify the number of factors", default = 15)
+parser$add_argument("-k", "--nfactors", type = "character", help = "specify the number of factors", default = "15")
 parser$add_argument("-i", "--niter", type = "numeric", help = "specify the number of iterations", default = 30)
 parser$add_argument("--posF", type = "logical", default = FALSE,  help = "Specify if you want to use the smei-nonnegative setup.", action = "store_true")
 parser$add_argument("--scale_n", type = "character", default = "",  help = "Specify the path to a matrix of sample sizes if you want to scale by sqrtN as well as W")
@@ -64,9 +79,7 @@ parser$add_argument("--genomic_correction", type="character", default= "", help=
 parser$add_argument("--epsilon", type="numeric", default= 1e-8, help="The convergence criteria for the L1. If exploring the space, try making this larger to speed up runtime. ")
 parser$add_argument("-v", "--verbosity", type="numeric", default= 0, help="How much output information to give in report? 0 is quiet, 1 is loud")
 
-parser$add_argument('--help',type='logical',action='store_true',help='Print the help page')
-parser$helpme()
-args <- parser$get_args()
+args <- parser$parse_args()
 message("Please make sure the first column of input data is SNP/RSIDs.")
 #lf <- log_open(paste0(args$output, "gwasMF_log.", Sys.Date(), ".txt"))
 #TODO:
@@ -96,21 +109,23 @@ if(FALSE) #For debug functionality on MARCC- this is currently loading the udler
   args$lambdas <- "0.001,0.005,0.01,0.05"
   args$autofit <- FALSE
     args$cores <- 1
-args$IRNT <- FALSE
-args$fixed_first <- TRUE
-args$weighting_scheme = "B_SE"
-args$output <- "/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results/infertility/p0.2_FULL/TEST"
-args$converged_obj_change <- 1
-args$scaled_sparsity <- TRUE
-args$posF <- FALSE
-#args$autofit <- 0
-args$init_F <- "ones_eigenvect"
-args$init_L <- ""
-args$epsilon <- 1e-8
-args$verbosity <- 1
+  args$IRNT <- FALSE
+  args$fixed_first <- TRUE
+  args$weighting_scheme = "B_SE"
+  args$output <- "/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results/infertility/p0.2_FULL/TEST"
+  args$converged_obj_change <- 1
+  args$scaled_sparsity <- TRUE
+  args$posF <- FALSE
+  #args$autofit <- 0
+  args$init_F <- "ones_eigenvect"
+  args$init_L <- ""
+  args$epsilon <- 1e-8
+  args$verbosity <- 1
 }
-
-lf <- log_open(paste0(args$output, "gwasMF_log.", Sys.Date(), ".txt"), show_notes = FALSE)
+log.path <- paste0(args$output, "gwasMF_log.", Sys.Date(), ".txt")
+lf <- log_open(log.path, show_notes = FALSE)
+options("logr.compact" = TRUE)
+options("logr.notes" = FALSE)
 
 output <- args$output
 
@@ -127,11 +142,12 @@ if(!args$autofit)
 
 #set up settings
 option <- readInSettings(args)
+option$log <- log.path
 log_print("Succesfully loaded program options....")
+
 #read in the data
 input.dat <- readInData(args)
 X <- input.dat$X; W <- input.dat$W; all_ids <- input.dat$ids; names <- input.dat$trait_names
-
 #Estimate sparsity space (doesn't work too well.)
 max_sparsity <- approximateSparsity(X, W, option)
 log_print("Estimating sparsity maximums based on an SVD approximation.")
@@ -165,11 +181,11 @@ if(option$calibrate_sparsity)
     lambdas <- hp$l * max_sparsity$lambda
     
     option$calibrate_sparsity <- FALSE
-    updateLog("Scaled amounts are:", option$V)
-    updateLog("    Lambdas:", option$V)
-    updateLog(paste(round(lambdas, digits = 2)), option$V)
-    updateLog("    Alphas:", option$V)
-    updateLog(round(alphas, digits = 3), option$V)
+    updateLog("Scaled amounts are:", option)
+    updateLog("    Lambdas:", option)
+    updateLog(paste(round(lambdas, digits = 2)), option)
+    updateLog("    Alphas:", option)
+    updateLog(round(alphas, digits = 3), option)
   }else
   {
     message('Inputed sparsity parameters must be between 0 and 1 to use the "calibrate_sparsity option".')

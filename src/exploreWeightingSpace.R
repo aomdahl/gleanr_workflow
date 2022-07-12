@@ -1,7 +1,7 @@
 #Source everything you need:
 
 #... you know, I am pretty sure yuan has a setup for this already. like to specify the desired sparsity or whatever.
-pacman::p_load(data.table, tidyr, dplyr, readr, ggplot2, stringr, penalized, cowplot, parallel, doParallel, Xmisc)
+pacman::p_load(data.table, tidyr, dplyr, readr, ggplot2, stringr, penalized, cowplot, parallel, doParallel, argparse)
 source("src/fit_F.R")
 source("src/update_FL.R")
 source("src/fit_L.R")
@@ -33,9 +33,9 @@ alphas <- scan(text = args$alphas, what = character(), sep = ',')
 lambdas <- scan(text = args$lambdas, what = character(), sep = ',')
 output <- args$output
 #Load the data
-dir <- "/work-zfs/abattle4/ashton/snp_networks/gwas_decomp_ldsc/gwas_extracts/seed2_thresh0.9_h2-0.1_vars1e-5/"
+dir <- "/scratch16/abattle4/ashton/snp_networks/gwas_decomp_ldsc/gwas_extracts/seed2_thresh0.9_h2-0.1_vars1e-5/"
 z_scores <- fread(paste0(dir, "seed2_thresh0.9_h2-0.1_vars1e-5.FULL_LIST.1e-5.z.tsv")) %>% drop_na() %>% arrange(ids)
-names <- scan("/work-zfs/abattle4/ashton/snp_networks/gwas_decomp_ldsc/trait_selections/seed2_thresh0.9_h2-0.1.names.tsv", what = character())
+names <- scan("/scratch16/abattle4/ashton/snp_networks/gwas_decomp_ldsc/trait_selections/seed2_thresh0.9_h2-0.1.names.tsv", what = character())
 z <- as.matrix(z_scores %>% select(-ids))
 
 betas <- fread(paste0(dir, "seed2_thresh0.9_h2-0.1_vars1e-5.FULL_LIST.1e-5.beta.tsv")) %>% 

@@ -24,7 +24,7 @@ approxAvgSparsity <- function(dat, thres){
   sum(colSums(abs(dat) < thresh))/nrow(dat) /ncol(dat)
 }
 #quick script to choose the traits we want
-pacman::p_load(data.table, tidyr, dplyr,  ggplot2, stringr, Xmisc)
+pacman::p_load(data.table, tidyr, dplyr,  ggplot2, stringr, argparse)
 parser <- ArgumentParser$new()
 parser$add_description("Script to quickly assess the sparsity of a matrix by column")
 parser$add_argument("--data", type = 'character', help = "Path to data file")
