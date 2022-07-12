@@ -1,4 +1,4 @@
-pacman::p_load(data.table, tidyr, dplyr, ggplot2, stringr,stats, cowplot, magrittr, argparse)
+pacman::p_load(data.table, tidyr, dplyr, ggplot2, stringr,stats, cowplot, magrittr, optparse)
 
 renameAll <- function(m, n)
 {
@@ -8,19 +8,19 @@ renameAll <- function(m, n)
 }
 
 
-parser <- ArgumentParser$new()
-parser$add_description("Script to process the output of LDSC")
-parser$add_argument("--input_path", type = 'character', help = "Path to tabular output")
-parser$add_argument("--which_data", type = 'character', help = "Which data to plot and extract; default is all.")
-parser$add_argument("--focus_trait", type = 'character', help = "specify the name of a focus trait, if you want", default = "")
-parser$add_argument("--cohort_data", type = 'character', help = "specify the cohort of the traits, if you want", default = "")
-parser$add_argument("--output", type = 'character', help = "Specify the path to the genomic correction coefficients. If none provided, none used", default = "")
-parser$add_argument('--help',type='logical',action='store_true',help='Print the help page')
-parser$helpme()
-args <- parser$get_args()
+option_list <- list(
+make_option(c("--input_path"), type = 'character', help = "Path to tabular output"),
+make_option(c("--which_data"), type = 'character', help = "Which data to plot and extract; default is all."),
+make_option(c("--focus_trait"), type = 'character', help = "specify the name of a focus trait, if you want", default = ""),
+make_option(c("--cohort_data"), type = 'character', help = "specify the cohort of the traits, if you want", default = ""),
+make_option(c("--output"), type = 'character', help = "Specify the path to the genomic correction coefficients. If none provided, none used", default = ""),
+make_option(c("--filter_se"), type = 'logical', action = "store_true", help = "Specify this if you want to filter your outputs by the standard error.", default = FALSE)
+)
+args <- parse_args(OptionParser(option_list=option_list))
+
 source("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/src/postMungeUtils.R")
 source("/scratch16/abattle4/ashton/snp_networks/gwas_decomp_ldsc//src/plot_functions.R")
-if(TRUE)
+if(FALSE)
 {
   args <- list()
   args$output <- "/home/aomdahl1/scratch16-abattle4/ashton/snp_networks/scratch/infertility_analysis/hm3_ldsc/tabular/TEST"
@@ -34,13 +34,15 @@ if(TRUE)
 }
 
 #TODO: check that rows and columns are in the same order.
-message("Evaluating genetic correlation")
+
 #MAke the r2g and heatmap....
 
-if(args$which_data == "intercept")
+if(args$which_data[1] == "intercept")
 {
-  intercepts <- ldscStdIntoMatrix(look_path = args$input_path,"" , filter_se = TRUE)
-}else if(args$which_data == "rg")
+  message("looking for intercept")
+  intercepts <- ldscStdIntoMatrix(look_path = args$input_path,"" , filter_se = args$filter_se)
+  write.table(intercepts, file = paste0(args$output, "genomic_correction_intercept.tsv"), quote = FALSE, row.names = FALSE)
+} else if(args$which_data == "rg")
 {
   rg <- ldscGCOVIntoMatrix(look_path = args$input_path,"rg")
   if(args$trait_names == "default")
@@ -52,7 +54,6 @@ if(args$which_data == "intercept")
   ggsave(filename = paste0(args$output, "rg_heatmap.png"),width = 10, height = 10)
   plotCorrelationHeatmap(rg,typin ="heatmap.default", title = "Heatmap of genetic correlation (rg)",p.vals = p)
   ggsave(filename = paste0(args$output, "rg_heatmap_with_p.png"),width = 15, height = 10)
-  
   
 } else if(args$which_data == "p")
 {
@@ -67,7 +68,7 @@ if(args$which_data == "intercept")
 {
   h2obs <- ldscGCOVIntoMatrix(look_path = args$input_path,"h2_obs")
 } else {
-  mesasge("doing all by default")
+  message("doing all by default")
   h2obs <- ldscGCOVIntoMatrix(look_path = args$input_path,"h2_obs")
   p <- ldscGCOVIntoMatrix(look_path = args$input_path,"p")
   rg <- ldscGCOVIntoMatrix(look_path = args$input_path,"rg")
@@ -110,13 +111,16 @@ if(args$which_data == "ALL" | args$which_data == "h2_obs")
   
 }
 
-message("Now looking at cohort overlaps...")
-int <- ldscGCOVIntoMatrix(look_path = args$input_path,"gcov_int",filter_se = TRUE)
-int <- renameAll(int, cn)
-if(args$cohort_data != "")
+if(args$which_data == "gcov_int")
 {
-  cohorts <- fread(args$cohort_data) %>% set_colnames(c("trait_name", "Cohort")) %>% 
-    mutate("trait_ordered" = factor(trait_name, levels = cn)) %>% drop_na() %>% arrange(trait_ordered)
+  message("Now looking at cohort overlaps...")
+  int <- ldscGCOVIntoMatrix(look_path = args$input_path,"gcov_int",filter_se = TRUE)
+  int <- renameAll(int, cn)
+  if(args$cohort_data != "")
+  {
+    cohorts <- fread(args$cohort_data) %>% set_colnames(c("trait_name", "Cohort")) %>% 
+      mutate("trait_ordered" = factor(trait_name, levels = cn)) %>% drop_na() %>% arrange(trait_ordered)
+  }
+  plotCorrelationHeatmap(int,typin ="heatmap.default", title = "Heatmap of LDSC Rg Intercept\n(cohort overlap effects)",colors = cohorts$Cohort)
+  ggsave(filename = paste0(args$output, "gcov_int.png"),width = 15, height = 10)
 }
-plotCorrelationHeatmap(int,typin ="heatmap.default", title = "Heatmap of LDSC Rg Intercept\n(cohort overlap effects)",colors = cohorts$Cohort)
-ggsave(filename = paste0(args$output, "gcov_int.png"),width = 15, height = 10)
