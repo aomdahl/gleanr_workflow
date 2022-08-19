@@ -3,7 +3,8 @@ source("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/src/post
 parser <- ArgumentParser$new()
 parser$add_description("Convert LDSC munged summary stats outputs to matrices")
 parser$add_argument("--filepathlist", type = "character", help = "Path to 2 column file. First has full file path, 2nd has unique trait name")
-parser$add_argument("--feature_list", type = "character", default = "ALL", help = "Path to file specifying just which phenotypes we want. Default is [B,N,SE]")
+parser$add_argument("--pheno_list", type = "character", default = "ALL", help = "File specifying just which phenotypes we want. Default is ALL")
+parser$add_argument("--feature_list", type = "character", default = "ALL", help = "String specifying just which phenotypes we want. Default is ALL, which includes, B,N,SE")
 parser$add_argument("--snp_list", type = "character", help = "Path to list of SNPs to pull out. Default is all those listed in the first file.", default = "")
 parser$add_argument("--outdest", type = "character", help = "Path to output destination")
 parser$add_argument('--help',type='logical',action='store_true',help='Print the help page')
@@ -24,10 +25,17 @@ if(FALSE)
   args$feature_list <- "ALL"
   args$snp_list <- ""
 }
-n.phenos <- getDataFromLDSC(args$filepathlist,"N", feature_list=args$feature_list, snp.list = args$snp_list, fill.nas = TRUE, mean.impute = TRUE)
-b.phenos <- getDataFromLDSC(args$filepathlist,"SIGNED_SUMSTAT", feature_list=args$feature_list, snp.list = args$snp_list, fill.nas = FALSE, mean.impute = FALSE)
-se.phenos <- getDataFromLDSC(args$filepathlist,"SE", feature_list=args$feature_list, snp.list = args$snp_list, fill.nas = FALSE, mean.impute = FALSE)
-message("Writing out....")
-write.table(x=n.phenos, file = paste0(args$outdest, "N.tsv"),quote = FALSE, row.names = FALSE)
-write.table(x=b.phenos, file = paste0(args$outdest, "B.tsv"),quote = FALSE, row.names = FALSE)
-write.table(x=se.phenos, file = paste0(args$outdest, "SE.tsv"),quote = FALSE, row.names = FALSE)
+features = c(args$feature_list)
+if(args$feature_list == "ALL")
+{
+  c("N", "SE", "SIGNED_SUMSTAT", "Z")
+}
+
+for(feature in features)
+{
+	dat.tab <- getDataFromLDSC(args$filepathlist,feature, feature_list=args$pheno_list, snp.list = args$snp_list, fill.nas = TRUE, mean.impute = TRUE)
+	write.table(x=n.phenos, file = paste0(args$outdest, feature, ".tsv"),quote = FALSE, row.names = FALSE)
+	
+}
+
+
