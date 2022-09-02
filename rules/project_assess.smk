@@ -32,7 +32,7 @@ rule project_F:
         factors="results/{identifier}/latent.factors.txt",
         variants="results/{identifier}/full_hapmap3_snps.Z.tsv" #make a sym link if its in a common dir, so we don't have like a jillion copies of larege files.
     output:
-        "results/{identifier}/projectedF_hapmap3_loadings.txt"
+        "results/{identifier}/projected_hapmap3_loadings.txt"
     params:
     run:
         shell("Rscript {src_path}/projectSumStats.R --output {output} --factors {input.factors} --sumstats {input.variants} --id_type 'RSID' ")
@@ -48,11 +48,32 @@ rule project_LM:
     run:
         shell("Rscript {src_path}/projectSumStats.R --output {output} --factors {input.factors} --sumstats {input.variants} --id_type 'RSID' --proj_method std_lm")
 
+rule build_LD_space:
+	input:
+	output:
+		"test.txt"
+	run:
+		"""
+		ml plink
+		#make the following its own rule?
+		awk '(FNR == NR) {arr[$2]=$1;next} ($1 in arr) {print arr[$1]}' /data/abattle4/aomdahl1/reference_data/hm3_nohla.snpids allele_merge_list.txt | sort -h > 1000G.snp.ids
+		plink --bfile /scratch16/abattle4/ashton/prs_dev/1000genomes_refLD/ref --ld-window-kb 1000 --ld-window 99999 --ld-window-r2 0 --ld-snp-list 1000G.snp.ids   --out {output}
+		"""
+rule project_LD:
+    input:
+        #factors="factorization_data/{identifier}.factors.txt", #MAJOR CHANGE HERE. MOVING to be in results category
+        factors="results/{identifier}/latent.factors.txt",
+        variants="results/{identifier}/full_hapmap3_snps.Z.tsv" #make a sym link if its in a common dir, so we don't have like a jillion copies of larege files.
+    output:
+        "results/{identifier}/projectedLM_hapmap3_loadings.txt"
+    params:
+    run:
+        shell("ml anaconda; conda activate std; python --ld_ref")
 #option to make a rule project_Surya:
 checkpoint prep_enrichment: #format the outputed factors for enrichment analysis
     input:
         hapmap_list="/data/abattle4/aomdahl1/reference_data/hapmap_chr_ids.txt",
-        projections="results/{identifier}/projectedF_hapmap3_loadings.txt",
+        projections="results/{identifier}/projected_hapmap3_loadings.txt",
         sample_counts="gwas_extracts/{identifier}/full_hapmap3_snps.N.tsv"
 
     output:
@@ -126,7 +147,7 @@ rule ldsc_visualize:
         "results/{identifier}/ldsc_enrichment_{tis_ref}/full_heatmap.png",
 	"results/{identifier}/ldsc_enrichment_{tis_ref}/fdr_0.05_heatmap.png", 
 	"results/{identifier}/ldsc_enrichment_{tis_ref}/fdr_0.01_heatmap.png",
-	"results/{identifier}/ldsc_enrichemnt_{tis_ref}/wrapped_z.heatmap.png"
+	"results/{identifier}/ldsc_enrichment_{tis_ref}/wrapped_z.heatmap.png"
     params:
         "results/{identifier}/ldsc_enrichment_{tis_ref}/"
     shell:
