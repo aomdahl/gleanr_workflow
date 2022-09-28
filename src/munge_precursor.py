@@ -15,10 +15,10 @@ a1_options = ["RISK_ALLELE", "ALT"] #effect allele
 a2_options = ["OTHER_ALLELE", "REF"] #non-effect allele
 sum_stats = ["MAINEFFECTS", "ESTIMATE", "ODDS_RATIO"]
 maf_options = ["MINOR_AF", "REF_ALLELE_FREQUENCY", "FREQ1"]
-se_options = ["MAINSE"]
+se_options = ["MAINSE", "SDE"]
 pval_options = ["MAINP", "P_GC"]
 PVAL_FULL=["MAINP", "P_GC", "P", "PVALUE", "P_VALUE", "PVAL", "P_VAL", "GC_PVALUE"]
-IDM={"chr_opts" : ["CHR", "CHROMOSOME"], "pos_opts" :["POS", "base_pair_location".upper(), "BP"], "snpid_opts":["VARIANT_ID", "VARIANT", "SNP", "NAME", "MARKERNAME"]}
+IDM={"chr_opts" : ["CHR", "CHROMOSOME"], "pos_opts" :["POS", "base_pair_location".upper(), "BP", "POSITION"], "snpid_opts":["VARIANT_ID", "VARIANT", "SNP", "NAME", "MARKERNAME"]}
 #chromosome	base_pair_location
 labels = {"n" : n_options, "snp" : snp_options, "maf" : maf_options, "a1" : a1_options, "a2" :a2_options, "ss" : sum_stats, "se" :se_options, "p" : pval_options, "n_existing" : n_options_LDSC}
 import sys
@@ -138,6 +138,7 @@ def filePeek(readin, argv):
     If not, it makes necessary changes or notifies the user. Yup.
     @return cleanup_protocol: instructions for cleaning up the file, if any.
     @return ret_n the string to append to the munge command to deal with sample sizes
+    TODO: if chr and pos are included, maybe favor those. Some of the other stuff is janky wanky.
     """
     fpath = readin[0]
     pheno = readin[1]
@@ -167,22 +168,23 @@ def filePeek(readin, argv):
 
             if header_dat[0] == "variant".upper() and header_dat[-1] == "pval".upper(): #we suspect this is UKBB full format file.
                 if isVariantID(first_tab[0]):
-                    print("The current file at", fpath, "appears to be a full Neale Lab UKBB file. We don't recommend using this at this stage, use the LDSC pre-formatted one available onlinel")
+                    #print("The current file at", fpath, "appears to be a full Neale Lab UKBB file. We don't recommend using this at this stage, use the LDSC pre-formatted one available onlinel")
                     cleanup_protocol = cleanup_protocol + "UKBB"
                     #return cleanup_protocol, ret_n
                     #need to deal with UKBB cases of both continuous and case-control
             #the split column case
             if any_in(header_dat, IDM["chr_opts"]) and any_in(header_dat, IDM["pos_opts"]) and "RSID" not in header.upper(): #changed this.
                 if "RS" not in first.upper(): #sometimes its under another header label we can recognize
-                    cleanup_protocol = cleanup_protocol + "TO_RSID"
-            if ":" in header_dat[0] or ("MARKERNAME" in header_dat[0].upper()):
-                if "MARKERNAME" in header_dat[0].upper():
-                    #weird format with rs3131972:752721:A:G
-                    cleanup_protocol = cleanup_protocol + "FIRST_RSID"
-                else:
+                    cleanup_protocol = cleanup_protocol + "TO_RSID_2"
+            else:
+                if ":" in header_dat[0] or ("MARKERNAME" in header_dat[0].upper()):
+                    if "MARKERNAME" in header_dat[0].upper():
+                        #weird format with rs3131972:752721:A:G
+                        cleanup_protocol = cleanup_protocol + "FIRST_RSID"
+                    else:
+                        cleanup_protocol = cleanup_protocol + "TO_RSID_1"
+                if ":" in first and "RS" not in first.upper(): #No rsid but likely something else
                     cleanup_protocol = cleanup_protocol + "TO_RSID_1"
-            if ":" in first and "RS" not in first.upper(): #No rsid but likely something else
-                cleanup_protocol = cleanup_protocol + "TO_RSID_1"
             #Get the sample size if its there...
             ret_n = labelSpecify(header_dat, "n", labels)
             if ret_n == "USE_PROVIDED": 
@@ -212,7 +214,7 @@ def makeInterFileName(fpath, protocol):
     """
     If no change to be made, don't modify the file.
     """
-    remakes = ["TO_RSID", "GIANT", "CSV", "UKBB","HEADER_HM","FIRST_RSID", "RSID_1" ]
+    remakes = ["TO_RSID_2", "GIANT", "CSV", "UKBB","HEADER_HM","FIRST_RSID", "RSID_1" ]
     #os.path.basename()
     if any([x in protocol for x in remakes]):
         r = os.path.splitext(fpath)[0] + ".INTERMEDIATE" + os.path.splitext(fpath)[1]
@@ -234,7 +236,31 @@ def buildOutName(outpath, inpath, inpheno):
 
     return outpath + with_ext[0] + "." + inpheno
 
-def doCleanup(readin, protocol, rsids, correct_files):
+
+def validVersionExists(fn):
+    #file exists
+    import os.path
+    if not os.path.isfile(fn):
+        return False
+    
+    #file has some reasonable number of lines (i.e. over 500,000)
+    try:
+        num_lines = sum(1 for line in openFileContext(fn))
+        if num_lines < 850000:
+            return False
+    except gzip.BadGzipFile:
+        return False
+    #if its a gzip file, make sure its valid
+    #code snapped from https://stackoverflow.com/questions/41998226/python-checking-integrity-of-gzip-archive
+    if fn[-3:] == ".gz" or fn[-4:] == ".bgz":    
+        import os
+        r=os.popen('gunzip -t ' + fn).read()
+        if r != "":
+            return False
+    return True
+    #also do some kind of RSID-based sanity check? Or look at the last line in the file?
+
+def doCleanup(readin, protocol, rsids, correct_files, force_update = False):
     """
     Performs the cleanup step on files that need it
     UKBB, we should recommend ldsc
@@ -249,6 +275,11 @@ def doCleanup(readin, protocol, rsids, correct_files):
     if correct_files:
         print("Not correcting files, just writing out.")
         return intermediate_file_name
+    if validVersionExists(intermediate_file_name) and not force_update and protocol != "NONE": #if no changes to be made, don't bother checking..
+        print("Valid version of file already exists. Will not force update")
+        return intermediate_file_name
+    else:
+        print("Proceeding with update...")
     delim = ""
     T='\t'
     if protocol == "ERROR":
@@ -317,15 +348,16 @@ def doCleanup(readin, protocol, rsids, correct_files):
                     line = fh(line.strip(), fpath)                     
                     if i == 0: 
                         delim = detectDelimiter(line)
-                        ostream.write("SNP" + T + T.join(line.split(delim)[1:]) + '\n')
-                        if protocol == "TO_RSID" or protocol == "TO_RSID2":
+                        #ostream.write("SNP" + T + T.join(line.split(delim)[1:]) + '\n')
+                        ostream.write("SNP" + T + T.join(line.split(delim)) + '\n')
+                        if ("TO_RSID_2" in protocol) and ("TO_RSID_1" not in protocol):
                             which_chr = which([x.upper() in IDM["chr_opts"] for x in line.split(delim)])[0]
                             which_snp = which([x.upper() in IDM["pos_opts"] for x in line.split(delim)])[0]
                         else: #protocol == "TO+RSID1"
                             which_id = which([x.upper() in IDM["snpid_opts"] for x in line.split(delim)])[0]
                     else:
                         line = line.split(delim)
-                        if protocol == "TO_RSID" or protocol == "TO_RSID2":
+                        if ("TO_RSID_2" in protocol) and ("TO_RSID_1" not in protocol):
                             address = (line[which_chr] + ":" + line[which_snp]).replace("chr", "")
                         else:
                             address = line[which_id].replace("chr", "")
@@ -333,12 +365,12 @@ def doCleanup(readin, protocol, rsids, correct_files):
                                 address = ":".join(line[which_id].split(":")[0:2]).replace("chr", "")
                         if address in rsids:
                             snp = rsids[address]
-                            ostream.write(snp + T + T.join(line[1:]) +  '\n')
+                            ostream.write(snp + T + T.join(line) +  '\n')
+                            #ostream.write(snp + T + T.join(line[1:]) +  '\n')
                         else:
                             dropped_snps += 1
                             continue
         print(dropped_snps, "SNPs omitted.")
-        pdb.set_trace()
         fpath = intermediate_file_name #changes updated
         if(protocol == 'UKBBTO_RSID_1'):
             return fpath
@@ -346,7 +378,7 @@ def doCleanup(readin, protocol, rsids, correct_files):
         #determine which columnes have the info we need, look it up, and convert it.
     
     if "CSV" in protocol:
-        if "TO_RSID" not in protocol:
+        if "TO_RSID" not in protocol: #if it is, we've already made the adjustments to delimiter
             print("Changing CSV to TSV...")
             with openFileContext(fpath) as istream:
                 with outFileContext(intermediate_file_name) as ostream:
@@ -367,8 +399,8 @@ def doCleanup(readin, protocol, rsids, correct_files):
                         ostream.write(line + '\n')
         fpath = intermediate_file_name #changes updated
 
+    #This is an unusual type of header where they have RSID:CHR:POS or something like that.
     if "FIRST_RSID" in protocol and "UKBB" not in protocol and ("TO_RSID_1" not in protocol): #this last option should have been done above
-        pdb.set_trace()
         with openFileContext(fpath) as istream:
             with outFileContext(intermediate_file_name) as ostream:
                 for i, line in enumerate(istream):
@@ -442,6 +474,7 @@ parser.add_argument("--rsid_ref", help = "path to the RSID reference", default =
 parser.add_argument("--ldsc_path", help = "path to LDSC code", default="~/.bin/ldsc/")
 parser.add_argument("--merge_alleles", help = "Path to set up a predefined allele reference; if is empty string, then none used", default = "/data/abattle4/aomdahl1/reference_data/hm3_snps_ldsc_ukbb.tsv")
 parser.add_argument("--keep_maf", help = "Use this to get the MAF from files.", default = False, action = "store_true")
+parser.add_argument("--force_update", help = "Specify this if you want to force all intermediate files to be re-created. If intermediate files exist already and are a reasonable length, they aren't recreated.", default = False, action = "store_true")
 parser.add_argument("--mod", help = "Specify this if you want to run the modified version of LDSC that lets you extract B, SE, etc.", default = False, action = "store_true")
 parser.add_argument("--calls_only", help = "Use this if you want only to generate the commands, not run the actual correction.", default = False, action = "store_true")
 
@@ -485,12 +518,12 @@ with open(args.study_list ,'r') as istream:
             else:
                 print("Assuming hg37 build, using hapmap3 SNPS only...")
                 build_dict = build_list["hg37"]
-            intermediate_file = doCleanup(dat, fix_instructions,build_dict, args.calls_only)
+            intermediate_file = doCleanup(dat, fix_instructions,build_dict, args.calls_only, force_update = args.force_update)
             #build commands for it
             if fix_instructions and fix_instructions != "ERROR":
                 call = " munge_sumstats.py "
                 if args.mod:
-                    call = " munge_sumstats_MOD.py "
+                    call = "munge_sumstats_MOD.py "
                 lc = "python2 " + args.ldsc_path + call + "--sumstats " + intermediate_file + " --out " + buildOutName(args.output, dat[0], dat[1]) + "".join(fixed_labels) + mergeAlleles(args.merge_alleles)
                 if args.keep_maf:
                     lc = lc + " --keep-maf "
