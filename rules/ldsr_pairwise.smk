@@ -20,7 +20,11 @@ def getGWASNames(fl):
             basename = os.path.basename(l[0])
             gwas.append(os.path.splitext(basename)[0])
     return(gwas)
+trait_list=getTraitNames(filelist)
 
+rule all:
+	input:
+		expand("ldsr_results/infertility/fall_2022/{trait_id}.log", trait_id = trait_list) 
 
 rule mungeCommands:
     input: 
@@ -37,7 +41,6 @@ rule mungeCommands:
         """
 
 
-trait_list=getTraitNames(filelist)
 rule splitMungeCommands:
     input: "gwas_extracts/{identifier}/munge_sumstats.all.sh"
     output:
@@ -89,9 +92,11 @@ rule generateLDSCCommands:
     
     run:
         #Make a file with all the names for running
+        import os
+        wd=os.getcwd()
         with open(output.traitfile, 'w') as ostream:
             for i in input:
-                ostream.write(i + '\n') 
+                ostream.write(wd + "/" + i + '\n') 
         #Generate all the commands. Puts each one in its own file...
 
 rule pairwiseCommands:
@@ -101,7 +106,8 @@ rule pairwiseCommands:
         expand("ldsr_results/{{identifier}}/{trait_id}_ldsc.run.sh", trait_id = trait_list)
     shell:
 	    """
-	     bash src/all_pairwise_r2g.sh {input}  ldsr_results/{wildcards.identifier}/
+	     fp=`pwd`
+	     bash src/all_pairwise_r2g.sh {input}  $fp/ldsr_results/{wildcards.identifier}/
 	    """
 
 #This actually runs the LDSC that is needed. Allows us to just run single ones as needed.
@@ -110,7 +116,9 @@ rule pairwiseLDSC:
         "ldsr_results/{identifier}/{trait_id}_ldsc.run.sh"
     output:
         "ldsr_results/{identifier}/{trait_id}.log"
-    run:
+    shell:
         """
-        bash ldsr_results/{identifier}/{trait_id}_ldsc.run.sh
+		d=`pwd`
+       		bash {input}
+		cd $d
         """
