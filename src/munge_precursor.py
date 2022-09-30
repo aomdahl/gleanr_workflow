@@ -11,15 +11,16 @@ for f in files
 n_options =["N_SAMPLES", "EFFSAMPLESIZE", "N_COMPLETE_SAMPLES", "NEFF", "TOTALSAMPLESIZE"]
 n_options_LDSC=['N','NCASE','CASES_N','N_CASE', 'N_CASES','N_CONTROLS','N_CAS','N_CON','N_CASE','NCONTROL','CONTROLS_N','N_CONTROL', "NSTUDY", "N_STUDY", "NSTUDIES", "N_STUDIES"] #These are ones in LDSC
 snp_options = ["MARKER",  "VARIANT_ID", "SNP-ID", "RSIDS"] 
-a1_options = ["RISK_ALLELE", "ALT"] #effect allele
-a2_options = ["OTHER_ALLELE", "REF"] #non-effect allele
+a1_options = ["RISK_ALLELE", "ALT", "effectAllele".upper()] #effect allele
+a2_options = ["OTHER_ALLELE", "REF", "BASELINE", "referenceAllele".upper()] #non-effect allele
 sum_stats = ["MAINEFFECTS", "ESTIMATE", "ODDS_RATIO"]
 maf_options = ["MINOR_AF", "REF_ALLELE_FREQUENCY", "FREQ1"]
-se_options = ["MAINSE", "SDE"]
+se_options = ["MAINSE","SDE", "SE_estimate".upper()]
 pval_options = ["MAINP", "P_GC"]
 PVAL_FULL=["MAINP", "P_GC", "P", "PVALUE", "P_VALUE", "PVAL", "P_VAL", "GC_PVALUE"]
-IDM={"chr_opts" : ["CHR", "CHROMOSOME"], "pos_opts" :["POS", "base_pair_location".upper(), "BP", "POSITION"], "snpid_opts":["VARIANT_ID", "VARIANT", "SNP", "NAME", "MARKERNAME"]}
+IDM={"chr_opts" : ["CHR", "CHROMOSOME"], "pos_opts" :["POS", "base_pair_location".upper(), "BP", "POSITION"], "snpid_opts":["VARIANT_ID", "VARIANT", "SNP", "NAME", "MARKERNAME"], "a1_opts" : ["RISK_ALLELE", "ALT", "A1", "EFFECT_ALLELE","EA", "ALLELE_1", "ALLELE1", "INC_ALLELE"], "a2_opts": ["OTHER_ALLELE", "REF", "BASELINE","A2", "ALLELE2", "ALLELE_2", "OTHER_ALLELE", "NEA", "NON_EFFECT_ALLELE"]}
 #chromosome	base_pair_location
+#se only matters in the modified version, really does nothing here oh well.
 labels = {"n" : n_options, "snp" : snp_options, "maf" : maf_options, "a1" : a1_options, "a2" :a2_options, "ss" : sum_stats, "se" :se_options, "p" : pval_options, "n_existing" : n_options_LDSC}
 import sys
 import argparse
@@ -106,7 +107,7 @@ def labelSpecify(header, checkfor, labels):
         "a2": " --a2 ",
         "ss": " --signed-sumstats ",
         "p" : " --p ",
-        "maf":" --frq ",
+        "maf":" --frq "
     }
     #Check- is the header one of the aberrant ones?
     relevant_col = which([x.upper() in labels[checkfor] for x in header])
@@ -131,6 +132,45 @@ def labelSpecify(header, checkfor, labels):
         else:
             ret_snp = ""
     return ret_snp
+
+def missingAnyAlleleInformation(header, IDM):
+    """
+    Ensures the header has some kind of allele information. Can customize by adjusting the IDM lists....
+    """
+    if any_in([h.upper() for h in header], IDM["a1_opts"]):
+        if any_in([h.upper() for h in header], IDM["a2_opts"]): #both conditions satisfied, NP
+            return False
+    return True
+
+def whichMissingAlleleInformation(header, IDM):
+    """
+    Ensures the header has some kind of allele information. Can customize by adjusting the IDM lists....
+    """
+    if any_in([h.upper() for h in header], IDM["a1_opts"]):
+        aoi = which([h.upper() in IDM["a1_opts"]  for h in header])[0]
+        if any_in(header, IDM["a2_opts"]): #both conditions satisfied, NP
+            return ""
+        else:
+            
+            return "ALLELE_REPAIR_2:" + str(aoi)  #you have 1, so fix 2. Index of 1 is aoi
+    else: # you don't have 1
+        if any_in([h.upper() for h in header], IDM["a2_opts"]): #both conditions satisfied, NP
+            ati = which([h.upper() in IDM["a2_opts"]  for h in header])[0]
+            return "ALLELE_REPAIR_1:" + str(ati) #have 2, need 1
+        else:
+            return "ALLELE_REPAIR_B"
+
+def readInRefDict(path):
+    ret_d = dict()
+    if path == "":
+        return None
+    with open(path, 'r') as istream:
+        for l in istream:
+            d = l.strip().split()
+            ret_d[d[0]] = [d[1], d[2]]
+    return ret_d
+
+
 
 def filePeek(readin, argv):
     """
@@ -185,6 +225,10 @@ def filePeek(readin, argv):
                         cleanup_protocol = cleanup_protocol + "TO_RSID_1"
                 if ":" in first and "RS" not in first.upper(): #No rsid but likely something else
                     cleanup_protocol = cleanup_protocol + "TO_RSID_1"
+            if missingAnyAlleleInformation(header_dat, IDM):
+                    print("Missing allele information....")
+                    cleanup_protocol = cleanup_protocol + whichMissingAlleleInformation(header_dat, IDM)
+
             #Get the sample size if its there...
             ret_n = labelSpecify(header_dat, "n", labels)
             if ret_n == "USE_PROVIDED": 
@@ -214,7 +258,7 @@ def makeInterFileName(fpath, protocol):
     """
     If no change to be made, don't modify the file.
     """
-    remakes = ["TO_RSID_2", "GIANT", "CSV", "UKBB","HEADER_HM","FIRST_RSID", "RSID_1" ]
+    remakes = ["TO_RSID_2", "GIANT", "CSV", "UKBB","HEADER_HM","FIRST_RSID", "RSID_1", "ALLELE_REPAIR"]
     #os.path.basename()
     if any([x in protocol for x in remakes]):
         r = os.path.splitext(fpath)[0] + ".INTERMEDIATE" + os.path.splitext(fpath)[1]
@@ -260,12 +304,53 @@ def validVersionExists(fn):
     return True
     #also do some kind of RSID-based sanity check? Or look at the last line in the file?
 
-def doCleanup(readin, protocol, rsids, correct_files, force_update = False):
+def alleleRepair(fix_allele, lookup_dict, rs_index, allele_index, dat):
+        """
+        Give the missing allele information based on the lookup_dict reference
+        fix_allele: which allele is missing- either 1, 2, or both
+        lookup_dict: the reference to which we are aligning (snp:[a1,a2])
+        rs_index: which index has the rsid we use as a reference
+        allele_index: which index in the table has the current allele information. if its -1, it means neither.
+        dat: the current line of the file.
+        """
+        
+        fix_code  = {"1":"A1", "2": "A2", "B":"A1\tA2"}
+        if dat == "HEADER":
+            return fix_code[fix_allele]
+        else:
+            if dat[rs_index] in lookup_dict:
+                alleles = lookup_dict[dat[rs_index]] #a tuple, [A1, A2]
+                if fix_allele == "B":
+                    return "\t".join(alleles)
+                else:
+                    if dat[allele_index] == alleles[0]:
+                        return alleles[1]
+                    elif dat[allele_index] == alleles[1]:
+                        return alleles[0]
+                    else: #They don't match
+                        return "NA"
+            else:
+                #print("No allele data for SNP:", dat[rs_index])
+                if fix_allele == "b":
+                    return "NA\tNA"
+                return "NA"
+
+
+def getRepairAllele(protocol):
+    f = re.search("ALLELE_REPAIR_([12B]):*(\d*)", protocol)
+    if f.group(1) == "B":
+        return "B", None
+    else:
+        return f.group(1), int(f.group(2))
+
+def doCleanup(readin, protocol, rsids, correct_files,allele_reference, force_update = False):
     """
     Performs the cleanup step on files that need it
     UKBB, we should recommend ldsc
     Giant: remove teh first few lines, and get the header, keep the rest of the file the same
     TO_RSID: convert the chr/things to rsids; make sure to check using the right genome build (!)
+    ALLELE_REPAIR: Add in both the effect and other allele, based on the provided reference.... 
+        Note that this requires that the File already have rsids...
     """
     print("Correction protocol is", protocol)
     fpath = readin[0]
@@ -319,7 +404,7 @@ def doCleanup(readin, protocol, rsids, correct_files, force_update = False):
                             #no change to header
                         else:
                             #header = header.replace("variant\t", "SNP\teffect_allele\tother_allele")
-                            header = re.sub('^variant\s', "SNP\teffect_allele\tother_allele\t", header)
+                            header = re.sub('^variant\s', "SNP_\teffect_allele\tother_allele\t", header)
                         ostream.write(header + '\n')
                     else:
                         dat = line.split('\t')
@@ -349,7 +434,7 @@ def doCleanup(readin, protocol, rsids, correct_files, force_update = False):
                     if i == 0: 
                         delim = detectDelimiter(line)
                         #ostream.write("SNP" + T + T.join(line.split(delim)[1:]) + '\n')
-                        ostream.write("SNP" + T + T.join(line.split(delim)) + '\n')
+                        ostream.write("SNP_" + T + T.join(line.split(delim)[1:]) + '\n')
                         if ("TO_RSID_2" in protocol) and ("TO_RSID_1" not in protocol):
                             which_chr = which([x.upper() in IDM["chr_opts"] for x in line.split(delim)])[0]
                             which_snp = which([x.upper() in IDM["pos_opts"] for x in line.split(delim)])[0]
@@ -365,7 +450,7 @@ def doCleanup(readin, protocol, rsids, correct_files, force_update = False):
                                 address = ":".join(line[which_id].split(":")[0:2]).replace("chr", "")
                         if address in rsids:
                             snp = rsids[address]
-                            ostream.write(snp + T + T.join(line) +  '\n')
+                            ostream.write(snp + T + T.join(line[1:]) +  '\n')
                             #ostream.write(snp + T + T.join(line[1:]) +  '\n')
                         else:
                             dropped_snps += 1
@@ -406,7 +491,7 @@ def doCleanup(readin, protocol, rsids, correct_files, force_update = False):
                 for i, line in enumerate(istream):
                     line = fh(line.strip(), fpath)
                     if i == 0:
-                        header = line.upper().replace("MARKERNAME", "SNP")
+                        header = line.upper().replace("MARKERNAME", "SNP_")
                         ostream.write(header + '\n')
                     else:
                         dat = line.split()
@@ -422,7 +507,39 @@ def doCleanup(readin, protocol, rsids, correct_files, force_update = False):
                                 continue
                         ostream.write(rsid + '\t' + '\t'.join(dat[1:]) + '\n')
         fpath = intermediate_file_name #changes updated
+    
+    if "ALLELE_REPAIR" in protocol and ("UKBB" not in protocol):
+        print("Repairing allele data based on provided reference...")
+        #At this point, we assume the output file has the rsid information in it.
+        repair_a, allele_i = getRepairAllele(protocol) #a quick regtex, formate ALLELE_REPAIR:2:I
+        print(repair_a, allele_i)
+        #set the file name
+        infile = intermediate_file_name if os.path.isfile(intermediate_file_name) else fpath
+        ofile = os.path.splitext(intermediate_file_name)[0] + ".REPAIR" + os.path.splitext(intermediate_file_name)[1]
+        print(ofile)
+        input()
+        rs_i = None
+        with openFileContext(infile) as istream:
+            with outFileContext(ofile) as ostream:
+                for i, line in enumerate(istream):
+                    lined = line.strip().split()
+                    if i == 0:
+                        ostream.write("\t".join(lined) +'\t' + alleleRepair(repair_a,allele_reference,0, allele_i,"HEADER" ) + '\n')
+                        if("SNP" in line):
+                            rs_i = which(["SNP_" in d for d in lined])[0]
+                    else:
+                        if not rs_i:
+                            rs_i = which(["rs" in d for d in line])[0] #
+                        ostream.write("\t".join(lined) +'\t'+ alleleRepair(repair_a,allele_reference, rs_i,allele_i, line ) + '\n')
+        
+        #final step- move the modified file into the correct file...
+        #pdb.set_trace()
+        d = os.popen("mv " + ofile + " " + intermediate_file_name)
+        fpath =  intermediate_file_name
+    
     return intermediate_file_name
+
+
 
 
 def importRSDict(p, invert = False):
@@ -518,7 +635,8 @@ with open(args.study_list ,'r') as istream:
             else:
                 print("Assuming hg37 build, using hapmap3 SNPS only...")
                 build_dict = build_list["hg37"]
-            intermediate_file = doCleanup(dat, fix_instructions,build_dict, args.calls_only, force_update = args.force_update)
+            allele_reference_dict = readInRefDict(args.merge_alleles)
+            intermediate_file = doCleanup(dat, fix_instructions,build_dict, args.calls_only, allele_reference_dict, force_update = args.force_update)
             #build commands for it
             if fix_instructions and fix_instructions != "ERROR":
                 call = " munge_sumstats.py "
@@ -527,6 +645,8 @@ with open(args.study_list ,'r') as istream:
                 lc = "python2 " + args.ldsc_path + call + "--sumstats " + intermediate_file + " --out " + buildOutName(args.output, dat[0], dat[1]) + "".join(fixed_labels) + mergeAlleles(args.merge_alleles)
                 if args.keep_maf:
                     lc = lc + " --keep-maf "
+                if "TO_RSID" in fix_instructions:
+                    lc = lc + " --snp SNP_"
                 ostream.write(lc + '\n')
             else:
                 print("Skipping for incorrect file path,", fixed_labels[0])
