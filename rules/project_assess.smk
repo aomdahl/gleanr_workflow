@@ -26,6 +26,39 @@ rule hapmap_reference: #get the list of hapmap snps for extraction, omitting HLA
         for i in "factorization_data/{identifier}.factors.txt"{{1..22}}; do zcat data/weights_hm3_no_hla/weights.${{i}}.l2.ldscore.gz | tail -n +2 | awk '{{print $1":"$3"\t"$2}}' >> {output}; done
         """
 
+rule prepProjectionSpace:
+        input:
+                "results/{identifier}/latent.factors.txt"
+                #add this in later- the directory of z-scoresdirector(loadings, the directory of summary stats
+        output:
+            "results/{identifier}/munged_paths_traits.txt"
+        params:
+            "results/{identifier}/"
+        shell:
+            """
+            readlink -f {input[1]}/*.sumstats.gz | awk -F "." '{print $0 "\t" $(NF-2)}' > {params}/ldsc_extract_order.tmp")
+            tail -n +2 {params}/latent.factors.txt | cut -f 1 -d " " > {params}/trait.order.tmp
+
+            awk '(FNR == NR) {arr[$2]=$1;next} ($1 in arr) {print arr[$1]"\t"$1}' {params}/ldsc_extract_order.tmp {params}/trait.order.tmp > {output}
+
+            rm {params}/*.tmp
+            """
+
+rule projectionSpace:
+        input:
+                "results/{identifier}/munged_paths_traits.txt"
+        output:
+            "results/{identifier}/full_hapmap3_snps.Z.tsv", "results/{identifier}/full_hapmap3_snps.N.tsv"
+        params:
+            "results/{identifier}/"
+        shell:
+            """
+            ml anaconda
+            conda activate renv
+
+            Rscript src/ldscToMatrix.R --filepathlist {input} --outdest {params}/full_hapmap3_snps --feature_list "Z,N"
+            """
+
 rule project_F:
     input:
         #factors="factorization_data/{identifier}.factors.txt", #MAJOR CHANGE HERE. MOVING to be in results category
@@ -65,11 +98,13 @@ rule project_LD:
         factors="results/{identifier}/latent.factors.txt",
         variants="results/{identifier}/full_hapmap3_snps.Z.tsv" #make a sym link if its in a common dir, so we don't have like a jillion copies of larege files.
     output:
-        "results/{identifier}/projectedLM_hapmap3_loadings.txt"
+        "results/{identifier}/projectedLD_hapmap3_loadings.txt", "results/{identifier}/done.in.ld.txt"
     params:
     run:
         shell("ml anaconda; conda activate std; python --ld_ref")
 #option to make a rule project_Surya:
+
+
 checkpoint prep_enrichment: #format the outputed factors for enrichment analysis
     input:
         hapmap_list="/data/abattle4/aomdahl1/reference_data/hapmap_chr_ids.txt",

@@ -122,3 +122,28 @@ rule pairwiseLDSC:
        		bash {input}
 		cd $d
         """
+
+#TODO: upgrade this so it can do liability scale
+rule liabilityScaleHeritability: #not actually yet, need to do this
+    input: 
+    	"gwas_extracts/{identifier}/{study_id}.sumstats.gz"
+    output:
+        "ldsr_results/{identifier}/h2_ldsr/{study_id}.log"
+    params:
+        "ldsr_results/{identifier}/h2_ldsr/{study_id}"
+    shell:
+        """
+        ml anaconda
+        conda activate py27
+        PTH=`pwd`
+	cd /data/abattle4/aomdahl1/reference_data/ldsc_ref/
+        python2  ~/.bin/ldsc/ldsc.py \
+            --h2 $PTH/{input} \
+            --ref-ld-chr eur_w_ld_chr/ \
+            --w-ld-chr eur_w_ld_chr/ \
+            --out $PTH/{params}
+        #we'd like to be able to get things on the liability scale, huh....
+        #--samp-prev 0.5,0.5 \
+        #--pop-prev 0.01,0.01
+        cd -
+    """
