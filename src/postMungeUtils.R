@@ -168,7 +168,7 @@ lambdaGCWeights <- function(ldsc.path, file.list, snp.list, feature_list,  file.
 ldscTableToMatrix <- function(joined_main, col_pick, diag_scores = 1, null_scores = 0)
 {
   overlap.mat <- joined_main %>% select(p1, p2, !!sym(col_pick)) %>% mutate("id" = paste0(p1, ":", p2)) %>% distinct_at(vars(id), .keep_all = TRUE) %>% 
-    select(-id) %>% pivot_wider(values_from = !!sym(col_pick), names_from =p1) %>% arrange(p2) %>% print()
+    select(-id) %>% pivot_wider(values_from = !!sym(col_pick), names_from =p1) %>% arrange(p2) 
   
   #which ons are missing?
   #colnames(overlap.mat)[!(colnames(overlap.mat) %in% overlap.mat$p2)]
@@ -243,8 +243,9 @@ quickRead <- function(look_path, pattern)
 #look_path = args$input_path
 #which.col = "h2_obs"
 #Does this line up rows and columns correctly?
+#ldscGCOVIntoMatrix(look_path = args$input_path,"rg")
 ldscGCOVIntoMatrix <- function(look_path = "/scratch16/abattle4/ashton/snp_networks/scratch/udler_td2/ldsr_all/ldsr_results/", which.col, 
-                               filter_se = FALSE)
+                               filter_se = FALSE, filter_fdr = 1)
 {
   joined.main <- quickRead(look_path, pattern = "*rg_report.tsv") %>% mutate("Source2" = gsub(Source, pattern = ".rg_report.tsv", replacement = ""))
   joined.count.info <- quickRead(look_path, pattern = "*.ldsc_report.csv")%>% mutate("Source2" = gsub(Source, pattern = ".ldsc_report.csv", replacement = ""))
@@ -255,15 +256,42 @@ ldscGCOVIntoMatrix <- function(look_path = "/scratch16/abattle4/ashton/snp_netwo
     select(p1, p2, rg, se, z, p, h2_obs, h2_obs_se, h2_int, h2_int_se, gcov_int, gcov_int_se,Source.x, snp_overlap) %>% 
     rename("Source" = Source.x)
   joined.main <- all.dat
+  
+  if(which.col == "rg_se")
+  {
+    #ldscTableToMatrix(joined.main,"se", null_scores = 1)
+    ns = 0
+    which.col = "se"
+    
+  }
+  
+  
   if(filter_se)
   {
     message("Nullifying entries that are within the 95% CI")
-    if(which.col == "gcov_int")
+
+    
+    if(which.col == "gcov_int") #is the intercept 0 or not?
     {
-      upper <- joined.main$gcov_int + 1.96*joined.main$gcov_int_se;
-      lower <- joined.main$gcov_int - 1.96*joined.main$gcov_int_se
-      nullify_cases <- (lower < 1 & upper > 1) | is.na(joined.main$gcov_int)
-      joined.main$gcov_int[nullify_cases] <- 0
+      #note- because we have a large sample size, and our df is n-1, we can use the normal approximation for the t
+      #
+      if(filter_fdr != 1)
+      {
+	      message("estimating a global FDR for correction...")
+      z.stat <- joined.main$gcov_int/joined.main$gcov_int_se
+      pvals.sub <- 2*pnorm(abs(z.stat[!is.na(z.stat)]), lower.tail = F)
+      fdr.sub <- p.adjust(pvals, method = "fdr")
+      fdr <- rep(NA, length(z.stat)); fdr[z.stat[!is.na(z.stat)]] <- fdr.sub #put in the FDR.
+      joined.main$gcov_int[fdr > filter_fdr] <- 0 #keep only those passing my FDR estimate.
+      } else(filter_se)
+      {
+        #Option to do it with confidence interval, or with a p-value of some kind of correction.
+        upper <- joined.main$gcov_int + 1.96*joined.main$gcov_int_se;
+        lower <- joined.main$gcov_int - 1.96*joined.main$gcov_int_se
+        nullify_cases <- (lower < 0 & upper > 0) | is.na(joined.main$gcov_int)
+        joined.main$gcov_int[nullify_cases] <- 0
+      }
+
       
     }
     else
@@ -296,9 +324,10 @@ ldscGCOVIntoMatrix <- function(look_path = "/scratch16/abattle4/ashton/snp_netwo
 }
 
 #which.col doesn't matter.
+#ldscStdIntoMatrix(look_path = args$input_path,"" , filter_se = args$filter_se)
 ldscStdIntoMatrix <- function(look_path, which.col, filter_se = FALSE)
 {
-  look_path="/scratch16/abattle4/ashton/snp_networks/scratch/infertility_analysis/hm3_ldsc/tabular/"
+  #look_path="/scratch16/abattle4/ashton/snp_networks/scratch/infertility_analysis/hm3_ldsc/tabular/"
   joined.main <- quickRead(look_path, pattern = "*.ldsc_report.csv" ) %>% filter(!is.na(intercept))
   #sanity checck on the numbers- some longer because ran after the fact..
   #For each study, choose teh one with the largest sample size on the RUNS.
