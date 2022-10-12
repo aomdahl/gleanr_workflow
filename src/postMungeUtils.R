@@ -280,8 +280,9 @@ ldscGCOVIntoMatrix <- function(look_path = "/scratch16/abattle4/ashton/snp_netwo
 	      message("estimating a global FDR for correction...")
       z.stat <- joined.main$gcov_int/joined.main$gcov_int_se
       pvals.sub <- 2*pnorm(abs(z.stat[!is.na(z.stat)]), lower.tail = F)
-      fdr.sub <- p.adjust(pvals, method = "fdr")
-      fdr <- rep(NA, length(z.stat)); fdr[z.stat[!is.na(z.stat)]] <- fdr.sub #put in the FDR.
+      fdr.sub <- p.adjust(pvals.sub, method = "fdr")
+      fdr <- rep(1, length(z.stat))
+      fdr[!is.na(z.stat)] <- fdr.sub #put in the FDR.
       joined.main$gcov_int[fdr > filter_fdr] <- 0 #keep only those passing my FDR estimate.
       } else(filter_se)
       {
@@ -328,6 +329,7 @@ ldscGCOVIntoMatrix <- function(look_path = "/scratch16/abattle4/ashton/snp_netwo
 ldscStdIntoMatrix <- function(look_path, which.col, filter_se = FALSE)
 {
   #look_path="/scratch16/abattle4/ashton/snp_networks/scratch/infertility_analysis/hm3_ldsc/tabular/"
+	print(look_path)
   joined.main <- quickRead(look_path, pattern = "*.ldsc_report.csv" ) %>% filter(!is.na(intercept))
   #sanity checck on the numbers- some longer because ran after the fact..
   #For each study, choose teh one with the largest sample size on the RUNS.
