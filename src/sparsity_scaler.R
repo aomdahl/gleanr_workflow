@@ -194,11 +194,12 @@ sparsityL<- function(Z, FactorM, option){
 #@param FactorM: The F matrix we regress on
 #@return: the recommend range for a single row
 rowiseSparsity <- function(z, FactorM, option){
-  dat_i = as.data.frame(cbind((z), FactorM));
-  colnames(dat_i) = c('X', paste0('F', seq(1, ncol(FactorM))));
+  norm(t(FactorM) %>% z, type = "I")
+  #dat_i = as.data.frame(cbind((z), FactorM));
+  #colnames(dat_i) = c('X', paste0('F', seq(1, ncol(FactorM))));
   
-  recommendRange(response = X, penalized = dat_i[,paste0('F', seq(1, ncol(FactorM)))], data=dat_i,
-                       unpenalized = ~0, lambda2=1e-10, params=option)
+  #recommendRange(response = X, penalized = dat_i[,paste0('F', seq(1, ncol(FactorM)))], data=dat_i,
+  #                     unpenalized = ~0, lambda2=1e-10, params=option)
 }
 
 #Estimate the MAX sparsity paramters for the Factor matrix
@@ -213,11 +214,12 @@ sparsityF <- function(Z, L, option){
   for(col in seq(1, ncol(Z))){
     xp = Z[, col];
     #or in glmnL: fit$lambda[1]
-    dat_i = as.data.frame(cbind(xp, L));
-    colnames(dat_i) = c('X', paste0('F', seq(1, ncol(L))));
-    f <- recommendRange(response = X, penalized = dat_i[,paste0('F', seq(1, ncol(L)))], data=dat_i,
-                        unpenalized = ~0, lambda1 =option[['lambda1']], lambda2=1e-10,
-                        positive = option$posF, params=option)
+    #dat_i = as.data.frame(cbind(xp, L));
+    #colnames(dat_i) = c('X', paste0('F', seq(1, ncol(L))));
+    #f <- recommendRange(response = X, penalized = dat_i[,paste0('F', seq(1, ncol(L)))], data=dat_i,
+    #                    unpenalized = ~0, lambda1 =option[['lambda1']], lambda2=1e-10,
+    #                    positive = option$posF, params=option)
+    f <- norm(t(L) %>% xp, type = "I")
     FactorM = rbind(FactorM, f);
   }
   updateLog("Sparsities for F estimated.", option)
