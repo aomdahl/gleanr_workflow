@@ -1,6 +1,4 @@
 #Source everything you need:
-
-#... you know, I am pretty sure yuan has a setup for this already. like to specify the desired sparsity or whatever.
 #pacman::p_load(tidyr, plyr, dplyr, ggplot2, stringr, penalized, cowplot, parallel, doParallel, logr, coop, data.table, glmnet, svMisc, nFactors)
 suppressPackageStartupMessages(library("tidyr"))
 suppressPackageStartupMessages(library("plyr")) 
@@ -17,7 +15,8 @@ suppressPackageStartupMessages(library("data.table"))
 suppressPackageStartupMessages(library("glmnet")) 
 suppressPackageStartupMessages(library("svMisc")) 
 suppressPackageStartupMessages(library("nFactors")) 
-suppressPackageStartupMessages(library("argparse"))
+#suppressPackageStartupMessages(library("argparse"))
+suppressPackageStartupMessages(library("optparse"))
 dir ="/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/src/"
 #dir = "/Users/aomdahl/Documents/Research/LocalData/snp_networks/gwas_spMF/src/"
 source(paste0(dir, "fit_F.R"))
@@ -46,41 +45,75 @@ updateStatement  <- function(l,a,l_og, a_og, run,time)
   log_print(paste0("Current L sparsity: ", run$L_sparsity), console = FALSE)  
   log_print(paste0("Number of active factors: ", ncol(run$F)))
 }
-
-parser <- ArgumentParser()
-parser$add_description("Script to run matrix factorization")
-parser$add_argument("--gwas_effects", type = 'character', help = "Specify the Z or B file, depending on specified weighting scheme. First column is ids of each variant, column names specify the trait")
-parser$add_argument("--uncertainty", type = 'character', help = "Specify the path to the SE or other uncertainty file, depending on the weightin scheme.irst column is ids of each variant, column names specify the trait")
-parser$add_argument("--lambda_gc", type = 'character', help = "Specify the path to the genomic correction coefficients. If none provided, none used", default = "")
-parser$add_argument("--trait_names", type = 'character', help = "Human readable trait names, used for plotting. Ensure order is the same as the orderr in the input tables.", default = "")
-parser$add_argument("--weighting_scheme", type = 'character', help = "Specify either Z, B, B_SE, B_MAF", default = "B_SE")
-parser$add_argument("--init_F", type = 'character', default = "ones_eigenvect", help = "Specify how the F matrix should be initialized. Options are [ones_eigenvect (svd(cor(z))_1), ones_plain (alls 1s), plieotropy (svd(cor(|z|))_1)]")
-parser$add_argument("--init_L", type = 'character', help = "Specify this option to start by initializing L rather than F. Options are [random, pleiotropy]. Use empty string for none (default)", default = "")
-parser$add_argument("--alphas", type = 'character', default = "", help = "Specify which alphas to do, all in quotes, separated by ',' character")
-parser$add_argument("--lambdas", type = 'character', default = "", help = "Specify which lambdas to do, all in quotes, separated by ',' character")
-parser$add_argument("--scaled_sparsity", type = "logical", action = "store_true", default = FALSE, help = "Specify this to scale the sparsity params by dataset to be between 0 and 1")
-parser$add_argument("--output", type = "character", help = "Source file location")
-parser$add_argument("--cores", type = "numeric", help = "Number of cores", default = 1)
-parser$add_argument("--fixed_first", type = "logical", help = "if want to remove L1 prior on first factor", action = "store_true", default = FALSE)
-parser$add_argument("--debug", type = "logical", help = "if want debug run", action = "store_true", default = FALSE)
-parser$add_argument("--overview_plots", type = "logical", help = "To include plots showing the objective, sparsity, etc for each run", action = "store_true", default = FALSE)
-parser$add_argument("-k", "--nfactors", type = "character", help = "specify the number of factors", default = "15")
-parser$add_argument("-i", "--niter", type = "numeric", help = "specify the number of iterations", default = 30)
-parser$add_argument("--posF", type = "logical", default = FALSE,  help = "Specify if you want to use the smei-nonnegative setup.", action = "store_true")
-parser$add_argument("--scale_n", type = "character", default = "",  help = "Specify the path to a matrix of sample sizes if you want to scale by sqrtN as well as W")
-parser$add_argument("--IRNT", type = "logical", default = FALSE,  help = "If you want to transform the effect sizes ", action = "store_true")
-parser$add_argument("--autofit", type = "logical", default = FALSE,  help = "Specify if you want to autofit sparsity parameter for the whole thing..")
-parser$add_argument("-f", "--converged_F_change", type="double", default=0.02,help="Change in factor matrix to call convergence")
-parser$add_argument("-o", "--converged_obj_change", type="double", default=1,help="Relative change in the objective function to call convergence")
-parser$add_argument("--no_SNP_col", type="logical", default= FALSE, action = "store_true", help="Specify this option if there is NOT first column there...")
-parser$add_argument("--parameter_optimization", type="numeric", default= 1, action = "store_true", help="Specify how many iterations to run to get the cophenetic optimization, etc. ")
-parser$add_argument("--regression_method", type="character", default= "penalized", help="Specify which regression method to use. Options are [penalized (Default), glmnet]")
-parser$add_argument("--genomic_correction", type="character", default= "", help="Specify path to genomic correction data, one per snp.TODO: Also has the flexibility to expand")
-parser$add_argument("--epsilon", type="numeric", default= 1e-8, help="The convergence criteria for the L1. If exploring the space, try making this larger to speed up runtime. ")
-parser$add_argument("-v", "--verbosity", type="numeric", default= 0, help="How much output information to give in report? 0 is quiet, 1 is loud")
-
-args <- parser$parse_args()
+GLOBAL_BASE <- 0
+reportOpenFiles <- function(option)
+  {
+    if(!option$debug)
+    {
+      return()
+    }
+    t = system("lsof -u aomdahl1", TRUE)
+    message(paste0("Number of system loaded files now is..", length(t)))
+    if(GLOBAL_BASE == 0)
+    {
+      GLOBAL_BASE <<- length(t)
+    }
+    if(length(t) > GLOBAL_BASE)
+    {
+      message('new added written out to:')
+      #Create file with all the lines....
+      debug.path = paste0(option$out, gsub(Sys.time(), pattern = " ", replacement="_"), ".txt")
+      x <- lapply(t, function(x) gsub(x,pattern = "\\s+", replacement = " ")[[1]])
+      y <- lapply(x, function(x) str_split(x[[1]], pattern = " ")[[1]])
+      final <- data.frame(do.call("rbind", y))
+      colnames(final) <- final[1,]
+      final <- final[-1,]
+      write.table(final, file= debug.path , quote = FALSE, row.names = FALSE)
+      #for(i in (GLOBAL_BASE+1):length(t))
+      #{
+      #  print(t[[i]])
+      #}
+      
+      GLOBAL_BASE <<- length(t)
+    }
+    
+  }
+option_list <- list(
+make_option(c("--gwas_effects"), type = 'character', help = "Specify the Z or B file, depending on specified weighting scheme. First column is ids of each variant, column names specify the trait"),
+make_option(c("--uncertainty"), type = 'character', help = "Specify the path to the SE or other uncertainty file, depending on the weightin scheme.irst column is ids of each variant, column names specify the trait"),
+make_option(c("--lambda_gc"), type = 'character', help = "Specify the path to the genomic correction coefficients. If none provided, none used", default = ""),
+make_option(c("--trait_names"), type = 'character', help = "Human readable trait names, used for plotting. Ensure order is the same as the orderr in the input tables.", default = ""),
+make_option(c("--weighting_scheme"), type = 'character', help = "Specify either Z, B, B_SE, B_MAF", default = "B_SE"),
+make_option(c("--init_F"), type = 'character', default = "ones_eigenvect", help = "Specify how the F matrix should be initialized. Options are [ones_eigenvect (svd(cor(z))_1), ones_plain (alls 1s), plieotropy (svd(cor(|z|))_1)]"),
+make_option(c("--init_L"), type = 'character', help = "Specify this option to start by initializing L rather than F. Options are [random, pleiotropy]. Use empty string for none (default)", default = ""),
+make_option(c("--alphas"), type = 'character', default = "", help = "Specify which alphas to do, all in quotes, separated by ',' character"),
+make_option(c("--lambdas"), type = 'character', default = "", help = "Specify which lambdas to do, all in quotes, separated by ',' character"),
+make_option(c("--scaled_sparsity"), type = "logical", action = "store_true", default = FALSE, help = "Specify this to scale the sparsity params by dataset to be between 0 and 1"),
+make_option(c("--output"), type = "character", help = "Source file location"),
+make_option(c("--calibrate_k"), type = "logical", help = "Give just an estimate of K", action = "store_true", default = FALSE),
+make_option(c("--cores"), type = "integer", help = "Number of cores", default = 1),
+make_option(c("--fixed_first"), type = "logical", help = "if want to remove L1 prior on first factor", action = "store_true", default = FALSE),
+make_option(c("--debug"), type = "logical", help = "if want debug run", action = "store_true", default = FALSE),
+make_option(c("--overview_plots"), type = "logical", help = "To include plots showing the objective, sparsity, etc for each run", action = "store_true", default = FALSE),
+make_option(c("-k", "--nfactors"), type = "character", help = "specify the number of factors", default = "0"),
+make_option(c("-i", "--niter"), type = "integer", help = "specify the number of iterations", default = 30),
+make_option(c("--posF"), type = "logical", default = FALSE,  help = "Specify if you want to use the smei-nonnegative setup.", action = "store_true"),
+make_option(c("--scale_n"), type = "character", default = "",  help = "Specify the path to a matrix of sample sizes if you want to scale by sqrtN as well as W"),
+make_option(c("--IRNT"), type = "logical", default = FALSE,  help = "If you want to transform the effect sizes ", action = "store_true"),
+make_option(c("--autofit"), type = "logical", default = FALSE,  help = "Specify if you want to autofit sparsity parameter for the whole thing.."),
+make_option(c("-f", "--converged_F_change"), type="double", default=0.02,help="Change in factor matrix to call convergence"),
+make_option(c("-o", "--converged_obj_change"), type="double", default=1,help="Relative change in the objective function to call convergence"),
+make_option(c("--no_SNP_col"), type="logical", default= FALSE, action = "store_true", help="Specify this option if there is NOT first column there..."),
+make_option(c("--parameter_optimization"), type="integer", default= 1, action = "store_true", help="Specify how many iterations to run to get the cophenetic optimization, etc. "),
+make_option(c("--regression_method"), type="character", default= "penalized", help="Specify which regression method to use. Options are [penalized (Default), glmnet]"),
+make_option(c("--genomic_correction"), type="character", default= "", help="Specify path to genomic correction data, one per snp.TODO: Also has the flexibility to expand"),
+make_option(c("--epsilon"), type="double", default= 1e-8, help="The convergence criteria for the L1. If exploring the space, try making this larger to speed up runtime. "),
+make_option(c("--subsample"), type="integer", default= 0, help="Specify if you wish to subsample from the full dataset, and if so by how much. For repeated runs, this will choose a different subsample each time."),
+make_option(c("-v", "--verbosity"), type="integer", default= 0, help="How much output information to give in report? 0 is quiet, 1 is loud")
+)
+args <- parse_args(OptionParser(option_list=option_list))
 message("Please make sure the first column of input data is SNP/RSIDs.")
+
 #lf <- log_open(paste0(args$output, "gwasMF_log.", Sys.Date(), ".txt"))
 #TODO:
     #add in functionality in the event the objective begins to increase again. Don't want that....
@@ -94,13 +127,12 @@ if(FALSE) #For debug functionality on MARCC- this is currently loading the udler
   #args$gwas_effects <- paste0(datdir, "beta_signed_matrix.tsv")
   #args$uncertainty <-  paste0(datdir, "se_matrix.tsv")
   
-  args$gwas_effects <-"/scratch16/abattle4/ashton/snp_networks/scratch/infertility_analysis/p0.2_FULL/B.tsv"
-  args$uncertainty <- "/scratch16/abattle4/ashton/snp_networks/scratch/infertility_analysis/p0.2_FULL/SE.tsv"
-  args$scale_n <- "/scratch16/abattle4/ashton/snp_networks/scratch/infertility_analysis/p0.2_FULL/N.tsv"
-  args$scale_n <- ""
+  args$gwas_effects <-"/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwas_extracts/ukbb_GWAS_h2-0.1_rg-0.9/B.tsv"
+  args$uncertainty <- "/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwas_extracts/ukbb_GWAS_h2-0.1_rg-0.9/SE.tsv"
   args$fixed_first <- TRUE
-  args$genomic_correction <- ""
+  args$genomic_correction <- "/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwas_extracts/ukbb_GWAS_h2-0.1_rg-0.9/Lambda_gc.tsv"
   args$nfactors <- 0
+  args$calibrate_k <- TRUE
   args$trait_names = ""
   args$niter <- 15
   #args$alphas <- "0.01,0.05,0.1,0.15,0.2" #using 0.00001 since it doesn't like 0
@@ -112,7 +144,7 @@ if(FALSE) #For debug functionality on MARCC- this is currently loading the udler
   args$IRNT <- FALSE
   args$fixed_first <- TRUE
   args$weighting_scheme = "B_SE"
-  args$output <- "/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results/infertility/p0.2_FULL/TEST"
+  args$output <- "/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results/ukbb_GWAS_h2-0.1_rg-0.9/factorization/"
   args$converged_obj_change <- 1
   args$scaled_sparsity <- TRUE
   args$posF <- FALSE
@@ -142,19 +174,30 @@ if(!args$autofit)
 
 #set up settings
 option <- readInSettings(args)
+#reportOpenFiles(option)
 option$log <- log.path
 log_print("Succesfully loaded program options....")
-
+reportOpenFiles(option)
 #read in the data
 input.dat <- readInData(args)
 X <- input.dat$X; W <- input.dat$W; all_ids <- input.dat$ids; names <- input.dat$trait_names
 #Estimate sparsity space (doesn't work too well.)
 max_sparsity <- approximateSparsity(X, W, option)
+if(option$calibrate_k)
+{
+  message("Writing out a sparsity file")
+  fileConn<-file(paste0(output,"init_k.txt"))
+  writeLines(as.character(max_sparsity$newK), fileConn)
+  close(fileConn)
+  quit()
+}
+
+
 log_print("Estimating sparsity maximums based on an SVD approximation.")
 log_print(paste0("Max alpha: ", max_sparsity$alpha))
 log_print(paste0("Max lambda: ", max_sparsity$lambda))
 option$K <- max_sparsity$newK #sets K if not provided.
-
+reportOpenFiles(option)
 #Use the max to set up autofit
 if(option$autofit)
 {
@@ -165,6 +208,8 @@ if(option$autofit)
   option$max_alpha = max_sparsity$alpha
 }
 
+message(paste0("Number of SNPs for analysis: ", nrow(X)))
+message(paste0("Number of traits for analysis: ", ncol(X)))
 
 if(option$calibrate_sparsity)
 {
@@ -189,6 +234,7 @@ if(option$calibrate_sparsity)
   }else
   {
     message('Inputed sparsity parameters must be between 0 and 1 to use the "calibrate_sparsity option".')
+    message("Program will terminate.")
     quit()
   }
 } else{
@@ -206,8 +252,16 @@ opti=1
 for(opti in 1:args$parameter_optimization) 
 {
   message(paste0("On optimization run number: ", opti))
+  if(option$subsample > 0)
+  {
+    message("We are subsampling to ", option$subsample)
+    samp <- sample(1:nrow(X), option$subsample)
+    X <- input.dat$X[samp,]; W <- input.dat$W[samp,]; all_ids <- input.dat$ids[samp]
+  }
+
+
+  reportOpenFiles(option)
   #Store stats here
-  run_stats <- list()
   type_ <- args$weighting_scheme 
   run_stats <- list()
   name_list <- c()
@@ -219,6 +273,7 @@ for(opti in 1:args$parameter_optimization)
   
   for(i in 1:length(alphas)){
     for (j in 1:length(lambdas)){
+      reportOpenFiles(option)
         a <- alphas[i]
         l <- lambdas[j]
         option[['alpha1']] <- as.numeric(a)
@@ -228,12 +283,14 @@ for(opti in 1:args$parameter_optimization)
       time <-  round(difftime(Sys.time(), start, units = "mins"), digits = 3)
       run_stats[[iter_count]] <- c(run, time)
       iter_count <- iter_count + 1
+      reportOpenFiles(option)
       #things for plots
       if(length(run) == 0)
       {
-        fname = paste0(output, "A", a, "_L", l, "_","K", args$ type_, ".NO_OUTPUT.png")
+        fname = paste0(output, "A", a, "_L", l, "_","K", type_, ".NO_OUTPUT.png")
       } else
       {
+        reportOpenFiles(option)
         updateStatement(l,a,hp$l[j],hp$a[i], run,time)
         fname = paste0(output, "A", round(a, digits = 4), "_L", round(l, digits = 4), "_", type_,".", opti, ".png")
         title_ = paste0("A", round(a, digits = 4), "_L", round(l, digits = 4), " Type = ", args$weighting_scheme )
@@ -254,6 +311,7 @@ for(opti in 1:args$parameter_optimization)
   log_print(paste0("Run data written out to: ", output, "runDat.RData"))
   #writeFactorMatrices(round(alphas, digits = 3), round(lambdas, digits = 3), names,all_ids, run_stats,output)
   check_stats = max(sapply(run_stats, length))
+  reportOpenFiles(option)
   if(check_stats == 1)
   {
     log_print("No runs completed. Terminating")

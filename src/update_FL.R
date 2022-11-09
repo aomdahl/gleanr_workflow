@@ -32,6 +32,21 @@ cor2 <- function(x) {
 }
       
 
+defineSparsitySpace <- function(X, W, option, burn.in = 5)
+{
+  #Perform burn.in # of iterations with no sparsity (OLS) and calculate the maximum sparsity value at each step.
+  new.options <- option
+  new.options$burn.in <- burn.in
+  new.options$regression_method <- "OLS"
+  #Record those sparsities PARAMETERS for each iteration for both L and F, and then return for downstream analysis.
+  res <- Update_FL(X,W, new.options)
+  #Upon return, we want the max across all as the maximums.
+  #Maybe set the min and max of the distribution as the upper and lower bounds, and then pick some points in between?
+  #That would guarantee at least one row or one column would be entirely empty.
+}
+
+
+
 Update_FL <- function(X, W, option, preF = NULL, preL = NULL){
   # number of features - to avoid using T in R
   D = ncol(X)
@@ -66,13 +81,12 @@ Update_FL <- function(X, W, option, preF = NULL, preL = NULL){
         ones = matrix(runif(nsnps*(option[['K']])), nrow = D)[,1]
       }
       L = cbind(ones, L);
-      # First round of optimization
+      # First round of optimization- here because we initialized L
       message('Start optimization ...')
-      message(paste0('K = ', (option[['K']]), '; alpha1 = ', (option[['alpha1']]),'; lambda1 = ', (option[['lambda1']])));
-      
+      message(paste0('K = ', (option[['K']]), '; alpha1 = ', round(option[['alpha1']], digits =  4),'; lambda1 = ', round(option[['lambda1']], digits = 4)));
       FactorM = fit_F(X, W, L, option)
       
-  } else{
+  } else{ #initialize by F as normal.
     if(!option[['preinitialize']])
     {
       FactorM   = matrix(runif(D*(option[['K']] - 1)), nrow = D);
@@ -84,8 +98,10 @@ Update_FL <- function(X, W, option, preF = NULL, preL = NULL){
       }	else if(option[['f_init']] == 'ones_eigenvect') {
         message("1st column based on direction of svd of cor")
         cor_struct <- cor(X)
-        svd <- svd(cor_struct, nu = 1) #fortunately its symmetric, so  U and V are the same here!
-        ones <- sign(svd$u)
+        svd <- svd(cor_struct, nu = option$K) #fortunately its symmetric, so  U and V are the same here!
+        ones <- sign(svd$u[,1])
+        message("REMEMBER: new update initializing to SVD on F")
+        FactorM <- svd$u[,2:option$K]
       } else if(option[['f_init']] == 'plieotropy')
       {
         message("1st column based svd of cor(|Z|), since plieotropy has no direction.")
@@ -105,11 +121,13 @@ Update_FL <- function(X, W, option, preF = NULL, preL = NULL){
       message("Performing semi-non-negative factorization today....")
       FactorM = abs(FactorM)
     }
-  }
-  
-# First round of optimization
-message('Start optimization ...')
-message(paste0('K = ', (option[['K']]), '; alpha1 = ', (option[['alpha1']]),'; lambda1 = ', (option[['lambda1']])));
+      # First round of optimization
+
+    message("")
+    message('Start optimization ...')
+    message(paste0('K = ', (option[['K']]), '; alpha1 = ', round(option[['alpha1']], digits =  4),'; lambda1 = ', round(option[['lambda1']], digits = 4)))
+
+  }  
 
 #Need to adjust for first run- no reweighting (obvi.)
 og_option <- option[['reweighted']]
@@ -127,6 +145,9 @@ else
 
   option[['reweighted']] <- og_option
   objective = c(NA, compute_obj(X, W, L, FactorM, option));
+  l_sparsities <- c()
+  f_sparsities <- c()
+  mse <- c()
   objective_change = c(1, 1);
   old_change = 1;
   F_old = FactorM; 
@@ -159,10 +180,15 @@ else
   trait.var <- matrix(NA, option[['iter']], ncol(X))
   lambda_track <- c(option[['lambda1']])
   alpha_track <- c(option[['alpha1']])
+ 
   for (iii in seq(1, option[['iter']])){
     message(paste0("Currently on iteration ", iii))
     ## update F
-    if(option$autofit > 0 &  iii > 1)
+    lambda.prev <- option[['lambda1']] 
+    if(option$swap) {
+      lambda.prev <- option[['alpha1']] 
+    }
+    if(option$autofit != -1 &  iii > 1)
     {
         #F
         message(paste0("Current lambda: ", option$lambda1))
@@ -172,10 +198,45 @@ else
         message(paste0  ("Current alpha: ", option$alpha1))
         option[['alpha1']] <- MAPfitAlpha(L,option$autofit,option)
         message(paste0("Updated alpha: ", option[['alpha1']]))
-        lambda_track <- c(lambda_track, option[['lambda1']])
-        alpha_track <- c(alpha_track, option[['alpha1']])
+        
     }
+    if(!is.na(option$fix.alt.setting))
+    {
+      print(iii)
+      if(iii < (option$fix.alt.setting * option$iter))
+      {
+        if(option$swap)
+        {
+          message("Lambda setting fixed at 0")
+          option[['lambda1']] <- 1e-10
+          print(option$alpha1)
+          
+        }else
+        {
+          message("Alpha setting fixed at 0")
+          option[['alpha1']] <- 1e-10
+          print(option$lambda1)
+        }
 
+      }else
+      {
+        if(option$swap)
+        {
+          message("Alpha setting fixed now")
+          print(lambda.prev)
+          option[['alpha1']] <- lambda.prev
+          
+        }else
+        {
+          message("Lambda setting fixed now")
+          print(lambda.prev)
+          option[['lambda1']] <- lambda.prev
+        }
+
+      }
+    }
+    lambda_track <- c(lambda_track, option[['lambda1']])
+    alpha_track <- c(alpha_track, option[['alpha1']])
     if(iii == 1)
     {
       og_option <- option[['reweighted']]
@@ -200,8 +261,8 @@ else
     F_old = FactorM;
     non_empty_f = which(apply(FactorM, 2, function(x) sum(x!=0)) > 0)
     if(length(non_empty_f) == 0 | (non_empty_f[1] == 1 & option$fixed_ubiq & (length(non_empty_f) == 1))){
-      updateLog('Finished', option$V);
-      updateLog('F is completely empty or loaded only on ubiquitous factor, lambda1 too large', option$V)
+      updateLog('Finished', option);
+      updateLog('F is completely empty or loaded only on ubiquitous factor, lambda1 too large', option)
       F_sparsity = 1;
       L_sparsity = 1;
       factor_corr = 1;
@@ -228,8 +289,8 @@ else
     # if L is empty, stop
     non_empty_l = which(apply(L, 2, function(x) sum(x!=0)) > 0)
     if(length(non_empty_l) == 0){
-      updateLog('Finished', option$V);
-      updateLog('L is completely empty, alpha1 too large', option$V)
+      updateLog('Finished', option);
+      updateLog('L is completely empty, alpha1 too large', option)
       FactorM = NULL;
       F_sparsity = 1;
       L_sparsity = 1;
@@ -254,27 +315,33 @@ else
     obj_change = obj_updated - objective[length(objective)];
     objective = c(objective, obj_updated);
     objective_change = c(objective_change, obj_change);
+    l_sparsities <- c(l_sparsities, L_sparsity)
+    f_sparsities <- c(f_sparsities, F_sparsity)
+    #Update the fit:
+    mse <- c(mse, calcMSE(X,W,FactorM, L))
+
+    
     
     if(option[['disp']]){
       cat('\n')
-      updateLog(paste0('Iter', iii, ':'), option$V)
-      updateLog(paste0('Objective change = ', obj_change), option$V)
-      updateLog(paste0('Frobenius norm of (updated factor matrix - previous factor matrix) / number of factors  = ', F_change), option$V);
-      updateLog(paste0('Loading Sparsity = ', L_sparsity, '; Factor sparsity = ', F_sparsity, '; ', Nfactor, ' factors remain'), option$V); 
+      updateLog(paste0('Iter', iii, ':'), option)
+      updateLog(paste0('Objective change = ', obj_change), option)
+      updateLog(paste0('Frobenius norm of (updated factor matrix - previous factor matrix) / number of factors  = ', F_change), option);
+      updateLog(paste0('Loading Sparsity = ', L_sparsity, '; Factor sparsity = ', F_sparsity, '; ', Nfactor, ' factors remain'), option); 
       cat('\n')
     }
     # converge if: 1). Change of the values in factor matrix is small. ie. The factor matrix is stable. 2). Change in the objective function becomes small; 3). reached maximum number of iterations
     if(option[['convF']] >= F_change){
-      updateLog(paste0('Factor matrix converges at iteration ', iii), option$V);
+      updateLog(paste0('Factor matrix converges at iteration ', iii), option);
       break
     }
     
     oc1 = abs(objective_change[length(objective_change)])
-    updateLog(paste0("Objective change: ", oc1), option$V)
+    updateLog(paste0("Objective change: ", oc1), option)
     #updateLog(paste0("Target objective change: ",option[['convO']]))
     if(oc1 < as.numeric(option[['convO']])){
-      updateLog(("Objective function change threshold achieved!"), option$V)
-      updateLog(paste0('Objective function converges at iteration ', iii), option$V);
+      updateLog(("Objective function change threshold achieved!"), option)
+      updateLog(paste0('Objective function converges at iteration ', iii), option);
       break
     }
     if(iii == option[['iter']]){
@@ -282,9 +349,11 @@ else
       break
     }
   }
-  retlist <- list("F" = FactorM, "L" = L, "L_sparsity" = L_sparsity, "F_sparsity" = F_sparsity, "K" = Nfactor, "obj" = objective, "study_var" = trait.var)
+  retlist <- list("F" = FactorM, "L" = L, "L_sparsity" = L_sparsity, "F_sparsity" = F_sparsity, "K" = Nfactor, "obj" = objective, 
+                  "study_var" = trait.var, "finalAlpha" = option$alpha1, "finalLambda" = option$lambda1, 
+                  "f_sparsities" = f_sparsities, "l_sparsities" = l_sparsities, "autofit_lambda" = lambda_track, "autofit_alpha"=alpha_track, "mse" = mse)
   cat('\n')
-  updateLog(paste0('Total time used for optimization: ',  round(difftime(Sys.time(), tStart0, units = "mins"), digits = 3), ' min'), option$V);
+  updateLog(paste0('Total time used for optimization: ',  round(difftime(Sys.time(), tStart0, units = "mins"), digits = 3), ' min'), option);
   
   cat('\n')
   # return L, F, sparsity in L and F, number of factors -- could be different from K!

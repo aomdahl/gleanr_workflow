@@ -33,10 +33,11 @@ fit_F <- function(X, W, L, option, formerF = NULL){
 	lambda_list <- c()
 	## fit each factor one by one -- because of the element-wise multiplication from weights!
 	for(col in seq(1, ncol(X))){
-        
-      #x = X[, col, with = FALSE];
-      #w = W[, col, with = FALSE];
-    x = X[, col];
+		if(option$V > 0)
+		{
+			svMisc::progress(col, ncol(X), progress.bar = TRUE)
+		}
+    	x = X[, col];
 	    w = W[, col];
         ## weight the equations on both sides
 		xp = unlist(w) * x;
@@ -55,13 +56,15 @@ fit_F <- function(X, W, L, option, formerF = NULL){
 		                  unpenalized = ~0, lambda1 = option[['lambda1']], lambda2=1e-10,
 		                  positive = option$posF, standardize = FALSE, trace = FALSE, startbeta = formerF[col,] )
 		  f = coef(fit, 'all')
-		} 
+		} else if(option[["regression_method"]] == "OLS")
+		{
+		  fit <- lm(xp~Lp + 0) 
+		  f = coef(fit) #check this, but I think its correct
+		}
 		else if(option[["regression_method"]] == "glmnet" & option[["fixed_ubiq"]]) 
       	{
-		penalties <- c(0, rep(1, (ncol(L) - 1)))
-		f = glmnetLASSO(dat_i, xp, ncol(L), option[['lambda1']], penalties)
-		print("in here")
-		print(f)
+				penalties <- c(0, rep(1, (ncol(L) - 1)))
+				f = glmnetLASSO(dat_i, xp, ncol(L), option[['lambda1']], penalties)
    		 } else if(option[["fixed_ubiq"]] & option[["regression_method"]] == "penalized")
 		{
 		  lambdas <- c(0, rep(option[['lambda1']], (ncol(Lp) - 1))) #no lasso on that first column
@@ -89,7 +92,7 @@ fit_F <- function(X, W, L, option, formerF = NULL){
 		#print(col)
 	}
 
-	updateLog(paste0('Updating Factor matrix takes ',  round(difftime(Sys.time(), tStart, units = "mins"), digits = 3), ' min'), option$V)
+	updateLog(paste0('Updating Factor matrix takes ',  round(difftime(Sys.time(), tStart, units = "mins"), digits = 3), ' min'), option)
 	if(option$traitSpecificVar)
 	{
 	  ret <- list()

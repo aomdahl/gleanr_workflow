@@ -27,30 +27,7 @@
   suppressWarnings(library(penalized))
   library(foreach)
   library(doParallel)
- glmnetLASSO <- function(dat_i,xp, colcount, lambdas, penalties)
-{
-    out <- tryCatch(
-    expr = { penalties <- c(0, rep(1, (colcount - 1)))
-      fit <- glmnet(x = dat_i[,paste0('F', seq(1,colcount))], y = xp, alpha = 1, lambda = lambdas,
-                    intercept = FALSE, penalty.factor = penalties)
-      coef(fit, 'all')[,1][-1];
-        
-    },
-    error = function(e){
-	print(e)
-        print("Vals")
-        print(head(dat_i[,paste0('F', seq(1,colcount))]))
-        print("Outcomes")
-        print(xp)
-	readline()
-        rep(0,colcount)
-
-    },
-     warning = function(w){
-            message('Caught an warning!')
-            print(w)})
-    return(out)
-} 
+  library(svMisc)
   #Function for running the fitting step. Options include
   #reweighted: this uses the previous iteration to initialize the current one. Thought it might provide a speed boost, but the difference seemed to be minimal.
   #glmnet: This uses the glmnet function; just exploring options
@@ -79,7 +56,20 @@
                       unpenalized = ~0, lambda1 = option[['alpha1']], lambda2=1e-10,
                       positive = FALSE, standardize = FALSE, trace = FALSE, startbeta = formerL);
       l = coef(fit, 'all');
-    } 
+    }else if (option[["regression_method"]] == "OLS") {
+      fit <- lm(xp~FactorMp + 0) 
+      #Get the sparsity parameters here!
+      
+      #rsp <- rowiseSparsity(xp, as.matrix(FactorMp), option)
+      #It doesn't appear that this is needed
+      #message("At iter in L, row-wise sparsity is...")
+      #print(rsp[1])
+      #L1 norm mathematically
+      #message("Mathematically...")
+      #print(norm(t(FactorMp) %*% xp,type = "I"))
+      l = coef(fit) #check this, but I think its correct
+      
+    }
     else if(option[["regression_method"]] == "glmnet" & option[["fixed_ubiq"]]) 
       {
       penalties <- c(0, rep(1, (ncol(FactorMp) - 1)))
@@ -129,7 +119,12 @@
   fit_L<- function(X, W, FactorM, option, formerL, r.v = NULL){
   	L = NULL
   	tS = Sys.time()
+    updateLog("Updating L...", option)
   	for(row in seq(1,nrow(X))){
+      if(option$V > 0)
+      {
+        svMisc::progress(row, nrow(X), progress.bar = TRUE)
+      }
   		x = X[row, ];
   		w = W[row, ];
   		if(option[['reweighted']])
@@ -156,7 +151,7 @@
         }
       
   	}
-  	updateLog(paste0('Updating Loading matrix takes ', round(difftime(Sys.time(), tS, units = "mins"), digits = 3), ' min'), option$V);
+  	updateLog(paste0('Updating Loading matrix takes ', round(difftime(Sys.time(), tS, units = "mins"), digits = 3), ' min'), option);
   
   	return(as.matrix(L))
   }
@@ -166,19 +161,19 @@
   fit_L_parallel <- function(X, W, FactorM, option, formerL){
 
     L = NULL
+  	message("inside the parallele list")
     tS = Sys.time()
-    cl <- parallel::makeCluster(option[["ncores"]])#, outfile = "TEST.txt")
+    #cl <- parallel::makeCluster(option[["ncores"]])#, outfile = "TEST.txt")
     iterations <- nrow(X)
-    doParallel::registerDoParallel(cl)
-    writeLines(c(""), "log.txt")
-
+    #doParallel::registerDoParallel(cl)
+    doParallel:registerDoParallel(parallel::makeCluster(option[["ncores"]]))
     #6/13/2022
     #We split the tasks across cores, so multiple regression steps per core; you aren't switching nearly as much.
     n.per.group <- ceiling(nrow(X)/option$nsplits)
     oo <- n.per.group - 1
+    print(option$nsplits)
     split_lines <- lapply(1:(option$nsplits-1), function(x) (x*n.per.group - oo) :(x*n.per.group))
     split_lines[[option$nsplits]] <- (split_lines[[(option$nsplits-1)]][n.per.group]+1):nrow(X)
-      
     L <- foreach(rows = split_lines, .combine = 'bind_rows', .packages = c('penalized', 'dplyr')) %dopar% {
       sub_l <- NULL
       for(row in rows)
@@ -197,8 +192,9 @@
       }
       sub_l
     }
-  
-    updateLog(paste0('Updating Loading matrix takes ',  as.character(round(difftime(Sys.time(), tS, units = "mins"), digits = 3), ' min')), option$V);
+    doParallel::stopImplicitCluster()
+   #parallel::stopCluster(cl) 
+    updateLog(paste0('Updating Loading matrix takes ',  as.character(round(difftime(Sys.time(), tS, units = "mins"), digits = 3), ' min')), option);
     return(as.matrix(L))
   }
 
