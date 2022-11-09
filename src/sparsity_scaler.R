@@ -1,7 +1,7 @@
 ################################################################################################################################
 ## March 2022
 ## Ashton Omdahl
-## Series of scripts for approximating the sparsity parameters. This allows a user to specify a paramter space between 0 and 1, rather than exploring a wide range
+## Series of scripts for approximating the sparsity parameters, as well as estimating factor sparsity. This allows a user to specify a paramter space between 0 and 1, rather than exploring a wide range
 ##
 ################################################################################################################################
 
@@ -9,11 +9,11 @@
 if(FALSE)
 {
   #source("/Users/ashton/Documents/JHU/Research/LocalData/snp_network/quickLoadData.R")
-  source("/work-zfs/abattle4/ashton/snp_networks/custom_l1_factorization/src/quickLoadData.R")
-  source("/work-zfs/abattle4/ashton/snp_networks/custom_l1_factorization/src/fit_F.R")
-  source("/work-zfs/abattle4/ashton/snp_networks/custom_l1_factorization/src/fit_L.R")
-  source("/work-zfs/abattle4/ashton/snp_networks/custom_l1_factorization/src/compute_obj.R")
-  source("/work-zfs/abattle4/ashton/snp_networks/custom_l1_factorization/src/plot_functions.R")
+  source("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/src/quickLoadData.R")
+  source("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/src/fit_F.R")
+  source("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/src/fit_L.R")
+  source("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/src/compute_obj.R")
+  source("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/src/plot_functions.R")
   all <- quickLoadFactorization("Z", "MARCC")
   X <- all$X
   W <- all$W
@@ -32,8 +32,11 @@ if(FALSE)
 MAPfitLambda <- function(matin, dim, option)
 {
   if(dim == 1){
-    return(singleDimMAPFit(matin, option$max_lambda, option$K, option$lambda1))
-  }else{
+    return(singleDimMAPFit(matin, option$max_lambda, option$lambda1))
+  }else if(dim == 0){
+    return(singleDimDropMAPFit(matin, option$max_lambda, option$lambda1))
+  }
+  else{
     print("Not yet implemented")
   }
 }
@@ -41,8 +44,11 @@ MAPfitLambda <- function(matin, dim, option)
 MAPfitAlpha <- function(matin, dim, option)
 {
   if(dim == 1){
-    return(singleDimMAPFit(matin, option$max_alpha, option$K, option$alpha1))
-  }else{
+    return(singleDimMAPFit(matin, option$max_alpha, option$alpha1))
+ }else if(dim == 0){
+    return(singleDimDropMAPFit(matin, option$max_alpha, option$alpha1))
+  }
+  else{
     print("Not yet implemented")
   }
 }
@@ -52,46 +58,119 @@ MAPfitAlpha <- function(matin, dim, option)
   #lambda - 0.01*(d/dlambda)- assume true lambda is unknown, so step towards it?
   #This update only makes sense to prevent major jumps in this, prevent us from rapidly getting too sparse or not...
   #I might like this other way better- it actually allows us to balance
-    singleDimMAPFit <- function(matin, max, K, curr, step_rate = 0.01)
+  #matin: either F or L matrix
+  # max: the reported MAx sparsity that would 0 everything out. Note that this should change from iteration to iteration
+  #ensure that this gets updated, and isn't the same on each
+#Ensuire k is updated
+
+    singleDimMAPFit <- function(matin, max, curr, step_rate = 0.5)
     {
       #MLe approach directly
+      K = ncol(matin)
       #If current is bigger than the new one, we step down. If map is bigger, we step up.
       map <- (K * nrow(matin)) / (sum(abs(matin)))
-      f <- curr - sign(curr - map) * step_rate * (map)
+      return(updateSparsityEstimate(curr,map,step_rate, max))
+    }
 
+    singleDimDropMAPFit <- function(matin, max, curr, step_rate = 0.5)
+    {
+      #MAP approach, except we only count non-zero elements.
+      #intuition here is that if we keep counting the same number of elements as the matrix shrinks, sparsity will keep going up.
+      #in practice we don't see this though.
+      #If current is bigger than the new one, we step down. If map is bigger, we step up.
+  
+      M_k_mod <- sum(matin != 0)
+      message("Full size ", nrow(matin) * ncol(matin))
+      message("New size ", M_k_mod)
+      map <- M_k_mod / (sum(abs(matin)))
+      
+      return(updateSparsityEstimate(curr,map,step_rate, max))
+    }
+    
+    updateSparsityEstimate <- function(curr, map, step_rate, max)
+    {
+      f <- curr - sign(curr - map) * step_rate * (map)
+      
       #Gradient approach:
       #d_dx <- (K * nrow(matin))/curr - (sum(abs(matin)))
       #f <- curr - step_rate * d_dx
-      
-      if(f > max)
+      if(is.na(f) | is.nan(f))
       {
-        message("calibrated sparsity exceeds maximum estimate....")
+        message("calibrated sparsity not areal number now (?) ")
+        print(paste("Curr:", curr))
+        print(paste("map": map))
+        return(curr)
+      }
+      else if(f > max)
+      {
+        message("Warning calibrated sparsity exceeds estimated maximum...")
         print(paste("Max:", max))
-        print(paste("Estimate": f))
-        return(max)
+        print(paste("Estimate:", f))
+        return(f)
       } else{
         return(f)
       }
     }
 
-#This is the top-level function for approximating sparsity
+    
+library(coop)
+cor2 <- function(x) {
+1/(NROW(x)-1) * crossprod(scale(x, TRUE, TRUE))
+}
+
+#This is the top-level function for approximating sparsity. Also will give a starting point for K if its needed.
 #@param X: input betas of effect sizes
 #@param W: weights for the betas
 #@param option: options associated with the funciton call
 #@return max sparsity setting for L and for F
 #@Todo: allow for flexibility on the sparsity settings.
 approximateSparsity <- function(X, W, option){
+  
 
-  message("Estimating sparsity parameters with SVD")
-  Z <- X * W
+  Z <- as.matrix(X * W)
+#print(is.na(Z))
+#If k is unspecified, do that here too
+
+print(option$K)
+if(option$K == 0 | option$K == "kaiser" | option$K == "CnG" | option$K == "avg")
+{
+  library(nFactors)
+  decomp <- svd(Z)
+  if(option$K == 0 | option$K == "avg")
+  {
+    log_print("Approximating number of factors based on SVD PVE >  average PVE")
+    pve <- decomp$d^2 / sum(decomp$d^2)
+    option$K <- sum(pve >= (mean(pve)))
+
+  } else if(option$K == "CnG")
+  {
+    message("Using the top performing CnG estimate.")
+    library(nFactors)
+    option$K <- nCng(decomp$d)$nFactors 
+  } else if(option$K == "kaiser")
+  {
+    ops <- nScree(decomp$d)
+    option$K <- ops$Components[4]
+  
+  }else{
+    log_print("Using pre-specified number of components.")
+
+  }
+ log_print(paste0("Proceeding with ", option$K, " latent factors"))
+
+
+}else{
   decomp <- svd(Z,nu = option$K, nv = option$K)
-  L.mat <- decomp$u %*% diag(decomp$d[1:option$K])
-  #F.mat <- t(diag(decomp$d[1:option$K]) %*% t(decomp$v))
-  first <- svd(cor(Z))$u[,1]
-  F.mat <- cbind(sign(first), decomp$v[,1:(option$K - 1)])
+}
+  message("Estimating sparsity parameters with SVD")
+  L.mat <- decomp$u[,1:option$K] %*% diag(decomp$d[1:option$K])
+  F.mat <- t(diag(decomp$d[1:option$K]) %*% t(decomp$v))
+  zcor <- cor2(Z)
+  first <- svd(zcor)$u[,1]
+  F.mat <- cbind(sign(first), decomp$v[,2:(option$K)])
   lsparsity <- sparsityL(Z, F.mat, option)
   fsparsity <- sparsityF(Z, L.mat, option)
-  return(list("alpha" = max(lsparsity), "lambda" = max(fsparsity)))
+  return(list("alpha" = min(lsparsity), "lambda" = min(fsparsity), "newK" = option$K, "zcor" = zcor))
 }
 
 #Estimate the MAX sparsity paramters for the loading matrix
@@ -106,6 +185,7 @@ sparsityL<- function(Z, FactorM, option){
     l = rowiseSparsity(z, as.matrix(FactorM), option);
     L = rbind(L, l);
   }
+  updateLog("Sparsities for L estimated.", option)
   return(L)
 }
 
@@ -118,7 +198,7 @@ rowiseSparsity <- function(z, FactorM, option){
   colnames(dat_i) = c('X', paste0('F', seq(1, ncol(FactorM))));
   
   recommendRange(response = X, penalized = dat_i[,paste0('F', seq(1, ncol(FactorM)))], data=dat_i,
-                       unpenalized = ~0, lambda2=1e-10)
+                       unpenalized = ~0, lambda2=1e-10, params=option)
 }
 
 #Estimate the MAX sparsity paramters for the Factor matrix
@@ -132,13 +212,15 @@ sparsityF <- function(Z, L, option){
   ## fit each factor one by one -- because of the element-wise multiplication from weights!
   for(col in seq(1, ncol(Z))){
     xp = Z[, col];
+    #or in glmnL: fit$lambda[1]
     dat_i = as.data.frame(cbind(xp, L));
     colnames(dat_i) = c('X', paste0('F', seq(1, ncol(L))));
     f <- recommendRange(response = X, penalized = dat_i[,paste0('F', seq(1, ncol(L)))], data=dat_i,
                         unpenalized = ~0, lambda1 =option[['lambda1']], lambda2=1e-10,
-                        positive = option$posF)
+                        positive = option$posF, params=option)
     FactorM = rbind(FactorM, f);
   }
+  updateLog("Sparsities for F estimated.", option)
   return(FactorM)
 }
 
@@ -149,55 +231,68 @@ sparsityF <- function(Z, L, option){
 #@param response: the response variable
 #@param penalized- which variables have weights on them
 #@param unpenalized- which have no weights on them
-recommendRange <- function (response, penalized, unpenalized, lambda1 = 100, lambda2 = 0, data,  startbeta, startgamma, 
-                         steps = 1, epsilon = 1e-10, maxiter, positive = FALSE) 
-{
-  trace <- FALSE
-  standardize <- FALSE
-  park <- FALSE
-  steps = 100
-  fusedl = FALSE
-  if (missing(maxiter)) 
-    maxiter <- if (lambda1 == 0 && lambda2 == 0 && !positive) 
-      25
-  else Inf
-  prep <- penalized:::.checkinput(match.call(), parent.frame())
-  if (ncol(prep$X) >= nrow(prep$X) && all(lambda1 == 0) && 
-      all(lambda2 == 0) && !any(prep$positive)) 
-    stop("High-dimensional data require a penalized model. Please supply lambda1 or lambda2.", 
-         call. = FALSE)
-  fit <- penalized:::.modelswitch(prep$model, prep$response, prep$offset, 
-                                  prep$strata)$fit
-  pu <- length(prep$nullgamma)
-  pp <- ncol(prep$X) - pu
-  n <- nrow(prep$X)
-  nr <- nrow(prep$X)
-  fusedl <- prep$fusedl
-  if (length(lambda1) == pp && (!all(lambda1 == 0))) {
-    wl1 <- c(numeric(pu), lambda1)
-    lambda1 <- 1
-  }
-  else {
-    wl1 <- 1
-  }
 
-  if (park || steps > 1 && fusedl == FALSE) {
-    if (pu > 0) 
-      lp <- drop(prep$X[, 1:pu, drop = FALSE] %*% prep$nullgamma)
-    else lp <- numeric(n)
-    chck <- (wl1 > 0) & c(rep(FALSE, pu), rep(TRUE, pp))
-    gradient <- drop(crossprod(prep$X[, chck, drop = FALSE], 
-                               fit(lp)$residuals))
-    if (length(wl1) > 1) {
-      rel <- gradient/(wl1[chck] * prep$baselambda1[chck])
+
+recommendRange <- function (response, penalized, unpenalized, lambda1 = 100, lambda2 = 0, data,  startbeta, startgamma, 
+                         steps = 1, epsilon = 1e-10, maxiter, positive = FALSE, params= option) 
+{
+  if(params$regression_method == "penalized")
+  {
+    trace <- FALSE
+    standardize <- FALSE
+    park <- FALSE
+    steps = 100
+    fusedl = FALSE
+    if (missing(maxiter)) 
+      maxiter <- if (lambda1 == 0 && lambda2 == 0 && !positive) 
+        25
+    else Inf
+    prep <- penalized:::.checkinput(match.call(), parent.frame())
+    if (ncol(prep$X) >= nrow(prep$X) && all(lambda1 == 0) && 
+        all(lambda2 == 0) && !any(prep$positive)) 
+      stop("High-dimensional data require a penalized model. Please supply lambda1 or lambda2.", 
+          call. = FALSE)
+    fit <- penalized:::.modelswitch(prep$model, prep$response, prep$offset, 
+                                    prep$strata)$fit
+    pu <- length(prep$nullgamma)
+    pp <- ncol(prep$X) - pu
+    n <- nrow(prep$X)
+    nr <- nrow(prep$X)
+    fusedl <- prep$fusedl
+    if (length(lambda1) == pp && (!all(lambda1 == 0))) {
+      wl1 <- c(numeric(pu), lambda1)
+      lambda1 <- 1
     }
     else {
-      rel <- gradient/(wl1 * prep$baselambda1[chck])
+      wl1 <- 1
     }
-    from <- max(ifelse(prep$positive[chck], rel, abs(rel)))
-  }
-   return(from)
 
+    if (park || steps > 1 && fusedl == FALSE) {
+      if (pu > 0) 
+        lp <- drop(prep$X[, 1:pu, drop = FALSE] %*% prep$nullgamma)
+      else lp <- numeric(n)
+      chck <- (wl1 > 0) & c(rep(FALSE, pu), rep(TRUE, pp))
+      gradient <- drop(crossprod(prep$X[, chck, drop = FALSE], 
+                                fit(lp)$residuals))
+      if (length(wl1) > 1) {
+        rel <- gradient/(wl1[chck] * prep$baselambda1[chck])
+      }
+      else {
+        rel <- gradient/(wl1 * prep$baselambda1[chck])
+      }
+      from <- max(ifelse(prep$positive[chck], rel, abs(rel)))
+    }
+    return(from)
+  }
+  if(params$regression_method == "glmnet")
+  {
+    #TODO test and debug this
+    #simply run it once with no labmda specified and get the 
+    penalties <- c(0, rep(1, (ncol(penalized) - 1)))
+    r <- glmnet(x = penalized, y = data[,1], alpha = 1,
+                    intercept = FALSE, penalty.factor = penalties)$lambda
+     return(r[1])
+  }
 }
 
 
@@ -272,6 +367,9 @@ penalizedDEBUG <- function (response, penalized, unpenalized, lambda1 = 0, lambd
     message("didn't go...")
     from <- lambda1
   }
+  print(lambda1)
+  print(from)
+  message("here?")
   lambda1s <- seq(from, lambda1, length.out = steps)
   beta <- prep$beta
   louts <- if (park) 
@@ -372,3 +470,54 @@ penalizedDEBUG <- function (response, penalized, unpenalized, lambda1 = 0, lambd
   outs
 }
 
+
+
+
+
+#Copied over from Yuan:
+nonEmpty <- function(v,u, iter =0 ){
+	#must be empty in both u and v
+  if(is.null(u) | is.null(v))
+  {
+    return(NA)
+  }  
+   if(length(u) == 0 | length(v) == 0)
+  {
+    message("the 0 case....")
+    return(0)
+  }  
+  non_empty_v = which(apply(v, 2, function(x) sum(x!=0)) > 0)
+  non_empty_u = which(apply(u, 2, function(x) sum(x!=0)) > 0)
+  length(intersect(non_empty_v,non_empty_u))
+}
+
+nonEmptyAvg <- function(v,u){
+  l = length(v)
+  if(l != length(u))
+  {
+    message("Problem")
+  }
+  ret <- sapply(1:l, function(i) nonEmpty(v[[i]], u[[i]]))
+  if(max(ret) == min(ret))
+  {
+    return(max(ret))
+  } else{
+    message("variation in repeated runs... giving an average")
+    mean(ret)
+  }
+	
+}
+
+
+
+matrixSparsity <- function(m, thresh = 1e-5)
+{
+	sum(abs(m) < thresh)/ncol(m)/nrow(m)
+}
+
+matrixSparsityAvg <- function(m)
+{
+  #m is a list of matrices
+  b = sapply(m, matrixSparsity)
+  mean(b)
+}
