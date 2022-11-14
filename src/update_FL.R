@@ -24,28 +24,166 @@ if(FALSE)
   W <- W[1:1000, 1:10]
   option$K <- 5
 }
+ZERO_THRESH = 1e-5
 
-      #fast matrix correlation help
+  #fast matrix correlation help
 library(coop)
 cor2 <- function(x) {
 1/(NROW(x)-1) * crossprod(scale(x, TRUE, TRUE))
 }
       
-
+#This function uses OLS to get a good estimate of what the maximum sparsity space is across all parameters.
+#@param burn.in- how many iterations to go
+#@return V_burn: the burn-in estimate of V
+#@return U_burn: the burn-in estimate of U
+#@return max_sparsity_params: a list indexed by iteration containing the list of max alphas and lambdas (i.e. list[[i]]$alpha))
 defineSparsitySpace <- function(X, W, option, burn.in = 5)
 {
   #Perform burn.in # of iterations with no sparsity (OLS) and calculate the maximum sparsity value at each step.
   new.options <- option
   new.options$burn.in <- burn.in
   new.options$regression_method <- "OLS"
+  new.options$calibrate_sparsity <- TRUE
+  new.options$actively_calibrating_sparsity <- TRUE
   #Record those sparsities PARAMETERS for each iteration for both L and F, and then return for downstream analysis.
-  res <- Update_FL(X,W, new.options)
+  param.space <- list()
+  #for testing purposes
+  Xint <- as.matrix(X)
+  Wint <-as.matrix(W)
+  V <- initV(Xint,Wint, new.options)
+  for(i in 1:burn.in)
+  {
+    U.dat <- FitUWrapper(Xint,Wint,V, new.options)
+    V.dat <- FitVWrapper(Xint, Wint, U.dat$U, new.options, FactorM);
+    param.space[[i]] <- list("alpha" = U.dat$sparsity_space, "lambda"=V.dat$sparsity_space)
+    V <- V.dat$V
+  }
   #Upon return, we want the max across all as the maximums.
   #Maybe set the min and max of the distribution as the upper and lower bounds, and then pick some points in between?
   #That would guarantee at least one row or one column would be entirely empty.
+  return(list("V_burn" = V, "U_burn"=U.dat$U, "max_sparsity_params"=param.space))
 }
 
+#Function to initialize V as desired
+initV <- function(X,W,option, preV = NULL)
+{
+  D = ncol(X)
+  if(!option[['preinitialize']])
+  {
+    V = matrix(runif(D*(option[['K']] - 1)), nrow = D);
 
+    if(option[['f_init']] == 'ones_plain')
+    {
+      message("Initializing ubiquitous factor with all ones...")
+      V = cbind(rep(1, D), V);
+    }	else if(option[['f_init']] == 'ones_eigenvect') {
+      message("1st column based on direction of svd of cor")
+      cor_struct <- cor2(X)
+      svd <- svd(cor_struct, nu = option$K) #fortunately its symmetric, so  U and V are the same here!
+      ones <- sign(svd$u[,1])
+      V <- svd$u[,2:option$K]
+    } else if(option[['f_init']] == 'plieotropy')
+    {
+      message("1st column based svd of cor(|Z|), since plieotropy has no direction.")
+      cor_struct <- cor(abs(X))
+      svd <- svd(cor_struct, nu = 1) #fortunately its symmetric, so  U and V are the same here!
+      ones <- svd$u
+    } else {
+      ones = matrix(runif(D*(option[['K']])), nrow = D)[,1]
+    }
+    V = cbind(ones, V);
+  } else #you pre-provide the first F.
+  {
+    V   = preV;
+  }
+  if(option$posF)
+  {
+    message("Performing semi-non-negative factorization today....")
+    V = abs(V)
+  }
+  V
+}
+
+#Function to inialize U if specified
+initU <- function(X,W,option, prevU = NULL)
+{
+  message("Initializing L rather than F.")
+  nsnps = nrow(X)
+  library(irlba)
+  U   = matrix(runif(nsnps*(option[['K']] - 1)), nrow = nsnps);
+  if(option$l_init == 'ones_plain')
+  {
+    message("Initializing ubiquitous factor with all ones...")
+    ones = rep(1, nsnps)
+    
+  }	else if(option$l_init == 'ones_eigenvect') {
+    message("1st column based on direction of svd of cor")
+    cor_struct <- cor2(t(X))
+    svd <- irlba(cor_struct, 1) #fortunately its symmetric, so  U and V are the same here!
+    ones <- sign(svd$u)
+  } else if(option$l_init == 'plieotropy') {
+    message("1st column based svd of cor(|Z|), since plieotropy has no direction.")
+    cor_struct <- cor2(abs(t(X)))
+    svd <- irlba(cor_struct, 1) #fortunately its symmetric, so  U and V are the same here!
+    ones <- svd$u
+  } else {
+    ones = matrix(runif(nsnps*(option[['K']])), nrow = D)[,1]
+  }
+  cbind(ones, L);
+  
+}
+
+#helper code to clean things up, just keep track of those relevant metrics,
+UpdateTrackingParams <- function(storage.unit, X,W,U,V,option, sparsity.thresh = 1e-5,lambda_step = NULL,alpha_step = NULL)
+{
+  if(is.null(storage.unit))
+  {
+    objective = c(NA, compute_obj(X, W, L, FactorM, option));
+    objective_change = c(NA);
+    sto.obj <-  list("U" = U, "V" = V, "K" = ncol(U), "obj" = objective, "obj_change" = objective_change,
+                     "V_sparsities" = c(), "U_sparsities" = c(), "autofit_lambda" = c(), "autofit_alpha"=c(), "mse" = c())
+  }
+    # collect sparsity in L and F
+  
+  sto.obj$U_sparsities = c(sto.obj$U_sparsities, sum(abs(U) < sparsity.thresh) / (ncol(U) * nrow(U)));
+  sto.obj$V_sparsities = c(sto.obj$V_sparsities, sum(abs(V) < sparsity.thresh) / (ncol(V) * nrow(V)));
+  sto.obj$K = ncol(U);
+    
+    # change in the objective -- should always be negative
+    obj_updated = compute_obj(X, W, U, V, option);
+    obj_change = obj_updated - storage.unit$obj[length(storage.unit$obj)];
+    storage.unit$obj = c(storage.unit$obj, obj_updated);
+    storage.unit$obj_change = c(storage.unit$obj_change, obj_change);
+    #Update the fit:
+    sto.obj$mse <- c(sto.obj$mse, calcMSE(X,W,V, U))
+    
+  #Update the sparsity paramters, regardless of if they change or not.
+    if(is.null(alpha_step) & is.null(lambda_step))
+    {
+      lambda_step <- option$lambda1
+      alpha_step <- option$alpha1
+    }
+      sto.obj$autofit_lambda <- c(sto.obj$autofit_lambda,lambda_step)
+      sto.obj$autofit_alpha <- c(sto.obj$autofit_alpha,alpha_step)
+  sto.obj
+}
+
+#Checking results along the way
+CheckUEmpty <- function(U) 
+{
+  non_empty_u = which(apply(U, 2, function(x) sum(x!=0)) > 0) #Truly all 0
+  if(length(non_empty_l) == 0){
+    message('Finished');
+    message('L is completely empty, alpha1 too large')
+    #FactorM = NULL;
+    #F_sparsity = 1;
+    #L_sparsity = 1;
+    #factor_corr = 1;
+    #Nfactor = 0;
+    return(TRUE)
+  }
+  FALSE
+}
 
 Update_FL <- function(X, W, option, preF = NULL, preL = NULL){
   # number of features - to avoid using T in R
@@ -55,131 +193,36 @@ Update_FL <- function(X, W, option, preF = NULL, preL = NULL){
   #Random initialization of F
   if(option$l_init != "")
   {
-      message("Initializing L rather than F.")
-      nsnps = nrow(X)
-      library(irlba)
-
-      L   = matrix(runif(nsnps*(option[['K']] - 1)), nrow = nsnps);
-      if(option$l_init == 'ones_plain')
-      {
-        message("Initializing ubiquitous factor with all ones...")
-        FactorM = cbind(rep(1, nsnps), FactorM);
-
-      }	else if(option$l_init == 'ones_eigenvect') {
-        message("1st column based on direction of svd of cor")
-        cor_struct <- cor2(t(X))
-        svd <- irlba(cor_struct, 1) #fortunately its symmetric, so  U and V are the same here!
-        ones <- sign(svd$u)
-      } else if(option$l_init == 'plieotropy')
-      {
-        message("1st column based svd of cor(|Z|), since plieotropy has no direction.")
-        cor_struct <- cor2(abs(t(X)))
-        svd <- irlba(cor_struct, 1) #fortunately its symmetric, so  U and V are the same here!
-        ones <- svd$u
-      } else {
-        #FactorM   = matrix(runif(D*(option[['K']])), nrow = D);
-        ones = matrix(runif(nsnps*(option[['K']])), nrow = D)[,1]
-      }
-      L = cbind(ones, L);
-      # First round of optimization- here because we initialized L
-      message('Start optimization ...')
-      message(paste0('K = ', (option[['K']]), '; alpha1 = ', round(option[['alpha1']], digits =  4),'; lambda1 = ', round(option[['lambda1']], digits = 4)));
-      FactorM = fit_F(X, W, L, option)
+    L <- initU(X,W,option,preU=preL)
+    FactorM = fit_F(X, W, L, option)$V
       
   } else{ #initialize by F as normal.
-    if(!option[['preinitialize']])
-    {
-      FactorM   = matrix(runif(D*(option[['K']] - 1)), nrow = D);
-      #Ashton added in- option to include column of 1s
-      if(option[['f_init']] == 'ones_plain')
-      {
-        message("Initializing ubiquitous factor with all ones...")
-        FactorM = cbind(rep(1, D), FactorM);
-      }	else if(option[['f_init']] == 'ones_eigenvect') {
-        message("1st column based on direction of svd of cor")
-        cor_struct <- cor(X)
-        svd <- svd(cor_struct, nu = option$K) #fortunately its symmetric, so  U and V are the same here!
-        ones <- sign(svd$u[,1])
-        message("REMEMBER: new update initializing to SVD on F")
-        FactorM <- svd$u[,2:option$K]
-      } else if(option[['f_init']] == 'plieotropy')
-      {
-        message("1st column based svd of cor(|Z|), since plieotropy has no direction.")
-        cor_struct <- cor(abs(X))
-        svd <- svd(cor_struct, nu = 1) #fortunately its symmetric, so  U and V are the same here!
-        ones <- svd$u
-      } else {
-        ones = matrix(runif(D*(option[['K']])), nrow = D)[,1]
-      }
-      FactorM = cbind(ones, FactorM);
-    } else #you pre-provide the first F.
-    {
-      FactorM   = preF;
-    }
-    if(option$posF)
-    {
-      message("Performing semi-non-negative factorization today....")
-      FactorM = abs(FactorM)
-    }
-      # First round of optimization
-
-    message("")
-    message('Start optimization ...')
-    message(paste0('K = ', (option[['K']]), '; alpha1 = ', round(option[['alpha1']], digits =  4),'; lambda1 = ', round(option[['lambda1']], digits = 4)))
-
+    
+    FactorM <- initV(X,W,option,preV=preF)
   }  
+  
+  message("")
+  message('Start optimization ...')
+  message(paste0('K = ', (option[['K']]), '; alpha1 = ', round(option[['alpha1']], digits =  4),'; lambda1 = ', round(option[['lambda1']], digits = 4)))
 
-#Need to adjust for first run- no reweighting (obvi.)
-og_option <- option[['reweighted']]
-option[['reweighted']] <- FALSE
-if(option[['ncores']] > 1) #This is not working at all. Can't tell you why. But its not. Need to spend some time debugging at some point.
-{
-  log_print("Fitting L in parallel")	
-  L = fit_L_parallel(X, W, FactorM, option, formerL = preL); #preL is by default Null, unless yo specify!
-
-}
-else
-{
-  L = fit_L(X, W, FactorM, option, formerL = preL);
-}
-
+  #Need to adjust for first run- no reweighting (obvi.)
+  og_option <- option[['reweighted']]
+  option[['reweighted']] <- FALSE
+  L = FitUWrapper(X,W,FactorM, option)
+  L <- L$U
   option[['reweighted']] <- og_option
-  objective = c(NA, compute_obj(X, W, L, FactorM, option));
-  l_sparsities <- c()
-  f_sparsities <- c()
-  mse <- c()
-  objective_change = c(1, 1);
-  old_change = 1;
+  
+  #Start tracking stats
+  tracking.data <- UpdateTrackingParams(NULL, X,W,L,FactorM,option)
   F_old = FactorM; 
   
   # if L is empty, stop
-  non_empty_l = which(apply(L, 2, function(x) sum(x!=0)) > 0)
-  if(length(non_empty_l) == 0){
-    message('Finished');
-    message('L is completely empty, alpha1 too large')
-    FactorM = NULL;
-    F_sparsity = 1;
-    L_sparsity = 1;
-    factor_corr = 1;
-    Nfactor = 0;
-    return()
-  }
-  #Alternatively, if L has only the one factor and we are doing the unwighted ubiq mode...
-  if(option[["fixed_ubiq"]] & (ncol(L) == 1  | ncol(FactorM) == 1))
-  {
-    message("Only the ubiquitous factor remains, when we are removing any L1 prior on it")
-    FactorM = NULL;
-    F_sparsity = 1;
-    L_sparsity = 1;
-    factor_corr = 1;
-    Nfactor = 0;
-    return()
-  }
-  
-  
+  #CheckUEmpty
+  #If U is already empty, than we know that the matrix is too sparse, and we should just end there.
+  if(CheckUEmpty(L)) {return(tracking.data)}
+
+  #If we are doing a measure of per-trait variance over time...
   trait.var <- matrix(NA, option[['iter']], ncol(X))
-  lambda_track <- c(option[['lambda1']])
-  alpha_track <- c(option[['alpha1']])
  
   for (iii in seq(1, option[['iter']])){
     message(paste0("Currently on iteration ", iii))
@@ -235,16 +278,14 @@ else
 
       }
     }
-    lambda_track <- c(lambda_track, option[['lambda1']])
-    alpha_track <- c(alpha_track, option[['alpha1']])
-    if(iii == 1)
+    if(iii == 1) #This is technically the second run already
     {
       og_option <- option[['reweighted']]
       option[['reweighted']] <- FALSE
-      FactorM = fit_F(X, W, L, option, FactorM);
+      FactorM = fit_F(X, W, L, option, FactorM)$V;
       option[['reweighted']] <- og_option
     } else {
-      FactorM = fit_F(X, W, L, option, FactorM); #by iter 3 really slows down, due to the L1 requirements. Yea this won't do....
+      FactorM = fit_F(X, W, L, option, FactorM)$V; #by iter 3 really slows down, due to the L1 requirements. Yea this won't do....
     }
     #get the factor specific variance....
     if(option$traitSpecificVar)
@@ -253,11 +294,8 @@ else
       FactorM <- FactorM$mat
     }
     # if number of factors decrease because of empty factor, the change in ||F||_F = 100
-    if(ncol(FactorM) != ncol(F_old)){
-      F_change = 100
-    }else{
-      F_change = norm(FactorM - F_old, 'F') / ncol(FactorM)
-    }
+    #Tracking change in F....
+    F_change = norm(FactorM - F_old, 'F') / ncol(FactorM)
     F_old = FactorM;
     non_empty_f = which(apply(FactorM, 2, function(x) sum(x!=0)) > 0)
     if(length(non_empty_f) == 0 | (non_empty_f[1] == 1 & option$fixed_ubiq & (length(non_empty_f) == 1))){
@@ -279,12 +317,8 @@ else
     
     ## update L
     #message("Fitting L....")
-    if(option[['parallel']])
-    {
-      L  = fit_L_parallel(X, W, FactorM, option, L);
-    }else{
-      L  = fit_L(X, W, FactorM, option, L, r.v = trait.var[iii,]); #the l1 one requirement is making things tough here.....
-    }
+    L <- FitUWrapper(X,W,FactorM, option,r.v = trait.var[iii,])$U
+
 
     # if L is empty, stop
     non_empty_l = which(apply(L, 2, function(x) sum(x!=0)) > 0)
@@ -305,21 +339,8 @@ else
     L = as.matrix(as.data.frame(L[, non_empty]));
     FactorM  = as.matrix(as.data.frame(FactorM[, non_empty]));
     
-    # collect sparsity in L and F
-    L_sparsity = sum(abs(L) < 1e-5) / ncol(L) / nrow(L);
-    F_sparsity = sum(abs(FactorM) < 1e-5) / ncol(FactorM) / nrow(FactorM);
-    Nfactor = length(non_empty);
-    
-    # change in the objective -- should always be negative
-    obj_updated = compute_obj(X, W, L, FactorM, option);
-    obj_change = obj_updated - objective[length(objective)];
-    objective = c(objective, obj_updated);
-    objective_change = c(objective_change, obj_change);
-    l_sparsities <- c(l_sparsities, L_sparsity)
-    f_sparsities <- c(f_sparsities, F_sparsity)
-    #Update the fit:
-    mse <- c(mse, calcMSE(X,W,FactorM, L))
-
+    tracking.data <- UpdateTrackingParams(tracking.data, X,W,L,FactorM,
+                                          option, lambda_step = lambda_track,alpha_step = alpha_track)
     
     
     if(option[['disp']]){
@@ -349,9 +370,7 @@ else
       break
     }
   }
-  retlist <- list("F" = FactorM, "L" = L, "L_sparsity" = L_sparsity, "F_sparsity" = F_sparsity, "K" = Nfactor, "obj" = objective, 
-                  "study_var" = trait.var, "finalAlpha" = option$alpha1, "finalLambda" = option$lambda1, 
-                  "f_sparsities" = f_sparsities, "l_sparsities" = l_sparsities, "autofit_lambda" = lambda_track, "autofit_alpha"=alpha_track, "mse" = mse)
+  retlist <- list("F" = FactorM, "L" = L, tracking.data)
   cat('\n')
   updateLog(paste0('Total time used for optimization: ',  round(difftime(Sys.time(), tStart0, units = "mins"), digits = 3), ' min'), option);
   
