@@ -134,6 +134,8 @@ readInData <- function(args)
     effects <- apply(effects, 2, RankNorm)
   }
   
+
+
   #Look at the weighting scheme options...
   if(args$weighting_scheme == "Z" || args$weighting_scheme == "B")
   {
@@ -166,11 +168,11 @@ readInData <- function(args)
   #remove NAs, extreme values.
   r <- matrixGWASQC(X,W)
   X <- r$clean_X;  W <- r$clean_W; 
-  if(length(r$dropped_rows) > 1 | r$dropped_rows != 0)
+  if(length(r$dropped_rows) > 1 | r$dropped_rows[[1]] != 0)
   {
-  all_ids <- all_ids[-(r$dropped_rows)]
+ 	 all_ids <- all_ids[-(r$dropped_rows)]
   }
-    if(r$dropped_cols != 0)
+    if(length(r$dropped_cols) > 1 || r$dropped_cols != 0)
   {
     names <- names[-(r$dropped_cols)]
   }
@@ -202,9 +204,20 @@ readInData <- function(args)
     log_print("Including genomic correction in factorization...")
     #note- this can come in as a matrix or as a simple list
     GC <-  fread(args$genomic_correction) 
-    if(nrow(GC) == ncol(X)) #we have a single entry for each
+    if(nrow(GC) >= ncol(X)) #we have a single entry for each
     {
       message("Testing that the ordering is the same")
+      if(nrow(GC) > ncol(X))
+      {
+        print(names)
+        GC <- filter(GC, phenotype %in% names)
+        if(nrow(GC) != length(names))
+        {
+          missing <- names[which(!(names %in% GC$phenotype))]
+          print("we are missing")
+          print(missing)
+        }
+      }
       ecol = 1
       if(ncol(GC) == 2)  {   ecol = 2 } #the first one is names
       if(!all(unlist(GC[,1]) == names))
@@ -228,10 +241,7 @@ readInData <- function(args)
     }
        
     }
-    print(head(GC))
-    print(head(X)) 
     X <- X * (1/sqrt(GC)) # we don't weight by this, we actually adjust the effect sizes by this.
-    print(head(X)) 
   }
   return(list("X" = X, "W" = W, "ids" = all_ids, "trait_names" = names))
   
@@ -239,7 +249,8 @@ readInData <- function(args)
 readInSettings <- function(args)
 {
   option <- list()
-  option[['K']] <- args$nfactors
+  option$calibrate_k <- args$calibrate_k
+  option[['K']] <- as.numeric(args$nfactors)
   option[['iter']] <- args$niter
   option[['convF']] <- 0
  option[["nsplits"]] <- as.numeric(args$cores)
@@ -251,11 +262,24 @@ readInSettings <- function(args)
   option[['epsilon']] <- as.numeric(args$epsilon)
   option[['l_init']] <- args$init_L
   option[["preinitialize"]] <- FALSE
-  option[['reweighted']] <- FALSE
+  option[['carry_coeffs']] <- FALSE
   option[["glmnet"]] <- FALSE
   option[["parallel"]] <- FALSE
   option[["fastReg"]] <- FALSE
   option[["ridge_L"]] <- FALSE
+  option[['debug']] <- args$debug
+  option[["subsample"]] <- args$subsample
+  
+  #Experimental
+  option$burn.in <- 0
+  option$fix.alt.setting <- NA
+  option
+  
+  #Internal use only:
+  option$actively_calibrating_sparsity <- FALSE 
+  #This looks alot like object-oriented programming. 
+  #You should just have this be a proper R object with all the attributes and data you need....
+  
   
   if(args$regression_method == "penalized" | args$regression_method == "glmnet")
   {
@@ -265,7 +289,8 @@ readInSettings <- function(args)
 	  quit()
   }
   option[["posF"]] <- args$posF
-  option[["autofit"]] <- args$autofit
+  option$out <- args$output
+  option[["autofit"]] <- as.numeric(args$autofit)
   option$intercept_ubiq <- FALSE
   option$traitSpecificVar <- FALSE
   option$V <- args$verbosity

@@ -31,6 +31,7 @@ fit_F <- function(X, W, L, option, formerF = NULL){
 	FactorM  = NULL;
 	r.v <- c()
 	lambda_list <- c()
+	sparsity.est <- c()
 	## fit each factor one by one -- because of the element-wise multiplication from weights!
 	for(col in seq(1, ncol(X))){
 		if(option$V > 0)
@@ -42,7 +43,7 @@ fit_F <- function(X, W, L, option, formerF = NULL){
         ## weight the equations on both sides
 		xp = unlist(w) * x;
 		Lp = unlist(w)* L;
-
+    if(option$actively_calibrating_sparsity) { sparsity.est <- c(sparsity.est, rowiseMaxSparsity(xp, Lp))}
 		## Fit: xp = L %*% f with l1 penalty on f -- |lambda1 * f|
 		dat_i = as.data.frame(cbind(xp, Lp));
 		colnames(dat_i) = c('X', paste0('F', seq(1, ncol(Lp))));
@@ -50,7 +51,7 @@ fit_F <- function(X, W, L, option, formerF = NULL){
 		# unpenalized = ~0 - suppress the intercept
 		# positive = TRUE  - constrains the estimated regression coefficients of all penalized covariates to be non-negative
 		# lambda2=1e-10    - avoid singularity in fitting
-		if(option[["reweighted"]])
+		if(option[["carry_coeffs"]])
 		{
 		  fit = penalized(response = X, penalized = dat_i[,paste0('F', seq(1, ncol(Lp)))], data=dat_i,
 		                  unpenalized = ~0, lambda1 = option[['lambda1']], lambda2=1e-10,
@@ -108,5 +109,11 @@ fit_F <- function(X, W, L, option, formerF = NULL){
       ones <- sign(svd$u) 
         FactorM[,1] <- ones
 	}
-    return(FactorM)
+    return(list("V" = FactorM, "sparsity_space"=sparsity.est))
+}
+
+
+FitVWrapper <- function(X, W, U, option, formerV = NULL)
+{
+  fit_F(X, W, U, option, formerF = formerV)
 }

@@ -168,6 +168,62 @@ UpdateTrackingParams <- function(storage.unit, X,W,U,V,option, sparsity.thresh =
   sto.obj
 }
 
+#This implements the update step for MAP fits, and includes settings if we arejust fixing one and learning the other (both options)
+UpdateSparsityMAPAutofit <- function(iter, U, V, option)
+{
+  opt.ret <- option
+  lambda.prev <- opt.ret[['lambda1']] 
+  if(opt.ret$swap) {
+    lambda.prev <- opt.ret[['alpha1']] 
+  }
+  if(opt.ret$autofit != -1 &  iii > 1)
+  {
+    #F
+    message(paste0("Current lambda: ", opt.ret$lambda1))
+    opt.ret[['lambda1']] <- MAPfitLambda(V,opt.ret$autofit, opt.ret)
+    message(paste0("Updated lambda: ", opt.ret[['lambda1']]))
+    #L
+    message(paste0  ("Current alpha: ", opt.ret$alpha1))
+    opt.ret[['alpha1']] <- MAPfitAlpha(U,opt.ret$autofit,opt.ret)
+    message(paste0("Updated alpha: ", opt.ret[['alpha1']]))
+    
+  }
+  if(opt.ret$autofit != -1 & !is.na(opt.ret$fix.alt.setting)) #opt.ret to fix one and modulate the other, given we are doing autofit.
+  {
+    if(iter < (opt.ret$fix.alt.setting * opt.ret$iter))
+    {
+      if(opt.ret$swap)
+      {
+        message("Lambda setting fixed at 0")
+        opt.ret[['lambda1']] <- 1e-10
+        
+      }else
+      {
+        message("Alpha setting fixed at 0")
+        opt.ret[['alpha1']] <- 1e-10
+      }
+      
+    }else
+    {
+      if(opt.ret$swap)
+      {
+        message("Alpha setting fixed now")
+        print(lambda.prev)
+        opt.ret[['alpha1']] <- lambda.prev
+        
+      }else
+      {
+        message("Lambda setting fixed now")
+        print(lambda.prev)
+        opt.ret[['lambda1']] <- lambda.prev
+      }
+      
+    }
+  }
+  opt.ret
+}
+
+
 #Checking results along the way
 CheckUEmpty <- function(U) 
 {
@@ -185,7 +241,57 @@ CheckUEmpty <- function(U)
   FALSE
 }
 
-Update_FL <- function(X, W, option, preF = NULL, preL = NULL){
+CheckVEmpty <- function(V)
+{
+  non_empty_v = which(apply(V, 2, function(x) sum(x!=0)) > 0)
+  #CHange: only ending if all the factors are empty. This is basically impossible. We proceed if the first factor is still valid...
+  if(length(non_empty_v) == 0){  #| (non_empty_v[1] == 1 & option$fixed_ubiq & (length(non_empty_f) == 1))){
+    updateLog('Finished', option);
+    updateLog('F is completely empty or loaded only on ubiquitous factor, lambda1 too large', option)
+    return(TRUE)
+  } 
+  return(FALSE)
+}
+
+
+AlignFactorMatrices <- function(U, V)
+{
+  non_empty_v = which(apply(V, 2, function(x) sum(x!=0)) > 0)
+  non_empty_u = which(apply(U, 2, function(x) sum(x!=0)) > 0)
+  non_empty = intersect(non_empty_u,non_empty_v);
+  U = as.matrix(as.data.frame(U[, non_empty]));
+  V  = as.matrix(as.data.frame(V[, non_empty]));
+  return(list("U"=U, "V"=V))
+}
+# converge if: 1). Change of the values in factor matrix is small. ie. The factor matrix is stable. 2). Change in the objective function becomes small; 3). reached maximum number of iterations
+
+ConvergenceConditionsMet <- function(U,V,tracker,option)
+{
+  #TODO double check tracker$V tracks with the old
+  #Condition 1: Change in V is small
+  V_change = norm(V - tracker$V, 'F') / ncol(V)
+  if(option[['convF']] >= V_change){
+    updateLog(paste0('Factor matrix converges at iteration ', iii), option);
+    return(TRUE)
+  }
+  #option 2: objective change is small
+  oc1 = abs(tracker$objective_change[length(tracker$objective_change)])
+  updateLog(paste0("Objective change: ", oc1), option)
+  if(oc1 < as.numeric(option[['convO']])){
+    updateLog(("Objective function change threshold achieved!"), option)
+    updateLog(paste0('Objective function converges at iteration ', iii), option);
+    return(TRUE)
+  }
+  #Option 3- maxi number of iter.
+  if(iii == option[['iter']]){
+    message('Reached maximum iteration.');
+    return(TRUE)
+  }
+  FALSE
+}
+
+#Main workhorse function
+Update_FL <- function(X, W, option, preV = NULL, preL = NULL){
   # number of features - to avoid using T in R
   D = ncol(X)
   tStart0 = Sys.time()
@@ -193,100 +299,46 @@ Update_FL <- function(X, W, option, preF = NULL, preL = NULL){
   #Random initialization of F
   if(option$l_init != "")
   {
-    L <- initU(X,W,option,preU=preL)
-    FactorM = fit_F(X, W, L, option)$V
+    U <- initU(X,W,option,preU=preL)
+    V = fit_F(X, W, L, option)$V
       
   } else{ #initialize by F as normal.
     
-    FactorM <- initV(X,W,option,preV=preF)
+    V <- initV(X,W,option,preV=preF)
   }  
   
   message("")
   message('Start optimization ...')
-  message(paste0('K = ', (option[['K']]), '; alpha1 = ', round(option[['alpha1']], digits =  4),'; lambda1 = ', round(option[['lambda1']], digits = 4)))
+  message(paste0('K = ', 
+                 (option[['K']]), '; alpha1 = ', round(option[['alpha1']], digits =  4),
+                 '; lambda1 = ', round(option[['lambda1']], digits = 4)))
 
-  #Need to adjust for first run- no reweighting (obvi.)
-  og_option <- option[['reweighted']]
-  option[['reweighted']] <- FALSE
+  #Case where you use previous iteration estimates to inform next iteration..
+  og_option <- option[['carry_coeffs']]
+  option[['carry_coeffs']] <- FALSE
   L = FitUWrapper(X,W,FactorM, option)
   L <- L$U
-  option[['reweighted']] <- og_option
+  option[['carry_coeffs']] <- og_option
   
   #Start tracking stats
   tracking.data <- UpdateTrackingParams(NULL, X,W,L,FactorM,option)
-  F_old = FactorM; 
+  F_old = tracking.data$V; 
   
-  # if L is empty, stop
-  #CheckUEmpty
   #If U is already empty, than we know that the matrix is too sparse, and we should just end there.
   if(CheckUEmpty(L)) {return(tracking.data)}
 
   #If we are doing a measure of per-trait variance over time...
   trait.var <- matrix(NA, option[['iter']], ncol(X))
  
-  for (iii in seq(1, option[['iter']])){
+  for (iii in seq(1, option[['iter']])){ #start the iterations (although technically, we have done 1 already.)
     message(paste0("Currently on iteration ", iii))
-    ## update F
-    lambda.prev <- option[['lambda1']] 
-    if(option$swap) {
-      lambda.prev <- option[['alpha1']] 
+    
+    ## If we are doing an autofit setting....
+    if(option$autofit) {
+      option <- UpdateSparsityMAPAutofit(iii, L,FactorM, option)
     }
-    if(option$autofit != -1 &  iii > 1)
-    {
-        #F
-        message(paste0("Current lambda: ", option$lambda1))
-        option[['lambda1']] <- MAPfitLambda(FactorM,option$autofit, option)
-        message(paste0("Updated lambda: ", option[['lambda1']]))
-        #L
-        message(paste0  ("Current alpha: ", option$alpha1))
-        option[['alpha1']] <- MAPfitAlpha(L,option$autofit,option)
-        message(paste0("Updated alpha: ", option[['alpha1']]))
-        
-    }
-    if(!is.na(option$fix.alt.setting))
-    {
-      print(iii)
-      if(iii < (option$fix.alt.setting * option$iter))
-      {
-        if(option$swap)
-        {
-          message("Lambda setting fixed at 0")
-          option[['lambda1']] <- 1e-10
-          print(option$alpha1)
-          
-        }else
-        {
-          message("Alpha setting fixed at 0")
-          option[['alpha1']] <- 1e-10
-          print(option$lambda1)
-        }
-
-      }else
-      {
-        if(option$swap)
-        {
-          message("Alpha setting fixed now")
-          print(lambda.prev)
-          option[['alpha1']] <- lambda.prev
-          
-        }else
-        {
-          message("Lambda setting fixed now")
-          print(lambda.prev)
-          option[['lambda1']] <- lambda.prev
-        }
-
-      }
-    }
-    if(iii == 1) #This is technically the second run already
-    {
-      og_option <- option[['reweighted']]
-      option[['reweighted']] <- FALSE
-      FactorM = fit_F(X, W, L, option, FactorM)$V;
-      option[['reweighted']] <- og_option
-    } else {
-      FactorM = fit_F(X, W, L, option, FactorM)$V; #by iter 3 really slows down, due to the L1 requirements. Yea this won't do....
-    }
+    FactorM = fit_F(X, W, L, option, FactorM); #by iter 3 really slows down, due to the L1 requirements. Yea this won't do....
+    
     #get the factor specific variance....
     if(option$traitSpecificVar)
     {
@@ -294,56 +346,25 @@ Update_FL <- function(X, W, option, preF = NULL, preL = NULL){
       FactorM <- FactorM$mat
     }
     # if number of factors decrease because of empty factor, the change in ||F||_F = 100
+    
     #Tracking change in F....
-    F_change = norm(FactorM - F_old, 'F') / ncol(FactorM)
-    F_old = FactorM;
-    non_empty_f = which(apply(FactorM, 2, function(x) sum(x!=0)) > 0)
-    if(length(non_empty_f) == 0 | (non_empty_f[1] == 1 & option$fixed_ubiq & (length(non_empty_f) == 1))){
-      updateLog('Finished', option);
-      updateLog('F is completely empty or loaded only on ubiquitous factor, lambda1 too large', option)
-      F_sparsity = 1;
-      L_sparsity = 1;
-      factor_corr = 1;
-      Nfactor = 0;
-      if(length(non_empty_f) == 0) {
-        return()
-        }
-      else {
-        L = matrix(0, ncol(FactorM), 1)
-        break
-        }
-    }
+    if(CheckVEmpty(FactorM)) {return(UpdateTrackingParams(tracking.data, X,W,L,FactorM,option))}
     colnames(FactorM) = seq(1, ncol(FactorM));
     
     ## update L
-    #message("Fitting L....")
     L <- FitUWrapper(X,W,FactorM, option,r.v = trait.var[iii,])$U
 
-
     # if L is empty, stop
-    non_empty_l = which(apply(L, 2, function(x) sum(x!=0)) > 0)
-    if(length(non_empty_l) == 0){
-      updateLog('Finished', option);
-      updateLog('L is completely empty, alpha1 too large', option)
-      FactorM = NULL;
-      F_sparsity = 1;
-      L_sparsity = 1;
-      factor_corr = 1;
-      Nfactor = 0;
-      return()
-    }
+    if(CheckUEmpty(L)) {return(UpdateTrackingParams(tracking.data, X,W,L,FactorM,option))} #Update and end.
     colnames(L) = seq(1, ncol(L));
     
     # align the two matrices	
-    non_empty = intersect(non_empty_l,non_empty_f);
-    L = as.matrix(as.data.frame(L[, non_empty]));
-    FactorM  = as.matrix(as.data.frame(FactorM[, non_empty]));
-    
-    tracking.data <- UpdateTrackingParams(tracking.data, X,W,L,FactorM,
-                                          option, lambda_step = lambda_track,alpha_step = alpha_track)
+    updated.mats <- AlignFactorMatrices(L, FactorM); L <- updated.mats$U; FactorM <- updated.mats$V
+
+   
     
     
-    if(option[['disp']]){
+    if(option$V > 0){
       cat('\n')
       updateLog(paste0('Iter', iii, ':'), option)
       updateLog(paste0('Objective change = ', obj_change), option)
@@ -351,31 +372,21 @@ Update_FL <- function(X, W, option, preF = NULL, preL = NULL){
       updateLog(paste0('Loading Sparsity = ', L_sparsity, '; Factor sparsity = ', F_sparsity, '; ', Nfactor, ' factors remain'), option); 
       cat('\n')
     }
-    # converge if: 1). Change of the values in factor matrix is small. ie. The factor matrix is stable. 2). Change in the objective function becomes small; 3). reached maximum number of iterations
-    if(option[['convF']] >= F_change){
-      updateLog(paste0('Factor matrix converges at iteration ', iii), option);
-      break
-    }
     
-    oc1 = abs(objective_change[length(objective_change)])
-    updateLog(paste0("Objective change: ", oc1), option)
-    #updateLog(paste0("Target objective change: ",option[['convO']]))
-    if(oc1 < as.numeric(option[['convO']])){
-      updateLog(("Objective function change threshold achieved!"), option)
-      updateLog(paste0('Objective function converges at iteration ', iii), option);
-      break
+    #pickup here...
+    if(ConvergenceConditionsMet(L, FactorM, tracking.data, option))
+    {
+      cat('\n')
+      updateLog(paste0('Total time used for optimization: ',  round(difftime(Sys.time(), tStart0, units = "mins"), digits = 3), ' min'), option);
+      cat('\n')
+     return(UpdateTrackingParams(tracking.data, X,W,L,FactorM,
+                                            option, lambda_step = lambda_track,alpha_step = alpha_track))
+    }else{
+      tracking.data <- UpdateTrackingParams(tracking.data, X,W,L,FactorM,
+                                            option, lambda_step = lambda_track,alpha_step = alpha_track)
     }
-    if(iii == option[['iter']]){
-      message('Reached maximum iteration.');
-      break
-    }
+   
+    
   }
-  retlist <- list("F" = FactorM, "L" = L, tracking.data)
-  cat('\n')
-  updateLog(paste0('Total time used for optimization: ',  round(difftime(Sys.time(), tStart0, units = "mins"), digits = 3), ' min'), option);
-  
-  cat('\n')
-  # return L, F, sparsity in L and F, number of factors -- could be different from K!
-    return(retlist) #F, L, l sparsity ,f_sparsity, K, obj, study_var, 
 }
 
