@@ -41,11 +41,12 @@ updateStatement  <- function(l,a,l_og, a_og, run,time)
   log_print(paste0("Run complete. (Time: ", time, " min)"))
   log_print(paste0("Sparsity params: F ", l, ", L ", a))  
   log_print(paste0("Sparsity scale: F ", l_og, ", L ", a_og))  
-  log_print(paste0("Current F sparsity: ", run$F_sparsity), console = FALSE)  
-  log_print(paste0("Current L sparsity: ", run$L_sparsity), console = FALSE)  
-  log_print(paste0("Number of active factors: ", ncol(run$F)))
+  log_print(paste0("Current F sparsity: ", run$V_sparsity), console = FALSE)  
+  log_print(paste0("Current L sparsity: ", run$U_sparsity), console = FALSE)  
+  log_print(paste0("Number of active factors: ", ncol(run$V)))
 }
 GLOBAL_BASE <- 0
+#For debug purposes, was running into issues with this on parallelied setups
 reportOpenFiles <- function(option)
   {
     if(!option$debug)
@@ -100,7 +101,7 @@ make_option(c("-i", "--niter"), type = "integer", help = "specify the number of 
 make_option(c("--posF"), type = "logical", default = FALSE,  help = "Specify if you want to use the smei-nonnegative setup.", action = "store_true"),
 make_option(c("--scale_n"), type = "character", default = "",  help = "Specify the path to a matrix of sample sizes if you want to scale by sqrtN as well as W"),
 make_option(c("--IRNT"), type = "logical", default = FALSE,  help = "If you want to transform the effect sizes ", action = "store_true"),
-make_option(c("--autofit"), type = "logical", default = FALSE,  help = "Specify if you want to autofit sparsity parameter for the whole thing.."),
+make_option(c("--MAP_autofit"), type = "integer", default = -1,  help = "Specify if you want to the MAP autofit sparsity parameter to learn lambda, alpha"),
 make_option(c("-f", "--converged_F_change"), type="double", default=0.02,help="Change in factor matrix to call convergence"),
 make_option(c("-o", "--converged_obj_change"), type="double", default=1,help="Relative change in the objective function to call convergence"),
 make_option(c("--no_SNP_col"), type="logical", default= FALSE, action = "store_true", help="Specify this option if there is NOT first column there..."),
@@ -109,10 +110,15 @@ make_option(c("--regression_method"), type="character", default= "penalized", he
 make_option(c("--genomic_correction"), type="character", default= "", help="Specify path to genomic correction data, one per snp.TODO: Also has the flexibility to expand"),
 make_option(c("--epsilon"), type="double", default= 1e-8, help="The convergence criteria for the L1. If exploring the space, try making this larger to speed up runtime. "),
 make_option(c("--subsample"), type="integer", default= 0, help="Specify if you wish to subsample from the full dataset, and if so by how much. For repeated runs, this will choose a different subsample each time."),
-make_option(c("-v", "--verbosity"), type="integer", default= 0, help="How much output information to give in report? 0 is quiet, 1 is loud")
+make_option(c("-v", "--verbosity"), type="integer", default= 0, help="How much output information to give in report? 0 is quiet, 1 is loud"),
+make_option(c("--auto_grid_search"), type="logical", default=FALSE, action = "store_true", help="Specify if you want to do an auatomatic grid search")
 )
 args <- parse_args(OptionParser(option_list=option_list))
 message("Please make sure the first column of input data is SNP/RSIDs.")
+if(args$MAP_autofit >-1 & args$auto_grid_search)
+{
+  message("Incompatible arguments (grid search and MAP-based autofit). Please try again.")
+}
 
 #lf <- log_open(paste0(args$output, "gwasMF_log.", Sys.Date(), ".txt"))
 #TODO:
@@ -131,28 +137,36 @@ if(FALSE) #For debug functionality on MARCC- this is currently loading the udler
   args$uncertainty <- "/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwas_extracts/ukbb_GWAS_h2-0.1_rg-0.9/SE.tsv"
   args$fixed_first <- TRUE
   args$genomic_correction <- "/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwas_extracts/ukbb_GWAS_h2-0.1_rg-0.9/Lambda_gc.tsv"
-  args$nfactors <- 0
-  args$calibrate_k <- TRUE
+  args$nfactors <- 15
+  args$calibrate_k <- FALSE
+  args$subsample <- -1
   args$trait_names = ""
+  args$overview_plots <- FALSE
+  args$parameter_optimization <- 5
   args$niter <- 15
   #args$alphas <- "0.01,0.05,0.1,0.15,0.2" #using 0.00001 since it doesn't like 0
   #args$lambdas <- "0.01,0.05,0.1,0.15,0.2"
-  args$alphas <- "0.001,0.005,0.01,0.05" #using 0.00001 since it doesn't like 0
-  args$lambdas <- "0.001,0.005,0.01,0.05"
-  args$autofit <- FALSE
+  args$alphas <- "" #using 0.00001 since it doesn't like 0
+  args$lambdas <- ""
+  args$MAP_autofit <- -1
+  args$auto_grid_search <- TRUE
     args$cores <- 1
   args$IRNT <- FALSE
   args$fixed_first <- TRUE
   args$weighting_scheme = "B_SE"
-  args$output <- "/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results/ukbb_GWAS_h2-0.1_rg-0.9/factorization/"
-  args$converged_obj_change <- 1
-  args$scaled_sparsity <- TRUE
+  args$output <- "/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results/ukbb_GWAS_h2-0.1_rg-0.9/model_selection_nov2022/nov22_rstudio"
+  args$converged_obj_change <- 0.1
+  args$scaled_sparsity <- FALSE
   args$posF <- FALSE
   #args$autofit <- 0
   args$init_F <- "ones_eigenvect"
   args$init_L <- ""
   args$epsilon <- 1e-8
   args$verbosity <- 1
+  args$regression_method <- "penalized"
+  args$scale_n = ""
+  args$debug <- FALSE
+  
 }
 log.path <- paste0(args$output, "gwasMF_log.", Sys.Date(), ".txt")
 lf <- log_open(log.path, show_notes = FALSE)
@@ -163,7 +177,7 @@ output <- args$output
 
 #Read in the hyperparameters to explore
 hp <- readInParamterSpace(args)
-if(!args$autofit)
+if(args$MAP_autofit < 0 & !args$auto_grid_search)
 {
   log_print("Input sparsity settings")
   log_print("Alphas: ")
@@ -177,12 +191,12 @@ option <- readInSettings(args)
 #reportOpenFiles(option)
 option$log <- log.path
 log_print("Succesfully loaded program options....")
-reportOpenFiles(option)
+#reportOpenFiles(option)
 #read in the data
 input.dat <- readInData(args)
 X <- input.dat$X; W <- input.dat$W; all_ids <- input.dat$ids; names <- input.dat$trait_names
 #Estimate sparsity space (doesn't work too well.)
-max_sparsity <- approximateSparsity(X, W, option)
+max_sparsity <- approximateSparsity(X, W, option) #Has errors when you don't specify sparsity
 if(option$calibrate_k)
 {
   message("Writing out a sparsity file")
@@ -192,14 +206,15 @@ if(option$calibrate_k)
   quit()
 }
 
-
+#TODO: fix this- this is all nonsense. Metho doesn't work, maximum suggested is invalid. Need to include the weighting, update to new code base.
 log_print("Estimating sparsity maximums based on an SVD approximation.")
 log_print(paste0("Max alpha: ", max_sparsity$alpha))
 log_print(paste0("Max lambda: ", max_sparsity$lambda))
 option$K <- max_sparsity$newK #sets K if not provided.
+message("THE ABOVE estimates are INCORRECT. NEED TO UPDATE CODE. TODO")
 reportOpenFiles(option)
 #Use the max to set up autofit
-if(option$autofit)
+if(option$MAP_autofit > -1)
 {
   autofit.seed <- 0.001
   alphas <- c(max_sparsity$alpha * autofit.seed)
@@ -213,9 +228,9 @@ message(paste0("Number of traits for analysis: ", ncol(X)))
 
 if(option$calibrate_sparsity)
 {
-  if(option$autofit)
+  if(option$MAP_autofit > -1)
   {
-    log_print("Incompatible 'autofit' and 'calibrate_sparsity' settings specified. Program will terminate")
+    log_print("Incompatible 'MAP_autofit' and 'calibrate_sparsity' settings specified. Program will terminate")
     quit()
   }
   option$max_alpha <- max_sparsity$alpha
@@ -242,13 +257,22 @@ if(option$calibrate_sparsity)
   lambdas <- hp$l
 }
 
+if(option$auto_grid_search)
+{
+  message("initializing for automatic grid search")
+  init.params <- GetCoarseSparsityParams(X,W,option, burn.in.reps = 5)
+  alphas <- init.params$alphas; lambdas <- init.params$lambdas
+  message("Alphas", alphas)
+  message("Lambdas", lambdas)
+}
+
 opti=1
 #Figure out the parallelism
 #Basically, if splitting across all the cores results in less than 1000 SNPs/core, I should just split this loop across other cores, i.e. 
 #if 20 cores specified, and only 10,000 SNPs
 #I should split this loop across 2 cores, and then gi
 
-
+#args$parameter_optimization <- 5
 for(opti in 1:args$parameter_optimization) 
 {
   message(paste0("On optimization run number: ", opti))
@@ -260,7 +284,7 @@ for(opti in 1:args$parameter_optimization)
   }
 
 
-  reportOpenFiles(option)
+  #reportOpenFiles(option)
   #Store stats here
   type_ <- args$weighting_scheme 
   run_stats <- list()
@@ -273,7 +297,7 @@ for(opti in 1:args$parameter_optimization)
   
   for(i in 1:length(alphas)){
     for (j in 1:length(lambdas)){
-      reportOpenFiles(option)
+      #reportOpenFiles(option)
         a <- alphas[i]
         l <- lambdas[j]
         option[['alpha1']] <- as.numeric(a)
@@ -283,18 +307,18 @@ for(opti in 1:args$parameter_optimization)
       time <-  round(difftime(Sys.time(), start, units = "mins"), digits = 3)
       run_stats[[iter_count]] <- c(run, time)
       iter_count <- iter_count + 1
-      reportOpenFiles(option)
+      #reportOpenFiles(option)
       #things for plots
       if(length(run) == 0)
       {
         fname = paste0(output, "A", a, "_L", l, "_","K", type_, ".NO_OUTPUT.png")
       } else
       {
-        reportOpenFiles(option)
+        #reportOpenFiles(option)
         updateStatement(l,a,hp$l[j],hp$a[i], run,time)
         fname = paste0(output, "A", round(a, digits = 4), "_L", round(l, digits = 4), "_", type_,".", opti, ".png")
         title_ = paste0("A", round(a, digits = 4), "_L", round(l, digits = 4), " Type = ", args$weighting_scheme )
-        p <- plotFactors(run[[1]],trait_names = names, title = title_, scale.cols = TRUE)
+        p <- plotFactors(run$V,trait_names = names, title = title_, scale.cols = TRUE)
         ggsave(filename = fname, plot = p, device = "png", width = 10, height = 8)
         #Lazy bookeeping nonsense for plots
         name_list <- c(name_list,  paste0("A", round(a, digits = 6), "_L", round(l, digits = 6)))
@@ -356,7 +380,7 @@ for(opti in 1:args$parameter_optimization)
   log_print("----------------------------------")
   log_print("")
 }
-
+save(run_stats,"/scratch16/abattle4/ashton/snp_networks/scratch/testing_gwasMF_code/model_selection/coarse_grid_gwasMF.nov22.RData")
 ####Propose the optimal solution
 param.combos <- unlist(lapply(alphas, function(x) 
   lapply(lambdas, function(y) paste0("A", x, "_L", y))))

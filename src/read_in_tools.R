@@ -4,9 +4,9 @@
 readInParamterSpace <- function(args)
 {
   #Read in the hyperparameters to explore
-  if(args$autofit)
+  if(args$MAP_autofit > -1 | args$auto_grid_search)
   {
-    log_print("Autofit setting of sparsity parameters detected. ")
+    log_print("Sparsity parameters will be proposed by software.")
     alphas_og <- c(NA)
     lambdas_og <- c(NA)
     if(args$alpha != "" | args$lambdas != "")
@@ -254,7 +254,7 @@ readInSettings <- function(args)
   option[['iter']] <- args$niter
   option[['convF']] <- 0
  option[["nsplits"]] <- as.numeric(args$cores)
-  option[['convO']] <- args$converged_obj_change
+  option[['conv0']] <- args$converged_obj_change
   option[['ones']] <- FALSE
   option[['disp']] <- FALSE
   #F matrix initialization
@@ -269,11 +269,12 @@ readInSettings <- function(args)
   option[["ridge_L"]] <- FALSE
   option[['debug']] <- args$debug
   option[["subsample"]] <- args$subsample
-  
+  option$auto_grid_search <- args$auto_grid_search
   #Experimental
   option$burn.in <- 0
   option$fix.alt.setting <- NA
-  option
+  option$swap <- FALSE
+  
   
   #Internal use only:
   option$actively_calibrating_sparsity <- FALSE 
@@ -290,7 +291,7 @@ readInSettings <- function(args)
   }
   option[["posF"]] <- args$posF
   option$out <- args$output
-  option[["autofit"]] <- as.numeric(args$autofit)
+  option[["MAP_autofit"]] <- as.numeric(args$MAP_autofit)
   option$intercept_ubiq <- FALSE
   option$traitSpecificVar <- FALSE
   option$V <- args$verbosity
