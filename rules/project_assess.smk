@@ -1,3 +1,4 @@
+#include: "ldsr_pairwise.smk"
 # load modules
 shell.prefix("ml anaconda; conda activate renv;") 
 # configurations
@@ -8,10 +9,6 @@ LDSC_REF_DAT="/data/abattle4/aomdahl1/reference_data/ldsc_reference"
 #For later:
 output_type =["loadings", "factors", "weights"]
 #make things better with the checkpoint tutorial:https://evodify.com/snakemake-checkpoint-tutorial/
-rule all:
-    input:
-	"results//infertility/p0.001_FULL/flash_backfit_zscores//ldsc_enrichment_Multi_tissue_chromatin/fdr_0.05_heatmap.png"	
-        #"results/infertility/p0.001_FULL/flash_backfit_zscores/projectedF_hapmap3_loadings.txt"
 
 
 rule hapmap_reference: #get the list of hapmap snps for extraction, omitting HLA region
@@ -36,10 +33,11 @@ rule prepProjectionSpace:
             "results/{identifier}/"
         shell:
             """
-            readlink -f {input[1]}/*.sumstats.gz | awk -F "." '{print $0 "\t" $(NF-2)}' > {params}/ldsc_extract_order.tmp")
+		#line bleow should be input 1
+            #readlink -f {input[0]}/*.sumstats.gz | awk -F "." '{{print $0 "\t" $(NF-2)}}' > {params}/ldsc_extract_order.tmp")
             tail -n +2 {params}/latent.factors.txt | cut -f 1 -d " " > {params}/trait.order.tmp
 
-            awk '(FNR == NR) {arr[$2]=$1;next} ($1 in arr) {print arr[$1]"\t"$1}' {params}/ldsc_extract_order.tmp {params}/trait.order.tmp > {output}
+            awk '(FNR == NR) {{arr[$2]=$1;next}} ($1 in arr) {{print arr[$1]"\t"$1}}' {params}/ldsc_extract_order.tmp {params}/trait.order.tmp > {output}
 
             rm {params}/*.tmp
             """
@@ -48,9 +46,9 @@ rule projectionSpace:
         input:
                 "results/{identifier}/munged_paths_traits.txt"
         output:
-            "results/{identifier}/full_hapmap3_snps.Z.tsv", "results/{identifier}/full_hapmap3_snps.N.tsv"
+            "gwas_extracts/{identifier}/full_hapmap3_snps.Z.tsv", "gwas_extracts/{identifier}/full_hapmap3_snps.N.tsv"
         params:
-            "results/{identifier}/"
+            "gwas_extracts/{identifier}/"
         shell:
             """
             ml anaconda
@@ -63,23 +61,48 @@ rule project_F:
     input:
         #factors="factorization_data/{identifier}.factors.txt", #MAJOR CHANGE HERE. MOVING to be in results category
         factors="results/{identifier}/latent.factors.txt",
-        variants="results/{identifier}/full_hapmap3_snps.Z.tsv" #make a sym link if its in a common dir, so we don't have like a jillion copies of larege files.
+        variants="gwas_extracts/{identifier}/full_hapmap3_snps.Z.tsv" #make a sym link if its in a common dir, so we don't have like a jillion copies of larege files.
     output:
-        "results/{identifier}/projected_hapmap3_loadings.txt"
+        "results/{identifier}/projectedF_hapmap3_loadings.txt"
     params:
     run:
         shell("Rscript {src_path}/projectSumStats.R --output {output} --factors {input.factors} --sumstats {input.variants} --id_type 'RSID' ")
+
+rule project_LMscaled:
+    input:
+        #factors="factorization_data/{identifier}.factors.txt", #MAJOR CHANGE HERE. MOVING to be in results category
+        factors="results/{identifier}/latent.factors.txt",
+        variants="gwas_extracts/{identifier}/full_hapmap3_snps.Z.tsv" #make a sym link if its in a common dir, so we don't have like a jillion copies of larege files.
+    output:
+        "results/{identifier}/projectedLMscaled_hapmap3_loadings.txt"
+    params:
+    run:
+        shell("Rscript {src_path}/projectSumStats.R --standardize --output {output} --factors {input.factors} --sumstats {input.variants} --id_type 'RSID' --proj_method std_lm")
 
 rule project_LM:
     input:
         #factors="factorization_data/{identifier}.factors.txt", #MAJOR CHANGE HERE. MOVING to be in results category
         factors="results/{identifier}/latent.factors.txt",
-        variants="results/{identifier}/full_hapmap3_snps.Z.tsv" #make a sym link if its in a common dir, so we don't have like a jillion copies of larege files.
+        variants="gwas_extracts/{identifier}/full_hapmap3_snps.Z.tsv" #make a sym link if its in a common dir, so we don't have like a jillion copies of larege files.
     output:
         "results/{identifier}/projectedLM_hapmap3_loadings.txt"
     params:
     run:
         shell("Rscript {src_path}/projectSumStats.R --output {output} --factors {input.factors} --sumstats {input.variants} --id_type 'RSID' --proj_method std_lm")
+
+
+
+rule project_LMwht:
+    input:
+        #factors="factorization_data/{identifier}.factors.txt", #MAJOR CHANGE HERE. MOVING to be in results category
+        factors="results/{identifier}/latent.factors.txt",
+        variants="gwas_extracts/{identifier}/full_hapmap3_snps.Z.tsv", #make a sym link if its in a common dir, so we don't have like a jillion copies of larege files.
+	mat="ldsr_results/{identifier}/summary_data/gcov_int.tab.csv"
+    output:
+        "results/{identifier}/projectedLMwht_hapmap3_loadings.txt"
+    params:
+    run:
+        shell("Rscript {src_path}/projectSumStats.R --output {output} --factors {input.factors} --sumstats {input.variants} --id_type 'RSID' --proj_method std_lm --decorrelate {input.mat}")
 
 rule build_LD_space:
 	input:
@@ -96,7 +119,7 @@ rule project_LD:
     input:
         #factors="factorization_data/{identifier}.factors.txt", #MAJOR CHANGE HERE. MOVING to be in results category
         factors="results/{identifier}/latent.factors.txt",
-        variants="results/{identifier}/full_hapmap3_snps.Z.tsv" #make a sym link if its in a common dir, so we don't have like a jillion copies of larege files.
+        variants="gwas_extracts/{identifier}/full_hapmap3_snps.Z.tsv" #make a sym link if its in a common dir, so we don't have like a jillion copies of larege files.
     output:
         "results/{identifier}/projectedLD_hapmap3_loadings.txt", "results/{identifier}/done.in.ld.txt"
     params:
@@ -108,17 +131,18 @@ rule project_LD:
 checkpoint prep_enrichment: #format the outputed factors for enrichment analysis
     input:
         hapmap_list="/data/abattle4/aomdahl1/reference_data/hapmap_chr_ids.txt",
-        projections="results/{identifier}/projected_hapmap3_loadings.txt",
-        sample_counts="gwas_extracts/{identifier}/full_hapmap3_snps.N.tsv"
-
+        projections="results/{identifier}/projected{projection_style}_hapmap3_loadings.txt",
+        sample_counts="gwas_extracts/{identifier}/full_hapmap3_snps.N.tsv",
+	factors="results/{identifier}/latent.factors.txt"
     output:
-        directory("results/{identifier}/loading_ss_files")
+        directory("results/{identifier}/loading_ss_files_{projection_style}/")
     params:
-        "results/{identifier}/loading_ss_files/"
+        "results/{identifier}/loading_ss_files_{projection_style}/"
     shell:
         """
+	    echo "assuming the 1st columns of input data are SNP IDs"
             mkdir -p {output}
-            Rscript {src_path}/buildSumStats.R --projected_loadings {input.projections} --samp_file {input.sample_counts} --hapmap_list {input.hapmap_list} --output {params} --normal_transform
+            Rscript {src_path}/buildSumStats.R --projected_loadings {input.projections} --samp_file {input.sample_counts} --hapmap_list {input.hapmap_list} --output {params} --normal_transform --factors {input.factors}
         """
 
 rule download_enrichment_refs:
@@ -142,13 +166,13 @@ rule download_enrichment_refs:
 #tis_ref may be either "Multi_tissue_chromatin" or Multi_tissue_gene_expr"
 rule ldsc_enrichment: #just run for one, then call on the input.
     input:
-        ss="results/{identifier}/loading_ss_files/{factor}.sumstats.gz",
+        ss="results/{identifier}/loading_ss_files_{projection_style}/{factor}.sumstats.gz",
 	tiss_dir=LDSC_REF_DAT+"/{tis_ref}.ldcts"
     output:
-        "results/{identifier}/ldsc_enrichment_{tis_ref}/{factor}.multi_tissue.cell_type_results.txt",
-        "results/{identifier}/ldsc_enrichment_{tis_ref}/{factor}.multi_tissue.log"
+        "results/{identifier}/{projection_style}_ldsc_enrichment_{tis_ref}/{factor}.multi_tissue.cell_type_results.txt",
+        "results/{identifier}/{projection_style}_ldsc_enrichment_{tis_ref}/{factor}.multi_tissue.log"
     params:
-        "results/{identifier}/ldsc_enrichment_{tis_ref}/{factor}.multi_tissue",
+        "results/{identifier}/{projection_style}_ldsc_enrichment_{tis_ref}/{factor}.multi_tissue",
 	LDSC_REF_DAT
     shell:
         """
@@ -169,7 +193,7 @@ def aggregate_factors(wildcards):
     checkpoint_output = checkpoints.prep_enrichment.get(**wildcards).output[0]
     factor_numbers = glob_wildcards(f"{checkpoint_output}/F{{factor}}.sumstats.gz").factor
     print(factor_numbers)
-    ldsc_files=expand("results/{{identifier}}/ldsc_enrichment_{{tis_ref}}/F{fn}.multi_tissue.cell_type_results.txt", fn = factor_numbers)
+    ldsc_files=expand("results/{{identifier}}/{{projection_style}}_ldsc_enrichment_{{tis_ref}}/F{fn}.multi_tissue.cell_type_results.txt", fn = factor_numbers)
     print(ldsc_files)
     return ldsc_files
 
@@ -179,12 +203,15 @@ rule ldsc_visualize:
     input:
        aggregate_factors
     output:
-        "results/{identifier}/ldsc_enrichment_{tis_ref}/full_heatmap.png",
-	"results/{identifier}/ldsc_enrichment_{tis_ref}/fdr_0.05_heatmap.png", 
-	"results/{identifier}/ldsc_enrichment_{tis_ref}/fdr_0.01_heatmap.png",
-	"results/{identifier}/ldsc_enrichment_{tis_ref}/wrapped_z.heatmap.png"
+        "results/{identifier}/{projection_style}_ldsc_enrichment_{tis_ref}/full_heatmap.png",
+	"results/{identifier}/{projection_style}_ldsc_enrichment_{tis_ref}/fdr_0.05_heatmap.png", 
+	"results/{identifier}/{projection_style}_ldsc_enrichment_{tis_ref}/fdr_0.01_heatmap.png",
+	"results/{identifier}/{projection_style}_ldsc_enrichment_{tis_ref}/wrapped_z.heatmap.png",
+	"results/{identifier}/{projection_style}_ldsc_enrichment_{tis_ref}/factor_tissue_fdr.heatmap.png",
+	"results/{identifier}/{projection_style}_ldsc_enrichment_{tis_ref}/factor_global_fdr.heatmap.png"
+
     params:
-        "results/{identifier}/ldsc_enrichment_{tis_ref}/"
+        "results/{identifier}/{projection_style}_ldsc_enrichment_{tis_ref}/"
     shell:
         """
             echo {input}
@@ -192,6 +219,8 @@ rule ldsc_visualize:
 	    Rscript {src_path}/visualizeLDSC.R --input_dir {params} --plot_type "fdr_sig" --output {output[1]} --fdr 0.05
             Rscript {src_path}/visualizeLDSC.R --input_dir {params} --plot_type "fdr_sig" --output {output[2]} --fdr 0.01
             Rscript {src_path}/visualizeLDSC.R --input_dir {params} --plot_type "horizontal" --output {output[0]}
+            Rscript {src_path}/visualizeLDSC.R --input_dir {params} --plot_type "factor_tissue_FDR" --output {output[4]}
+            Rscript {src_path}/visualizeLDSC.R --input_dir {params} --plot_type "global_tissue_FDR" --output {output[5]}
         """
 
 rule factors_assessment:
@@ -200,7 +229,7 @@ rule factors_assessment:
 #where 7_k_runlist.txt is a list of all of the factorizations to analyze.
 #In the future, I would like to have this step nicely snakemaked....
     input: #a bit hacky at the moment, but whatever...
-        tiss_dir = "results/{identifier}/ldsc_enrichment_{tis_ref}/",
+        tiss_dir = "results/{identifier}/{projection_style}_ldsc_enrichment_{tis_ref}/",
         trait_names = "/scratch16/abattle4/ashton/snp_networks/gwas_decomp_ldsc/trait_selections/seed2_thresh0.9_h2-0.1.names.tsv",
         trait_ids = "/scratch16/abattle4/ashton/snp_networks/gwas_decomp_ldsc/trait_selections/seed2_thresh0.9_h2-0.1.studies.tsv", 
         factors= "factorization_data/{identifier}.factors.txt"
