@@ -59,6 +59,7 @@ expVarScore <- function(V,U,X,K,D = NULL)
 #This is implemented in PMA for sparse PCA, and seems to assume that our loading matrix is orthornomal. Not sure if this will work
 #`https://www-sciencedirect-com.proxy1.library.jhu.edu/science/article/pii/S0047259X07000887?via%3Dihub`
 #`https://rdrr.io/cran/scorer/src/R/regression_metrics.R#sym-explained_variance_score`
+#reading further on this later on, I think it works because we aren' requiring this? should dig into it more...
 pveBySVD <-function(V,U,X,K,D = NULL)
 {
   ve <- c()
@@ -74,7 +75,65 @@ pveBySVD <-function(V,U,X,K,D = NULL)
   return(c(r[1], sapply(2:K, function(i) r[i] - r[i-1])))
 }
 
+mean.na <- function(vec){
+  return(mean(vec[!is.na(vec)]))
+}
 
+PercentVarEx <- function(x,v, K=NULL, center= FALSE)
+{
+  PMA_PVE(x,v, K=NULL, center= FALSE)
+}
+PMA_PVE <- function(x,v, K=NULL, center= FALSE)
+{
+  #Code taken directly from https://rdrr.io/cran/PMA/src/R/PMD.R
+  # Calculate percent variance explained, using definition on page 7 of Shen and Huang (2008) Journal of Multivariate Analysis vol 99: 1015-1034
+  if(is.null(K))
+  {
+    K=ncol(v)
+  }
+  v <- matrix(v, ncol=K)
+  ve <- NULL # variance explained
+  xfill <- x
+  if(center) xfill <- x-mean.na(x)
+  xfill[is.na(x)] <- mean.na(xfill)
+  for(k in 1:K){
+    vk <- matrix(v[,1:k], ncol=k)
+    xk <- xfill%*%vk%*%solve(t(vk)%*%vk)%*%t(vk)
+    svdxk <- svd(xk)
+    ve <- c(ve, sum(svdxk$d^2))
+  }
+  pve <- ve/sum(svd(xfill)$d^2) # proportion of variance explained
+  #pve
+  if(K > 1)
+  {
+    return(c(pve[1], sapply(2:K, function(i) pve[i] - pve[i-1])))
+  }else
+  {
+    return(c(pve[1]))
+  }
+  
+}
+
+
+
+
+#debug test
+debugTest <- function()
+{
+  message("A test to see if my function is the same as the one in PMD")
+  pca <- svd(scale(X))
+  pve <- (pca$d^2/sum(pca$d^2))
+  pve.pma <- pveBySVD(pca$v, pca$u, scale(X), K = 55)
+  pve.pma.direct <- pveBySVDPMD(scale(X), pca, 55)
+  pve.pma.direct.true <- c(pve.pma.direct[1], sapply(2:55, function(i) pve.pma.direct[i] - pve.pma.direct[i-1]))
+  plot(pve, pve.pma)
+  plot(pve-pve.pma)
+  plot(pve.pma,pve.pma.direct.true )
+  plot(pve.pma.direct.true - pve.pma)
+  message("And so it appears to be!")
+}
+
+#
 #Method 4: like the one done by FlashR
 #Accounts for the residual error and the amount of scaling needed on the factor.
 scaledMats <- function(f,l)

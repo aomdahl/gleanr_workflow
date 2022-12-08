@@ -8,6 +8,7 @@ source(paste0(dir, 'cophenetic_calc.R'))
 source(paste0(dir, 'sparsity_scaler.R'))
 source(paste0(dir, 'read_in_tools.R'))
 source(paste0(dir, 'pve.R'))
+source(paste0(dir, 'l1_parameter_selection.R'))
 library(optparse)
 #This is copy/pased from the BIC code, with some important modifications noted.
 
@@ -264,27 +265,22 @@ library(tidyr)
 acceptable.k <- (m %>% filter(K_group_coph > 0.9))$Actual_K
 message("K settings that pass threshold:")
 print(paste(acceptable.k))
-tops <- (data.frame(final.out) %>% tidyr::drop_na() %>% filter(Coph > 0.9) %>% filter(F_sparsity > 0.3, F_sparsity < 0.8) %>% 
-          arrange(Med_Average_R2) %>% filter(Group_nonempty_average %in% acceptable.k, Avg_pve > 0.5, L_sparsity > 0.05))
+tops <- (data.frame(final.out) %>% tidyr::drop_na() %>% filter(Coph > 0.9) %>% filter(F_sparsity > 0.3, F_sparsity < 0.85) %>% 
+          arrange(Med_Average_R2) %>% filter(Group_nonempty_average %in% acceptable.k, Med_Average_R2 < 0.01, Avg_pve > 0.5, L_sparsity > 0.05))
 message("Top recommended settings")
 print(top)
 #in the case of multiple settings that come to the top, these give a decent range.
 message("If proceeding to next step, next settings are given by.....")
 best.a <- unique(as.numeric(gsub(tops$Alpha, pattern = "A", replacement = "")))
 best.l <- unique(as.numeric(gsub(tops$Lambda, pattern = "L", replacement = "")))
-if(nrow(tops) > 1)
+if(nrow(tops) >= 1)
 {
-  new.a <- ProposeSparsityParamsFromGrid(best.a,a.n, n.points = 5)
-  new.l <- ProposeSparsityParamsFromGrid(best.l,l.n, n.points = 5)
-}else if(nrow(tops) == 0)
+  new.a <- ProposeSparsityParamsFromGrid(best.a,a.n, 4)
+  new.l <- ProposeSparsityParamsFromGrid(best.l,l.n,4)
+}else #(nrow(tops) == 0)
 {
   message("paramters too strict, select manually")
-}else
-{
-  new.a <- ProposeNewSparsityParams(best.a, a.n, n.points = 3,no.score = TRUE) #doesn't work quite right..
-  new.l <- ProposeNewSparsityParams(best.l, l.n, n.points = 3,no.score = TRUE) 
 }
-
 #visualize approach
 visualize = FALSE
 if(visualize)
