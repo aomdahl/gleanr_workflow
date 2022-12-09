@@ -27,7 +27,14 @@ if(FALSE)
   option$K <- 5
 }
 
+find_mode <- function(x) {
+  u <- unique(x)
+  tab <- tabulate(match(x, u))
+  u[tab == max(tab)]
+}
+
 ##Autofiting scripts
+### MAP estimation approach
 #4/4 observation- the problem here is that one might start to go up, pusing all the sparsity into the other one.
 MAPfitLambda <- function(matin, dim, option)
 {
@@ -118,6 +125,80 @@ cor2 <- function(x) {
 1/(NROW(x)-1) * crossprod(scale(x, TRUE, TRUE))
 }
 
+##Using the top sparsity approach...
+
+#11/10 version now
+
+#Get the mode of the data based on the density function
+DensityMode <- function(ln)
+{
+  #got this off some R help website or something
+  density.vals <- density(ln)
+  density.vals$x[which.max(density.vals$y)]
+}
+
+#Wrapper for quickly selecting coarse sparsity params from scratch, with burn in.
+GetCoarseSparsityParams <- function(X,W,option, burn.in.reps = 1,...)
+{
+  message("In here...")
+  param.space <- DefineSparsitySpaceInit(X, W, option, burn.in = burn.in.reps)
+  return(SelectCoarseSparsityParams(param.space,burn.in.reps,...))
+}
+
+SelectCoarseSparsityParams <- function(param.space, num.reps,...)
+{
+    #1/2 min, min, and mode
+  lambda.grid <- SelectCoarseSparsityParamsGlobal(param.space$max_sparsity_params[[num.reps]]$lambda,...)
+  
+  #min, mode, and 3rd quantile.
+  alpha.grid <- SelectCoarseSparsityParamsGlobal(param.space$max_sparsity_params[[num.reps]]$alpha,...)
+  
+  return(list("alphas"=alpha.grid, "lambdas"=lambda.grid))
+}
+
+##NOTE: for these functions, we err on the side of density for the moment, because sparsity in practice is compounding.
+#Problem arises here if we are running full iterations or just the adaptive one...
+SelectCoarseSparsityParamsU <- function(param.space,n.points=3)
+{
+  las <- summary(param.space)
+  #(c(las[1],DensityMode(param.space), las[2]))
+  c(min(param.space) * 0.5, min(param.space), DensityMode(param.space))
+}
+
+SelectCoarseSparsityParamsGlobal <- function(param.space,n.points = 3, logs = FALSE)
+{  
+  dm <- DensityMode(param.space)
+  if(!logs)
+  {
+    if(n.points == 5)
+    {
+      c(min(param.space) * 0.25, min(param.space) * 0.5, min(param.space), mean(min(param.space),dm), dm) 
+    } else if(n.points == 7)
+    {
+      div = abs(dm - min(param.space))/4
+      c(min(param.space) * 0.25, min(param.space) * 0.5, min(param.space), min(param.space)+ div,min(param.space)+ 2*div, dm-div, dm) 
+      #c(min(param.space) * 0.15, min(param.space) * 0.30, min(param.space) * 0.45, min(param.space), min(param.space)+ div, dm-div, dm) 
+    }else if(n.points > 7)
+    {
+      n.divs <- n.points - 4
+      div = abs(dm - min(param.space))/n.divs
+      #seq(min(param.space), dm, by = div)
+      c(min(param.space) * 0.25, min(param.space) * 0.5, min(param.space)* 0.75, seq(min(param.space), dm, by = div)) 
+    }
+    else
+    {
+      c(min(param.space) * 0.5, min(param.space), dm) 
+    }
+  }else
+  {
+    message("on the log scale...")
+    s <- seq(0, log(dm), length = (n.points + 1))
+    return(exp(s)[2:(n.points+1)])
+  }
+
+}
+
+
 #This is the top-level function for approximating sparsity. Also will give a starting point for K if its needed.
 #@param X: input betas of effect sizes
 #@param W: weights for the betas
@@ -125,9 +206,8 @@ cor2 <- function(x) {
 #@return max sparsity setting for L and for F
 #@Todo: allow for flexibility on the sparsity settings.
 approximateSparsity <- function(X, W, option){
-  
-
-  Z <- as.matrix(X * W)
+  message('this method is deprecated dont use it anymore please')
+Z <- as.matrix(X * W)
 #print(is.na(Z))
 #If k is unspecified, do that here too
 
@@ -168,8 +248,8 @@ if(option$K == 0 | option$K == "kaiser" | option$K == "CnG" | option$K == "avg")
   zcor <- cor2(Z)
   first <- svd(zcor)$u[,1]
   F.mat <- cbind(sign(first), decomp$v[,2:(option$K)])
-  lsparsity <- sparsityL(Z, F.mat, option)
-  fsparsity <- sparsityF(Z, L.mat, option)
+  lsparsity <- sparsityParamsL(Z, F.mat, option)
+  fsparsity <- sparsityParamsF(Z, L.mat, option)
   return(list("alpha" = min(lsparsity), "lambda" = min(fsparsity), "newK" = option$K, "zcor" = zcor))
 }
 
@@ -177,49 +257,38 @@ if(option$K == 0 | option$K == "kaiser" | option$K == "CnG" | option$K == "avg")
 #@param Z: input Z scores (scaled to what will be in run)
 #@param FactorM: The F matrix we regress on
 #@return max sparsity settings for each row of Z
-sparsityL<- function(Z, FactorM, option){
+sparsityParamsL<- function(Z, FactorM, option){
   L = NULL
   tS = Sys.time()
   for(row in seq(1,nrow(Z))){
     z = Z[row, ];
-    l = rowiseSparsity(z, as.matrix(FactorM), option);
+    l = rowiseMaxSparsity(z, as.matrix(FactorM));
     L = rbind(L, l);
   }
   updateLog("Sparsities for L estimated.", option)
   return(L)
 }
 
-#Helper function for individual row-wise sparsity; called by sparsityL
+#Helper function for individual row-wise sparsity; called by sparsityParamsL
 #@param z: single row ofo the Z scores
 #@param FactorM: The F matrix we regress on
 #@return: the recommend range for a single row
-rowiseSparsity <- function(z, FactorM, option){
-  norm(t(FactorM) %>% z, type = "I")
-  #dat_i = as.data.frame(cbind((z), FactorM));
-  #colnames(dat_i) = c('X', paste0('F', seq(1, ncol(FactorM))));
-  
-  #recommendRange(response = X, penalized = dat_i[,paste0('F', seq(1, ncol(FactorM)))], data=dat_i,
-  #                     unpenalized = ~0, lambda2=1e-10, params=option)
+rowiseMaxSparsity <- function(z, FactorM){
+  norm(t(FactorM) %*% z, type = "I")
 }
 
 #Estimate the MAX sparsity paramters for the Factor matrix
 #@param Z: input Z scores (scaled to what will be in run)
 #@param L: The Floadingmatrix we regress on
 #@return max sparsity settings for each col of Z
-sparsityF <- function(Z, L, option){
+sparsityParamsF <- function(Z, L, option){
   FactorM  = NULL;
   r.v <- c()
   lambda_list <- c()
   ## fit each factor one by one -- because of the element-wise multiplication from weights!
-  for(col in seq(1, ncol(Z))){
+  for(col in 1:ncol(Z)){
     xp = Z[, col];
-    #or in glmnL: fit$lambda[1]
-    #dat_i = as.data.frame(cbind(xp, L));
-    #colnames(dat_i) = c('X', paste0('F', seq(1, ncol(L))));
-    #f <- recommendRange(response = X, penalized = dat_i[,paste0('F', seq(1, ncol(L)))], data=dat_i,
-    #                    unpenalized = ~0, lambda1 =option[['lambda1']], lambda2=1e-10,
-    #                    positive = option$posF, params=option)
-    f <- norm(t(L) %>% xp, type = "I")
+    f <- norm(t(L) %*% xp, type = "I")
     FactorM = rbind(FactorM, f);
   }
   updateLog("Sparsities for F estimated.", option)
@@ -512,14 +581,14 @@ nonEmptyAvg <- function(v,u){
 
 
 
-matrixSparsity <- function(m, thresh = 1e-5)
+matrixSparsity <- function(m, initK, thresh = 0)
 {
-	sum(abs(m) < thresh)/ncol(m)/nrow(m)
+  sum(abs(m) <= thresh)/initK/nrow(m)
 }
 
-matrixSparsityAvg <- function(m)
+matrixSparsityAvg <- function(m,initK)
 {
   #m is a list of matrices
-  b = sapply(m, matrixSparsity)
+  b = sapply(m, function(x) matrixSparsity(x,initK))
   mean(b)
 }

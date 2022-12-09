@@ -25,7 +25,7 @@ if(FALSE)
   option$K <- 5
 }
 ZERO_THRESH = 1e-5
-
+source("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/src/sparsity_scaler.R")
   #fast matrix correlation help
 library(coop)
 cor2 <- function(x) {
@@ -172,8 +172,10 @@ UpdateTrackingParams <- function(sto.obj, X,W,U,V,option, sparsity.thresh = 1e-5
   }
     # collect sparsity in L and F
   
-  sto.obj$U_sparsities = c(sto.obj$U_sparsities, sum(abs(U) < sparsity.thresh) / (ncol(U) * nrow(U)));
-  sto.obj$V_sparsities = c(sto.obj$V_sparsities, sum(abs(V) < sparsity.thresh) / (ncol(V) * nrow(V)));
+  #sto.obj$U_sparsities = c(sto.obj$U_sparsities, sum(abs(U) < sparsity.thresh) / (ncol(U) * nrow(U)));
+  #sto.obj$V_sparsities = c(sto.obj$V_sparsities, sum(abs(V) < sparsity.thresh) / (ncol(V) * nrow(V)));
+  sto.obj$U_sparsities = c(sto.obj$U_sparsities, matrixSparsity(U, ncol(U)));
+  sto.obj$V_sparsities = c(sto.obj$V_sparsities,matrixSparsity(V, ncol(V)))
   sto.obj$K = ncol(U);
   sto.obj$mse <- c(sto.obj$mse, norm(W*X-W*(U%*%t(V)), type = "F")/(nrow(X) * ncol(X)))
     # change in the objective -- should always be negative
@@ -342,6 +344,7 @@ Update_FL <- function(X, W, option, preV = NULL, preL = NULL){
   if(option$l_init != "")
   {
     U <- initU(X,W,option,preU=preL)
+    message("in here...")
     V = fit_F(X, W, L, option)$V
       
   } else{ #initialize by F as normal.
