@@ -10,8 +10,27 @@ source(paste0(dir, 'read_in_tools.R'))
 source(paste0(dir, 'pve.R'))
 source(paste0(dir, 'l1_parameter_selection.R'))
 library(optparse)
+
+readInDataForEval <- function(args)
+{
+  bargs <- args
+  bargs$covar_matrix <- ""
+  bargs$genomic_correction <- ""
+  bargs$weighting_scheme <- "B"
+  bargs$gwas_effects <- args$betas
+  bargs$trait_names <- ""
+  bargs$IRNT <- FALSE
+  readInData(bargs)
+}
+
+
+
 #This is copy/pased from the BIC code, with some important modifications noted.
 
+quickSort <- function(tab, col = 1)
+{
+  tab[order(tab[,..col], decreasing = TRUE),]
+}
 #This will get the pve across the list of matrices.
 avgPVE <- function(full.dat, m)
 {
@@ -128,6 +147,7 @@ option_list <- list(
   make_option(c("--output"), type = 'character', help = "Specify the name of the ioutput file and full path.", default = "coph.results.txt"),
   make_option(c("--debug"), type = 'logical', action = "store_true", help = "Specify this To run on extisting case.", default = FALSE),
   make_option(c("--betas"), type = 'character', help = "Specify original betas. Needed to get PVE", default = NULL),
+  make_option(c("--scale_n"), type = 'character', help = "Specify Sample size to scale by.", default = NULL),
   make_option(c("--lambda_gc"), type = 'character', help = "Specify lambda gc. Optional to get PVE", default = NULL)
 )
 
@@ -139,32 +159,29 @@ tail.loadings = "_B_SE.*.loadings.txt"
 if(args$debug)
 {
   args <- list()
-  #path = "/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results/ukbb_GWAS_h2-0.1_rg-0.9/factorization/"
-  #path="/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results/ukbb_GWAS_h2-0.1_rg-0.9/model_selection_nov2022/"
   #="/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/renv_f/results/ukbb_GWAS_h2-0.1_rg-0.9/model_selection_nov2022_renv/"
-  path="/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/renv_f/results/ukbb_GWAS_h2-0.1_rg-0.9/model_selection_nov2022_log_grid/"
+  #path="/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/renv_f/results/ukbb_GWAS_h2-0.1_rg-0.9/model_selection_nov2022_log_grid/"
+  path = "/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results/udler_original/model_grid_search/"
   #path="/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/renv_f/results/ukbb_GWAS_h2-0.1_rg-0.9/model_selection_nov2022_renv/2nd_iter/"
   #read.files = "/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results/ukbb_GWAS_h2-0.1_rg-0.9/factorization/full_list_night_oct18.txt"
   #read.files = "/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization//results/ukbb_GWAS_h2-0.1_rg-0.9/model_selection_nov2022/runs.so.far.txt"
-  read.files="/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/renv_f/results/ukbb_GWAS_h2-0.1_rg-0.9/model_selection_nov2022_log_grid/all.runs.dec5.txt"
+  #read.files="/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/renv_f/results/ukbb_GWAS_h2-0.1_rg-0.9/model_selection_nov2022_log_grid/all.runs.dec5.txt"
+  read.files="/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results/udler_original/model_grid_search/full.run.list.txt"
+  
   #read.files = "/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/renv_f/results/ukbb_GWAS_h2-0.1_rg-0.9/model_selection_nov2022_renv/2nd_iter/all.param.runs.txt"
   #ofile = "/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results/infertility/p0.001_FULL/coph.results.oct_18.txt"
-  ofile = "/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/renv_f/results/ukbb_GWAS_h2-0.1_rg-0.9/model_selection_nov2022_log_grid/std_version."
-  args$betas <- "/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwas_extracts/ukbb_GWAS_h2-0.1_rg-0.9/B.tsv"
-  args$lambda_gc <- "/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwas_extracts/ukbb_GWAS_h2-0.1_rg-0.9/Lambda_gc.tsv"
+  ofile = "/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results/udler_original/model_grid_search/"
+  #args$betas <- "/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwas_extracts/ukbb_GWAS_h2-0.1_rg-0.9/B.tsv"
+  args$betas <- "/scratch16/abattle4/ashton/snp_networks/scratch/udler_td2/processed_data/beta_signed_matrix.tsv"
+  args$scale_n <- "/scratch16/abattle4/ashton/snp_networks/scratch/udler_td2/processed_data/sample_counts_matrix.tsv"
+  #args$lambda_gc <- "/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwas_extracts/ukbb_GWAS_h2-0.1_rg-0.9/Lambda_gc.tsv"
 } else
 {
  path = args$input_path; read.files = args$run_list; ofile = args$output
 }
-if(!is.null(args$betas))
-{
-  X <- as.matrix(readInBetas(args$betas)[,-1])
-}
-if(!is.null(args$lambda_gc))
-{
-  GC <- as.matrix(readInLambdaGC(args$lambda_gc, colnames(X)))
-  X <- X/sqrt(GC)
-}
+
+all <- readInDataForEval(args)
+X <- all$X * all$W
 
 #Build the storage structure..
 infiles <- fread(read.files,header = FALSE)
@@ -177,8 +194,8 @@ ls <- c()
 for(f in infiles$V1)
 {
   ks <- c(ks,str_extract(f, "K\\d+"))
-  as <- c(as, str_extract(f, "A\\d+\\.*\\d+"))
-  ls <- c(ls,str_extract(f, "L\\d+\\.*\\d+"))
+  as <- c(as, str_extract(f, "_A[\\.0-9e-]+_"))%>% gsub(., pattern = "_", replacement = "")
+  ls <- c(ls,str_extract(f, "_L[\\.0-9e-]+$")) %>% gsub(., pattern = "_", replacement = "")
 }
 message("Reading in F matrices...")
 files <- paste0(path, infiles$V1)
@@ -202,7 +219,7 @@ for(k in unique(ks))
     message('Init K unknown, going with first matrix present')
     k.n <- ncol(all.matrices.f[[k]][[1]][[1]])
   }
-  coph.results <- lapply(all.matrices.f[[k]], function(x) if(length(x) > 0) {copheneticAssessment(x)} else{NA}) #give a list of the 30
+  coph.results <- lapply(all.matrices.f[[k]], function(x) if(length(x) > 1) {copheneticAssessment(x)} else{NA}) #need more than 1 matrix to do this....
   corr.results <- lapply(all.matrices.f[[k]],  function(x) if(length(x) > 0) {correlationAssessment(x)}else{NA}) #give a list of the 30
   corr.results.per.k2 <- lapply(all.matrices.f[[k]],  function(x) if(length(x) > 0) {scaledCorrelationAssessment(x, type = "squared")}else{NA})
   #The median of the averages
@@ -217,7 +234,7 @@ for(k in unique(ks))
   f.sparsity <- lapply(all.matrices.f[[k]], function(x) if(length(x) > 0) {matrixSparsityAvg(x,k.n )} else{NA}) #give a list of the 30
   l.sparsity <- lapply(all.matrices.l[[k]], function(x) if(length(x) > 0) {matrixSparsityAvg(x,k.n)} else{NA}) #give a list of the 30
   #PVE:
-    pve <- lapply(all.matrices.f[[k]], function(m) if(length(m & !is.null(args$betas)) > 0) {avgPVE(X, m)} else{NA})
+    pve <- lapply(all.matrices.f[[k]], function(m) if(length(m) > 0 & !is.null(args$betas)) {avgPVE(X, m)} else{NA})
   
   stopifnot(names(coph.results) == names(corr.results))
   final.out <- rbind(final.out, 
@@ -265,10 +282,17 @@ library(tidyr)
 acceptable.k <- (m %>% filter(K_group_coph > 0.9))$Actual_K
 message("K settings that pass threshold:")
 print(paste(acceptable.k))
-tops <- (data.frame(final.out) %>% tidyr::drop_na() %>% filter(Coph > 0.9) %>% filter(F_sparsity > 0.3, F_sparsity < 0.85) %>% 
+tops <- (data.frame(final.out) %>% tidyr::drop_na() %>% filter(Coph > 0.9) %>% filter(F_sparsity > 0.3, F_sparsity < 0.9) %>% 
           arrange(Med_Average_R2) %>% filter(Group_nonempty_average %in% acceptable.k, Med_Average_R2 < 0.01, Avg_pve > 0.5, L_sparsity > 0.05))
+if(nrow(tops) == 0)
+{
+  acceptable.k <- (m %>% filter(K_group_coph > 0.8))$Actual_K
+  tops <- (data.frame(final.out) %>% tidyr::drop_na() %>% filter(Coph > 0.9) %>% filter(F_sparsity > 0.3, F_sparsity < 0.9) %>% 
+             arrange(Med_Average_R2) %>% filter(Group_nonempty_average %in% acceptable.k, Med_Average_R2 < 0.01, Avg_pve > 0.5, L_sparsity > 0.05))
+}
+
 message("Top recommended settings")
-print(top)
+print(tops)
 #in the case of multiple settings that come to the top, these give a decent range.
 message("If proceeding to next step, next settings are given by.....")
 best.a <- unique(as.numeric(gsub(tops$Alpha, pattern = "A", replacement = "")))
@@ -298,5 +322,12 @@ if(visualize)
   ggplot(df, aes(x = Var1, y= Var2, color = s)) + geom_point(size = 3) + 
     theme_minimal() + xlab(bquote(alpha)) + ylab(bquote(lambda)) + 
     labs(color = "Grid search Iteration") + ggtitle("Grid search visualization")
+  
+  
+  plot(tops$F_sparsity, ends$L_sparsity, xlim = c(0,1), ylim = c(0,1), 
+       pch = 19, xlab = "Sparsity F", ylab = "Sparsity L")
+  plot(tops$Avg_pve, ends$Med_Average_R2, xlim = c(0,1), ylim = c(0,0.1), 
+       pch = 19, xlab = "PVE", ylab = "Factor correlation")
+  
 }
 
