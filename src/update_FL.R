@@ -24,11 +24,13 @@ if(FALSE)
   W <- W[1:1000, 1:10]
   option$K <- 5
 }
-ZERO_THRESH = 1e-5
-source("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/src/sparsity_scaler.R")
+#ZERO_THRESH = 1e-5
+#source("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/src/sparsity_scaler.R")
+#source("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/src/pve.R")
   #fast matrix correlation help
-library(coop)
+
 cor2 <- function(x) {
+  library(coop)
 1/(NROW(x)-1) * crossprod(scale(x, TRUE, TRUE))
 }
       
@@ -54,20 +56,39 @@ DefineSparsitySpaceInit <- function(X, W, option, burn.in = 5)
     print(i)
     #U.dat <- FitUWrapper(Xint,Wint,V, new.options)
     U.dat <- DefineSparsitySpace(Xint, Wint, V, "U", new.options, fit = "OLS")
+    new.options$K = ncol(U.dat$U) #Update if it has changed
+    #If we have ones with NA, they need to get dropped
+    #if we have columns with NAs here, we want them gone now so it doesn't jank up downstream stuff.
     #V.dat <- FitVWrapper(Xint, Wint, U.dat$U, new.options, V);
     V.dat <- DefineSparsitySpace(Xint, Wint,U.dat$U, "V", new.options, fit = "OLS")
+    if(i > 2)
+    {
+      #this might be high but oh well...
+      drops <- CheckLowPVE(X,W,V.dat$V, thresh = "avg") #redundant with other code
+      print(drops)
+      if(length(drops) > 0)
+      {
+        message("Dropping low in V... ")
+        n <- DropSpecificColumns(drops, U.dat$U, V.dat$V)
+        U.dat$U <- n$U
+        new.options$K <- ncol(U.dat$U)
+        V.dat <- DefineSparsitySpace(Xint, Wint,U.dat$U, "V", new.options, fit = "OLS")
+      }
+      
+    }
     param.space[[i]] <- list("alpha" = U.dat$sparsity_space, "lambda"=V.dat$sparsity_space)
     V <- V.dat$V
   }
+  
   #Upon return, we want the max across all as the maximums.
   #Maybe set the min and max of the distribution as the upper and lower bounds, and then pick some points in between?
   #That would guarantee at least one row or one column would be entirely empty.
-  return(list("V_burn" = V, "U_burn"=U.dat$U, "max_sparsity_params"=param.space))
+  return(list("V_burn" = V, "U_burn"=U.dat$U, "max_sparsity_params"=param.space, "new.k" =new.options$K))
 }
 
 #TODO: get the organization right- this is the internal function that does the work, Init version is just a wrapper around it.
 #    U.dat <- DefineSparsitySpace(Xint, Wint, V, "U", new.options, fit = "OLS")
-
+#Get the sparsity parameters associated with the regression step to learn "loading"
 DefineSparsitySpace <- function(X,W,fixed,loading, option, fit = "None")
 {
   new.options <- option
@@ -77,9 +98,21 @@ DefineSparsitySpace <- function(X,W,fixed,loading, option, fit = "None")
   if(loading == "V")
   {
     free.dat <- FitVWrapper(X, W, fixed, new.options);
+    #HERE
   }else
   {
-    free.dat <- FitUWrapper(X,W, fixed, new.options)
+    red.cols <- c(1)
+    while(!is.null(red.cols))
+    {
+      free.dat <- FitUWrapper(X,W, fixed, new.options)
+      red.cols <- free.dat$redundant_cols
+      if(!is.null(red.cols)){
+        message("Unstable columns included, removing..")
+        fixed <- fixed[,-red.cols]
+        new.options$K <- ncol(fixed)
+      }
+      
+    }
   }
   if(fit == "None")
   {
@@ -122,6 +155,7 @@ initV <- function(X,W,option, preV = NULL)
     V = cbind(ones, V);
   } else #you pre-provide the first F.
   {
+    message("Using an initialized V")
     V   = preV;
   }
   if(option$posF)
@@ -166,7 +200,7 @@ UpdateTrackingParams <- function(sto.obj, X,W,U,V,option, sparsity.thresh = 1e-5
 {
   if(is.null(sto.obj))
   {
-    sto.obj <-  list("V" = V, "U" = U, "initK" = option$K, "K" = ncol(U), "obj" = c(.Machine$integer.max), "obj_change" = c(),
+    sto.obj <-  list("V" = V, "U" = U, "initK" = option$K, "K" = ncol(U), "obj" = c(NA), "obj_change" = c(),
                      "V_sparsities" = c(), "U_sparsities" = c(), "autofit_lambda" = c(), "autofit_alpha"=c(), "mse" = c(),
                      "V_change" = c(), "U_change" = c())
   }
@@ -174,13 +208,18 @@ UpdateTrackingParams <- function(sto.obj, X,W,U,V,option, sparsity.thresh = 1e-5
   
   #sto.obj$U_sparsities = c(sto.obj$U_sparsities, sum(abs(U) < sparsity.thresh) / (ncol(U) * nrow(U)));
   #sto.obj$V_sparsities = c(sto.obj$V_sparsities, sum(abs(V) < sparsity.thresh) / (ncol(V) * nrow(V)));
-  sto.obj$U_sparsities = c(sto.obj$U_sparsities, matrixSparsity(U, ncol(U)));
-  sto.obj$V_sparsities = c(sto.obj$V_sparsities,matrixSparsity(V, ncol(V)))
+  sto.obj$U_sparsities = c(sto.obj$U_sparsities, matrixSparsity(U, option$K)); #The sparsity count should be with respect to the initial value..
+  #TODO: fix the relative sparsity count thuing...
+  sto.obj$V_sparsities = c(sto.obj$V_sparsities,matrixSparsity(V, option$K))
   sto.obj$K = ncol(U);
   sto.obj$mse <- c(sto.obj$mse, norm(W*X-W*(U%*%t(V)), type = "F")/(nrow(X) * ncol(X)))
     # change in the objective -- should always be negative
     obj_updated = compute_obj(X, W, U, V, option);
     obj_change = sto.obj$obj[length(sto.obj$obj)] - obj_updated;
+  if(is.na(sto.obj$obj[1]))
+  {
+    sto.obj$obj[1] <- obj_updated
+  }
   sto.obj$obj = c(sto.obj$obj, obj_updated);
   sto.obj$obj_change = c(sto.obj$obj_change, obj_change);
     #Update the fit:
@@ -194,6 +233,7 @@ UpdateTrackingParams <- function(sto.obj, X,W,U,V,option, sparsity.thresh = 1e-5
       #LAST STEP- update the new U and V
       sto.obj$U <- U
       sto.obj$V <- V
+      sto.obj$PVE <-PercentVarEx(as.matrix(X)*as.matrix(W), v = V)
   sto.obj
 }
 
@@ -282,8 +322,39 @@ CheckVEmpty <- function(V)
 }
 
 
-AlignFactorMatrices <- function(U, V)
+CheckLowPVE <- function(X,W,V, thresh = "avg") #this might be high but oh well...
 {
+  if(thresh == "avg")
+  {
+    thresh = 1/ncol(X)
+  }
+  print(thresh)
+  pve=PercentVarEx(as.matrix(X)*as.matrix(W), v = V)
+  print(pve)
+  return(which(pve <= thresh))
+  
+}   
+
+#helper to just get rid of some columns quick...
+DropSpecificColumns <- function(drops, mf, ms)
+{
+  U = as.matrix(as.data.frame(mf[, -drops]));
+  V  = as.matrix(as.data.frame(ms[, -drops]));
+  return(list("U"=U, "V"=V))
+}
+
+DropLowPVE <- function(X,W,V)
+{
+  drop.cols <- CheckLowPVE(X,W,V)
+  message("Currently including PVE check")
+  rv <- V
+  rv[,drop.cols] <- 0
+  return(V)
+}
+#Refactor thi
+AlignFactorMatrices <- function(X,W,U, V)
+{
+
   non_empty_v = which(apply(V, 2, function(x) sum(x!=0)) > 0)
   non_empty_u = which(apply(U, 2, function(x) sum(x!=0)) > 0)
   non_empty = intersect(non_empty_u,non_empty_v);
@@ -293,7 +364,7 @@ AlignFactorMatrices <- function(U, V)
 }
 # converge if: 1). Change of the values in factor matrix is small. ie. The factor matrix is stable. 2). Change in the objective function becomes small; 3). reached maximum number of iterations
 
-ConvergenceConditionsMet <- function(iter,X, U,V,tracker,option)
+ConvergenceConditionsMet <- function(iter,X,W, U,V,tracker,option)
 {
   #TODO double check tracker$V tracks with the old
   #Condition 1: Change in V is small
@@ -306,14 +377,27 @@ ConvergenceConditionsMet <- function(iter,X, U,V,tracker,option)
   #Objective hasn't been updated yet in tracker. That's the issue
   
   obj_updated = compute_obj(X, W, U, V, option);
-  oc1 = abs(obj_updated - tracker$obj_change[length(tracker$obj_change)]);
+  #This isnt right
+  objective_change = tracker$obj[length(tracker$obj)]- obj_updated; #newer one should be smaller than previous
+  updateLog(paste0("Objective change: ", objective_change), option)
+ 
   
-  updateLog(paste0("Objective change: ", oc1), option)
-  if(oc1 < as.numeric(option[['conv0']])){
+ #If we have completed at least 1 iteration and we go up, end it.
+  if(objective_change < as.numeric(option[['conv0']]) & length(tracker$obj) > option[['iter']]){
     updateLog(("Objective function change threshold achieved!"), option)
     updateLog(paste0('Objective function converges at iteration ', iter), option);
+    #If objective change is negative, must end....
+    if(objective_change < 0)
+      {
+      message("warning: negative objective")
+      print(tracker$obj)
+      updateLog(paste0("Objective change going in the wrong direction (negative), ending now."), option)
+      #return(TRUE)
+    }
     return(TRUE)
   }
+  
+  
   #Option 3- maxi number of iter.
   if(iter == option[['iter']]){
     message('Reached maximum iteration.');
@@ -365,7 +449,7 @@ Update_FL <- function(X, W, option, preV = NULL, preL = NULL){
   #Start tracking stats
   tracking.data <- UpdateTrackingParams(NULL, X,W,U,V,option)
   #If U is already empty, than we know that the matrix is too sparse, and we should just end there.
-  if(CheckUEmpty(U)) {return(tracking.data)}
+  if(CheckUEmpty(U)) {message("U is empty; ending");return(tracking.data)}
   #If we are doing a measure of per-trait variance over time...
   trait.var <- matrix(NA, option[['iter']], ncol(X))
  
@@ -388,22 +472,35 @@ Update_FL <- function(X, W, option, preV = NULL, preL = NULL){
     # if number of factors decrease because of empty factor, the change in ||F||_F = 100
     
     #Tracking change in F....
-    if(CheckVEmpty(V)) {return(UpdateTrackingParams(tracking.data, X,W,U,V,option))}
+    if(CheckVEmpty(V)) {message("V is empty; ending");  return(UpdateTrackingParams(tracking.data, X,W,U,V,option))}
     colnames(V) = seq(1, ncol(V));
+ 
     
     ## update L
-    U <- FitUWrapper(X,W,V, option,r.v = trait.var[iii,])$U
-
+    U <- FitUWrapper(X,W,V, option,r.v = trait.var[iii,])
+    if(length(U$redundant_cols) > 0)
+    {
+      message("Dropping some cols...")
+      print(U$redundant_cols)
+      r <- DropSpecificColumns(U$redundant_cols, U$U, V)
+      U <- r$U; V <- r$V
+    }
+      else{
+        U <- U$U
+      }
+  
     # if L is empty, stop
-    if(CheckUEmpty(U)) {return(UpdateTrackingParams(tracking.data, X,W,U,V,option))} #Update and end.
+    if(CheckUEmpty(U)) {message("U is empty; ending"); return(UpdateTrackingParams(tracking.data, X,W,U,V,option))} #Update and end.
     colnames(U) = seq(1, ncol(U)) ;
     
-    # align the two matrices	
-    updated.mats <- AlignFactorMatrices(U, V); U <- updated.mats$U; V <- updated.mats$V
+    # Drop low PVE and align two matrices	
+    V <- DropLowPVE(X,W,V)
+    updated.mats <- AlignFactorMatrices(X,W,U, V); U <- updated.mats$U; V <- updated.mats$V
 
 
-    if(ConvergenceConditionsMet(iii,X,U, V, tracking.data, option))
+    if(ConvergenceConditionsMet(iii,X,W,U, V, tracking.data, option))
     {
+      message("Convergence criteria met...")
       cat('\n')
       updateLog(paste0('Total time used for optimization: ',  round(difftime(Sys.time(), tStart0, units = "mins"), digits = 3), ' min'), option);
       cat('\n')

@@ -23,7 +23,7 @@
   ##
   ################################################################################################################################
   
-  
+  source("/home/aomdahl1/scratch16-abattle4/ashton/snp_networks/gwas_decomp_ldsc/src/factorization_methods.R")
   suppressWarnings(library(penalized))
   library(foreach)
   library(doParallel)
@@ -37,15 +37,25 @@
   #@param r.v- the trait-specific variance vector.
   #@return: l, the current learned row of l (k x 1) of weights for a given SNP
   
-  
-  
-  
   one_fit <- function(x, w, FactorM, option, formerL, r.v){
     if(option$traitSpecificVar && !is.null(r.v))
     {
       xp = x / sqrt(r.v);
       FactorMp = diag(1/sqrt(r.v)) %*% FactorM;
-    }else{
+    }else if(option$gls)
+    {
+      #adjusting for covariance structure....
+      #We need to make the covariance matrix is mostly empty...
+      covar <- diag(1/w) %*% option$covar %*% diag(1/w) #rather than doing this for each SNP each time, we should just do it once for all SNPs
+      #TODO- implement this later
+      u_inv_t <- buildWhiteningMatrix(covar, blockify = FALSE) #already blockifyied the matrix...
+      #this condition isn't necessarily reasonable, because adjustment might happen to force PD matrix.
+      #might need to enforce this directly
+      #stopifnot(all(diag(u_inv_t) == w)) #this isn't necessarily true. only if its a diagonal covar matri.
+      xp <- adjustMatrixAsNeeded(x, covar, whitener=u_inv_t)
+      FactorMp <- adjustMatrixAsNeeded(FactorM, covar, whitener=u_inv_t)
+    }
+    else{
       xp = unlist(w * x);
       FactorMp = diag(w) %*% FactorM; #scaling this way is much smaller
     }
@@ -65,8 +75,6 @@
     }else if (option[["regression_method"]] == "OLS") {
       fit <- lm(xp~FactorMp + 0) 
       l = coef(fit) #check this, but I think its correct
-      if(option$actively_calibrating_sparsity) { max.sparsity <- rowiseMaxSparsity(xp, FactorMp)}
-      
     }
     else if(option[["regression_method"]] == "glmnet" & option[["fixed_ubiq"]]) 
       {
@@ -104,18 +112,30 @@
                       positive = FALSE, standardize = FALSE, trace = FALSE, epsilon = option$epsilon, maxiter = 10) #seet a limit on maxiter.
       #Note- some rudimentary testing done, setting maxiter doesn't necessarily help. 
       l = coef(fit, 'all')
-    }		else {
+    }	else if(option$regression_method == "None"){
+      l = c()
+      
+    }	else {
       fit = penalized(response = X, penalized = dat_i[,paste0('F', seq(1,ncol(FactorMp)))], data=dat_i,
                       unpenalized = ~0, lambda1 = option[['alpha1']], lambda2=1e-10,
                       positive = FALSE, standardize = FALSE, trace = FALSE);
       l = coef(fit, 'all');
     }
+    if(option$actively_calibrating_sparsity) { max.sparsity <- rowiseMaxSparsity(xp, FactorMp)}
+    if(is.null(l))
+    {
+      message('')
+	   #print("null retuern")
+      #print(option$regression_method)
+      #print(l)
+    }
     return(list("l" = l, "max_sparse"=max.sparsity))
    
   }
   
-  
+  #U = fit_L(X, W, FactorM, option, ...);
   fit_L<- function(X, W, FactorM, option, formerL, r.v = NULL){
+    bad.cols <- c()
   	L = NULL
   	sparsity.est <- c()
   	tS = Sys.time()
@@ -131,20 +151,29 @@
   		{
   		  l = one_fit(x, w, as.matrix(FactorM), option, formerL[row,], r.v);
   		}		else {
-  		  l = one_fit(x, w, as.matrix(FactorM), option, NULL, r.v);
+  		  #l = one_fit(x, w, as.matrix(FactorM), option, NULL, r.v);
+  		  #tS = Sys.time(); 
+  		  l = one_fit(x,w, as.matrix(FactorM), option, NULL, r.v); 
+  		  #print(paste0('Updating Loading matrix takes ', round(difftime(Sys.time(), tS, units = "mins"), digits = 3)))
   		}
   		#Gettings some very bizarre errors about names and such, some weird hacks to work around it.
   		if(length(l$l) == 1)
   		{
-  		  l <- as.matrix(l$l)
-  		  suppressMessages(names(l) <- "F1")
+  		  l$l <- matrix(l$l)
+  		  suppressMessages(names(l$l) <- "F1")
   		}
       if(is.null(L))
       {
           L = l$l
       } else if(is.null(L) & is.null(l)){
           message("Matrix is empty...")
-          return(NULL)
+          return(list("U" = NULL, "sparsity_space"=sparsity.est))
+      } else if(any(is.na(l$l)))
+      {
+        bad.cols <- c(bad.cols, which(is.na(l$l)))
+        message("setting to 0")
+        l$l[is.na(l$l)] <- 0
+        L = suppressMessages(bind_rows(L, l$l))
       }
       else{
           L = suppressMessages(bind_rows(L, l$l))
@@ -156,8 +185,11 @@
       
   	}
   	updateLog(paste0('Updating Loading matrix takes ', round(difftime(Sys.time(), tS, units = "mins"), digits = 3), ' min'), option);
-  
-  	return(list("U" = as.matrix(L), "sparsity_space"=sparsity.est))
+    if(!is.null(L))
+    {
+      L <- as.matrix(L)
+    }
+  	return(list("U" = L, "sparsity_space"=sparsity.est, "redundant_cols" = unique(bad.cols)))
   }
   
 
@@ -165,7 +197,6 @@
   fitUParallel <- function(X, W, FactorM, option, formerL){
 
     L = NULL
-  	message("inside the parallele list")
     tS = Sys.time()
     #cl <- parallel::makeCluster(option[["ncores"]])#, outfile = "TEST.txt")
     iterations <- nrow(X)
@@ -186,7 +217,13 @@
         w = W[row, ];
         
         xp = matrix(w * x, nrow = nrow(FactorM), ncol = 1); #elementwise multiplication
-        FactorMp = diag(w) %*% FactorM;  #what are we doing here?
+        FactorMp = diag(w) %*% FactorM;  #same as below
+        #    	#quick debug
+        #test.f <- matrix(c(c(1,2,3,4), c(1,2,3,4), c(1,2,3,4)), ncol = 3)
+        #w <- c(0,1,2,3)
+        #unlist(w) * test.l
+        
+        
         dat_i = data.frame(cbind(xp, FactorMp));
         colnames(dat_i) = c('X', paste0('F', seq(1, ncol(FactorMp))));
         fit = penalized(response = X, penalized = dat_i[,paste0('F', seq(1,ncol(FactorMp)))], data=dat_i,
@@ -212,6 +249,7 @@
 
 #doing some major renaming
   fit_L_parallel <- fitUParallel
+  #free.dat <- FitUWrapper(X,W, fixed, new.options)
   FitUWrapper <- function(X,W,FactorM, option,...)
   {
     if(option[['ncores']] > 1) #This is not working at all. Can't tell you why. But its not. Need to spend some time debugging at some point.
@@ -222,6 +260,7 @@
     }else
     {
       U = fit_L(X, W, FactorM, option, ...);
+
     }
     return(U)
   }

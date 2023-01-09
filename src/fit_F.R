@@ -42,7 +42,7 @@ fit_F <- function(X, W, L, option, formerF = NULL){
 	    w = W[, col];
         ## weight the equations on both sides
 		xp = unlist(w) * x;
-		Lp = unlist(w)* L;
+		Lp = unlist(w)* L; #CONFIRMEd: this has desired behavior.
     if(option$actively_calibrating_sparsity) { sparsity.est <- c(sparsity.est, rowiseMaxSparsity(xp, Lp))}
 		## Fit: xp = L %*% f with l1 penalty on f -- |lambda1 * f|
 		dat_i = as.data.frame(cbind(xp, Lp));
@@ -63,10 +63,10 @@ fit_F <- function(X, W, L, option, formerF = NULL){
 		  f = coef(fit) #check this, but I think its correct
 		}
 		else if(option[["regression_method"]] == "glmnet" & option[["fixed_ubiq"]]) 
-      	{
+    {
 				penalties <- c(0, rep(1, (ncol(L) - 1)))
 				f = glmnetLASSO(dat_i, xp, ncol(L), option[['lambda1']], penalties)
-   		 } else if(option[["fixed_ubiq"]] & option[["regression_method"]] == "penalized")
+   	} else if(option[["fixed_ubiq"]] & option[["regression_method"]] == "penalized")
 		{
 		  lambdas <- c(0, rep(option[['lambda1']], (ncol(Lp) - 1))) #no lasso on that first column
 
@@ -75,7 +75,11 @@ fit_F <- function(X, W, L, option, formerF = NULL){
 		                  positive = option$posF, standardize = FALSE, trace = FALSE, epsilon = option$epsilon)
 		  
 		  f = coef(fit, 'all')
-		} else {
+		} else if(option$regression_method == "None")
+		{
+		  f = c()
+		}
+		else {
 		  fit = penalized(response = X, penalized = dat_i[,paste0('F', seq(1, ncol(Lp)))], data=dat_i,
 		                  unpenalized = ~0, lambda1 =option[['lambda1']], lambda2=1e-10,
 		                  positive = option$posF, standardize = FALSE, trace = FALSE)
@@ -108,12 +112,19 @@ fit_F <- function(X, W, L, option, formerF = NULL){
       svd <- svd(cor_struct, nu = 1) #fortunately its symmetric, so  U and V are the same here!
       ones <- sign(svd$u) 
         FactorM[,1] <- ones
+    }
+	
+	pve <-  NULL
+	if(option$regression_method != "None")
+	{
+	  pve = PercentVarEx(as.matrix(X)*as.matrix(W), v = FactorM)
 	}
-    return(list("V" = FactorM, "sparsity_space"=sparsity.est))
+    return(list("V" = FactorM, "sparsity_space"=sparsity.est, "pve"=pve))
 }
 
 
 FitVWrapper <- function(X, W, U, option, formerV = NULL)
 {
-  fit_F(X, W, U, option, formerF = formerV)
+  #HERE?
+  fit_F(X, W, as.matrix(U), option, formerF = formerV)
 }

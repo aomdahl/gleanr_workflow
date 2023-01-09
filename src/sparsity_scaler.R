@@ -191,9 +191,18 @@ SelectCoarseSparsityParamsGlobal <- function(param.space,n.points = 3, logs = FA
     }
   }else
   {
-    message("on the log scale...")
-    s <- seq(0, log(dm), length = (n.points + 1))
-    return(exp(s)[2:(n.points+1)])
+    #Issue- if they are small, we are increasing, not decreasing
+    #Update to log 10
+    s <- seq(0, log10(dm), length = (n.points + 1))
+    if(log10(dm) < 0)
+    {
+      
+      max <- log10(dm)
+      min <- max - n.points
+      s <- seq(min, max, length = (n.points + 1))
+    }
+   
+    return(10^(s)[2:(n.points+1)])
   }
 
 }
