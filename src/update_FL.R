@@ -64,7 +64,7 @@ DefineSparsitySpaceInit <- function(X, W, option, burn.in = 5)
     if(i > 2)
     {
       #this might be high but oh well...
-      drops <- CheckLowPVE(X,W,V.dat$V, thresh = "avg") #redundant with other code
+      drops <- CheckLowPVE(X,W,V.dat$V) #redundant with other code
       print(drops)
       if(length(drops) > 0)
       {
@@ -322,12 +322,20 @@ CheckVEmpty <- function(V)
 }
 
 
-CheckLowPVE <- function(X,W,V, thresh = "avg") #this might be high but oh well...
+CheckLowPVE <- function(X,W,V, thresh = "default") #this might be high but oh well...
 {
-  if(thresh == "avg")
+  if(thresh == "default")
+  {
+    thresh = 0.01
+  }else if(thresh == "avg")
   {
     thresh = 1/ncol(X)
   }
+  else
+  {
+    thresh = 0.01
+  }
+
   print(thresh)
   pve=PercentVarEx(as.matrix(X)*as.matrix(W), v = V)
   print(pve)
@@ -348,8 +356,21 @@ DropLowPVE <- function(X,W,V)
   drop.cols <- CheckLowPVE(X,W,V)
   message("Currently including PVE check")
   rv <- V
+  if(length(drop.cols) > 0)
+  {
+    rv <- V[,-drop.cols]
+  }
+  
+  return(rv)
+}
+
+ZeroLowPVE <- function(X,W,V)
+{
+  drop.cols <- CheckLowPVE(X,W,V)
+  message("Currently including PVE check")
+  rv <- V
   rv[,drop.cols] <- 0
-  return(V)
+  return(rv)
 }
 #Refactor thi
 AlignFactorMatrices <- function(X,W,U, V)
@@ -379,21 +400,24 @@ ConvergenceConditionsMet <- function(iter,X,W, U,V,tracker,option)
   obj_updated = compute_obj(X, W, U, V, option);
   #This isnt right
   objective_change = tracker$obj[length(tracker$obj)]- obj_updated; #newer one should be smaller than previous
+  obj.change.percent <- objective_change/tracker$obj[length(tracker$obj)]
   updateLog(paste0("Objective change: ", objective_change), option)
  
   
  #If we have completed at least 1 iteration and we go up, end it.
-  if(objective_change < as.numeric(option[['conv0']]) & length(tracker$obj) > option[['iter']]){
+  if(objective_change < 0)
+  {
+    message("warning: negative objective")
+    print(tracker$obj)
+    updateLog(paste0("Objective change going in the wrong direction (negative), ending now."), option)
+    return(TRUE)
+  }
+  #updated change- objective change as a percent:
+  if(obj.change.percent < as.numeric(option[['conv0']]) & length(tracker$obj) > 1){
     updateLog(("Objective function change threshold achieved!"), option)
     updateLog(paste0('Objective function converges at iteration ', iter), option);
     #If objective change is negative, must end....
-    if(objective_change < 0)
-      {
-      message("warning: negative objective")
-      print(tracker$obj)
-      updateLog(paste0("Objective change going in the wrong direction (negative), ending now."), option)
-      #return(TRUE)
-    }
+
     return(TRUE)
   }
   

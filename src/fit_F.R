@@ -43,6 +43,10 @@ fit_F <- function(X, W, L, option, formerF = NULL){
         ## weight the equations on both sides
 		xp = unlist(w) * x;
 		Lp = unlist(w)* L; #CONFIRMEd: this has desired behavior.
+    if(all(Lp == 0))
+    {
+      print("all 0 case, beware.")
+    }
     if(option$actively_calibrating_sparsity) { sparsity.est <- c(sparsity.est, rowiseMaxSparsity(xp, Lp))}
 		## Fit: xp = L %*% f with l1 penalty on f -- |lambda1 * f|
 		dat_i = as.data.frame(cbind(xp, Lp));
