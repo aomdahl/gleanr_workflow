@@ -59,7 +59,7 @@ fit_F <- function(X, W, L, option, formerF = NULL){
 		{
 		  fit = penalized(response = X, penalized = dat_i[,paste0('F', seq(1, ncol(Lp)))], data=dat_i,
 		                  unpenalized = ~0, lambda1 = option[['lambda1']], lambda2=1e-10,
-		                  positive = option$posF, standardize = FALSE, trace = FALSE, startbeta = formerF[col,] )
+		                  positive = option$posF, standardize = FALSE, trace = FALSE, startbeta = formerF[col,], maxiter=50 )
 		  f = coef(fit, 'all')
 		} else if(option[["regression_method"]] == "OLS")
 		{
@@ -76,7 +76,7 @@ fit_F <- function(X, W, L, option, formerF = NULL){
 
 		  fit = penalized(response = X, penalized = dat_i[,paste0('F', seq(1, ncol(Lp)))], data=dat_i,
 		                  unpenalized = ~0, lambda1 =lambdas, lambda2=1e-10,
-		                  positive = option$posF, standardize = FALSE, trace = FALSE, epsilon = option$epsilon)
+		                  positive = option$posF, standardize = FALSE, trace = FALSE, epsilon = option$epsilon, maxiter= 50)
 		  
 		  f = coef(fit, 'all')
 		} else if(option$regression_method == "None")
@@ -86,7 +86,7 @@ fit_F <- function(X, W, L, option, formerF = NULL){
 		else {
 		  fit = penalized(response = X, penalized = dat_i[,paste0('F', seq(1, ncol(Lp)))], data=dat_i,
 		                  unpenalized = ~0, lambda1 =option[['lambda1']], lambda2=1e-10,
-		                  positive = option$posF, standardize = FALSE, trace = FALSE)
+		                  positive = option$posF, standardize = FALSE, trace = FALSE, maxiter= 50)
 		  f = coef(fit, 'all')
 		}
 		
@@ -118,12 +118,7 @@ fit_F <- function(X, W, L, option, formerF = NULL){
         FactorM[,1] <- ones
     }
 	
-	pve <-  NULL
-	if(option$regression_method != "None")
-	{
-	  pve = PercentVarEx(as.matrix(X)*as.matrix(W), v = FactorM)
-	}
-    return(list("V" = FactorM, "sparsity_space"=sparsity.est, "pve"=pve))
+    return(list("V" = FactorM, "sparsity_space"=sparsity.est))
 }
 
 

@@ -122,13 +122,6 @@
       l = coef(fit, 'all');
     }
     if(option$actively_calibrating_sparsity) { max.sparsity <- rowiseMaxSparsity(xp, FactorMp)}
-    if(is.null(l))
-    {
-      message('')
-	   #print("null retuern")
-      #print(option$regression_method)
-      #print(l)
-    }
     return(list("l" = l, "max_sparse"=max.sparsity))
    
   }
@@ -206,7 +199,6 @@
     #We split the tasks across cores, so multiple regression steps per core; you aren't switching nearly as much.
     n.per.group <- ceiling(nrow(X)/option$nsplits)
     oo <- n.per.group - 1
-    print(option$nsplits)
     split_lines <- lapply(1:(option$nsplits-1), function(x) (x*n.per.group - oo) :(x*n.per.group))
     split_lines[[option$nsplits]] <- (split_lines[[(option$nsplits-1)]][n.per.group]+1):nrow(X)
     L <- foreach(rows = split_lines, .combine = 'bind_rows', .packages = c('penalized', 'dplyr')) %dopar% {

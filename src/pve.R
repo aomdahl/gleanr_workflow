@@ -87,6 +87,16 @@ PMA_PVE <- function(x,v, K=NULL, center= FALSE)
 {
   #Code taken directly from https://rdrr.io/cran/PMA/src/R/PMD.R
   # Calculate percent variance explained, using definition on page 7 of Shen and Huang (2008) Journal of Multivariate Analysis vol 99: 1015-1034
+  #ADdition on 1/10: Account for cases with columns of all 0.
+  #should report a PVE of 0
+  k.init <- ncol(v)
+  drops <- c()
+  if(any(colSums(v==0) == nrow(v)))
+  {
+    message("Warning: rows in current v contain 0 entries. Setting PVE to 0.")
+    drops <- which(colSums(v==0) == nrow(v))
+    v <- v[,-drops]
+  }
   if(is.null(K))
   {
     K=ncol(v)
@@ -98,19 +108,38 @@ PMA_PVE <- function(x,v, K=NULL, center= FALSE)
   xfill[is.na(x)] <- mean.na(xfill)
   for(k in 1:K){
     vk <- matrix(v[,1:k], ncol=k)
-    xk <- xfill%*%vk%*%solve(t(vk)%*%vk)%*%t(vk)
+    xk <- xfill%*%vk%*%solve(t(vk)%*%vk, tol = 1e-20)%*%t(vk)
     svdxk <- svd(xk)
     ve <- c(ve, sum(svdxk$d^2))
   }
   pve <- ve/sum(svd(xfill)$d^2) # proportion of variance explained
-  #pve
   if(K > 1)
   {
-    return(c(pve[1], sapply(2:K, function(i) pve[i] - pve[i-1])))
+    pve <- c(pve[1], sapply(2:K, function(i) pve[i] - pve[i-1]))
   }else
   {
-    return(c(pve[1]))
+    pve <- c(pve[1])
   }
+  #If there were drops, add them back in
+  if(length(drops) > 0)
+  {
+    ret <- rep(0, k.init)
+    true.val <- 1
+    for(i in 1:k.init)
+    {
+      if(!(i %in% drops))
+      {
+       ret[i] <- pve[true.val]
+       true.val <- true.val + 1
+      }else
+      {
+        message("Factor ", i, "is dropping..")
+      }
+    }
+    pve <- ret
+  }
+  #pve
+pve
   
 }
 

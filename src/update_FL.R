@@ -61,14 +61,15 @@ DefineSparsitySpaceInit <- function(X, W, option, burn.in = 5)
     #if we have columns with NAs here, we want them gone now so it doesn't jank up downstream stuff.
     #V.dat <- FitVWrapper(Xint, Wint, U.dat$U, new.options, V);
     V.dat <- DefineSparsitySpace(Xint, Wint,U.dat$U, "V", new.options, fit = "OLS")
-    if(i > 2)
+    if(i > 3)
     {
       #this might be high but oh well...
-      drops <- CheckLowPVE(X,W,V.dat$V) #redundant with other code
+      #HERE
+      #drops <- CheckLowPVE(X,W,V.dat$V) #redundant with other code
+      drops <- c()
       print(drops)
       if(length(drops) > 0)
       {
-        message("Dropping low in V... ")
         n <- DropSpecificColumns(drops, U.dat$U, V.dat$V)
         U.dat$U <- n$U
         new.options$K <- ncol(U.dat$U)
@@ -94,7 +95,6 @@ DefineSparsitySpace <- function(X,W,fixed,loading, option, fit = "None")
   new.options <- option
   new.options$regression_method <- fit
   new.options$actively_calibrating_sparsity <- TRUE
-  message("Characterizing the sparsity space....")
   if(loading == "V")
   {
     free.dat <- FitVWrapper(X, W, fixed, new.options);
@@ -107,7 +107,6 @@ DefineSparsitySpace <- function(X,W,fixed,loading, option, fit = "None")
       free.dat <- FitUWrapper(X,W, fixed, new.options)
       red.cols <- free.dat$redundant_cols
       if(!is.null(red.cols)){
-        message("Unstable columns included, removing..")
         fixed <- fixed[,-red.cols]
         new.options$K <- ncol(fixed)
       }
@@ -326,7 +325,7 @@ CheckLowPVE <- function(X,W,V, thresh = "default") #this might be high but oh we
 {
   if(thresh == "default")
   {
-    thresh = 0.01
+    thresh = 0.005
   }else if(thresh == "avg")
   {
     thresh = 1/ncol(X)
@@ -335,8 +334,6 @@ CheckLowPVE <- function(X,W,V, thresh = "default") #this might be high but oh we
   {
     thresh = 0.01
   }
-
-  print(thresh)
   pve=PercentVarEx(as.matrix(X)*as.matrix(W), v = V)
   print(pve)
   return(which(pve <= thresh))
@@ -354,7 +351,6 @@ DropSpecificColumns <- function(drops, mf, ms)
 DropLowPVE <- function(X,W,V)
 {
   drop.cols <- CheckLowPVE(X,W,V)
-  message("Currently including PVE check")
   rv <- V
   if(length(drop.cols) > 0)
   {
@@ -379,6 +375,10 @@ AlignFactorMatrices <- function(X,W,U, V)
   non_empty_v = which(apply(V, 2, function(x) sum(x!=0)) > 0)
   non_empty_u = which(apply(U, 2, function(x) sum(x!=0)) > 0)
   non_empty = intersect(non_empty_u,non_empty_v);
+  if(length(non_empty) < ncol(U))
+  {
+    message("dropping now...")
+  }
   U = as.matrix(as.data.frame(U[, non_empty]));
   V  = as.matrix(as.data.frame(V[, non_empty]));
   return(list("U"=U, "V"=V))
@@ -405,7 +405,7 @@ ConvergenceConditionsMet <- function(iter,X,W, U,V,tracker,option)
  
   
  #If we have completed at least 1 iteration and we go up, end it.
-  if(objective_change < 0)
+  if(objective_change < 0 & length(tracker$obj) > 3)
   {
     message("warning: negative objective")
     print(tracker$obj)
@@ -413,7 +413,7 @@ ConvergenceConditionsMet <- function(iter,X,W, U,V,tracker,option)
     return(TRUE)
   }
   #updated change- objective change as a percent:
-  if(obj.change.percent < as.numeric(option[['conv0']]) & length(tracker$obj) > 1){
+  if(obj.change.percent < as.numeric(option[['conv0']]) & length(tracker$obj) > 3){
     updateLog(("Objective function change threshold achieved!"), option)
     updateLog(paste0('Objective function converges at iteration ', iter), option);
     #If objective change is negative, must end....
@@ -518,13 +518,23 @@ Update_FL <- function(X, W, option, preV = NULL, preL = NULL){
     colnames(U) = seq(1, ncol(U)) ;
     
     # Drop low PVE and align two matrices	
-    V <- DropLowPVE(X,W,V)
+    #V <- DropLowPVE(X,W,V)
     updated.mats <- AlignFactorMatrices(X,W,U, V); U <- updated.mats$U; V <- updated.mats$V
 
 
     if(ConvergenceConditionsMet(iii,X,W,U, V, tracking.data, option))
     {
       message("Convergence criteria met...")
+      
+      #Check out low pve one..
+      drops <- CheckLowPVE(X,W,V) #redundant with other code
+      print(drops)
+      if(length(drops) > 0)
+      {
+        message("Pruning out low PVE columns")
+        n <- DropSpecificColumns(drops, U,V)
+        U <- n$U; V <- n$V
+      }
       cat('\n')
       updateLog(paste0('Total time used for optimization: ',  round(difftime(Sys.time(), tStart0, units = "mins"), digits = 3), ' min'), option);
       cat('\n')

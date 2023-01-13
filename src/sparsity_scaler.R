@@ -152,10 +152,9 @@ SelectCoarseSparsityParams <- function(param.space, num.reps,...)
   
   #min, mode, and 3rd quantile.
   alpha.grid <- SelectCoarseSparsityParamsGlobal(param.space$max_sparsity_params[[num.reps]]$alpha,...)
-  
   return(list("alphas"=alpha.grid, "lambdas"=lambda.grid))
+  #list("alphas"=alpha.grid, "lambdas"=lambda.grid)
 }
-
 ##NOTE: for these functions, we err on the side of density for the moment, because sparsity in practice is compounding.
 #Problem arises here if we are running full iterations or just the adaptive one...
 SelectCoarseSparsityParamsU <- function(param.space,n.points=3)
@@ -165,43 +164,36 @@ SelectCoarseSparsityParamsU <- function(param.space,n.points=3)
   c(min(param.space) * 0.5, min(param.space), DensityMode(param.space))
 }
 
-SelectCoarseSparsityParamsGlobal <- function(param.space,n.points = 3, logs = FALSE)
+SelectCoarseSparsityParamsGlobal <- function(param.space,n.points = 3, logs = TRUE)
 {  
   dm <- DensityMode(param.space)
+  #maybe try someting a bit simpler.....
   if(!logs)
   {
     if(n.points == 5)
     {
-      c(min(param.space) * 0.25, min(param.space) * 0.5, min(param.space), mean(min(param.space),dm), dm) 
+      c(min(param.space) * 0.01, min(param.space) * 0.1, min(param.space), mean(min(param.space),dm), dm) 
     } else if(n.points == 7)
     {
       div = abs(dm - min(param.space))/4
-      c(min(param.space) * 0.25, min(param.space) * 0.5, min(param.space), min(param.space)+ div,min(param.space)+ 2*div, dm-div, dm) 
+      c(min(param.space) * 0.01, min(param.space) * 0.1, min(param.space), min(param.space)+ div,min(param.space)+ 2*div, dm-div, dm) 
       #c(min(param.space) * 0.15, min(param.space) * 0.30, min(param.space) * 0.45, min(param.space), min(param.space)+ div, dm-div, dm) 
     }else if(n.points > 7)
     {
       n.divs <- n.points - 4
       div = abs(dm - min(param.space))/n.divs
       #seq(min(param.space), dm, by = div)
-      c(min(param.space) * 0.25, min(param.space) * 0.5, min(param.space)* 0.75, seq(min(param.space), dm, by = div)) 
+      c(min(param.space) * 0.001, min(param.space) * 0.01, min(param.space)* 0.1, seq(min(param.space), dm, by = div)) 
     }
     else
     {
-      c(min(param.space) * 0.5, min(param.space), dm) 
+      c(min(param.space) * 0.1, min(param.space), dm) 
     }
   }else
   {
     #Issue- if they are small, we are increasing, not decreasing
     #Update to log 10
-    s <- seq(0, log10(dm), length = (n.points + 1))
-    if(log10(dm) < 0)
-    {
-      
-      max <- log10(dm)
-      min <- max - n.points
-      s <- seq(min, max, length = (n.points + 1))
-    }
-   
+    s <- seq(log10(1e-5), log10(dm), length.out = (n.points + 1))
     return(10^(s)[2:(n.points+1)])
   }
 
