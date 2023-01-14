@@ -1,5 +1,6 @@
-# gwas_spMF
+# Sparse GWAS matrix factorization
 
-The code in this repo initially came from my persional machine, uploaded 5/19/2021.
-Inclues modifications to Yuan's sp_snMF method, including removing the non-negativity constraint, allowing for running in parallel, and with variations on what the first factor should be initialized to.
+The project is an extension of work by Yuan He (here)[https://github.com/heyuan7676/ts_eQTLs] but customized for genome-wide association studies.
+
+This work is currently in development, but more updates coming soon!
 
