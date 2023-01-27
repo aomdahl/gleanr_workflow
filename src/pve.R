@@ -83,6 +83,23 @@ PercentVarEx <- function(x,v, K=NULL, center= FALSE)
 {
   PMA_PVE(x,v, K=NULL, center= FALSE)
 }
+
+
+PMASolveWrapper <- function(xfill, vk)
+{
+  
+  tryCatch({
+    xk <- xfill%*%vk%*%solve(t(vk)%*%vk, tol = 1e-20)%*%t(vk)
+    svdxk <- svd(xk)
+    sum(svdxk$d^2)
+  },
+  error=function(cond) {
+    message(cond)
+    # Choose a return value in case of error
+    return(NA)
+  })
+}
+
 PMA_PVE <- function(x,v, K=NULL, center= FALSE)
 {
   #Code taken directly from https://rdrr.io/cran/PMA/src/R/PMD.R
@@ -108,9 +125,7 @@ PMA_PVE <- function(x,v, K=NULL, center= FALSE)
   xfill[is.na(x)] <- mean.na(xfill)
   for(k in 1:K){
     vk <- matrix(v[,1:k], ncol=k)
-    xk <- xfill%*%vk%*%solve(t(vk)%*%vk, tol = 1e-20)%*%t(vk)
-    svdxk <- svd(xk)
-    ve <- c(ve, sum(svdxk$d^2))
+    ve <- c(ve, PMASolveWrapper(xfill, vk))
   }
   pve <- ve/sum(svd(xfill)$d^2) # proportion of variance explained
   if(K > 1)
@@ -142,7 +157,6 @@ PMA_PVE <- function(x,v, K=NULL, center= FALSE)
 pve
   
 }
-
 
 
 
