@@ -1,7 +1,8 @@
+#!/usr/bin/Rscript
 library(stringr)
 library(data.table)
 dir ="/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/src/"
-library(plyr)
+#library(plyr)
 library(dplyr)
 library(magrittr)
 source(paste0(dir, 'cophenetic_calc.R'))
@@ -38,6 +39,9 @@ avgPVE <- function(full.dat, m)
 }
 
 #we don't want to be redundant, so omit the ones that are repeated...
+#alphas: the optimal parameters to consisder
+#all.a: the full list of parameters from which they are drawn
+#n.points: how many new points to pick from.
 ProposeSparsityParamsFromGrid <- function(alphas,all.a, n.points)
 {
   #N-points will include the original ones...
@@ -46,10 +50,27 @@ ProposeSparsityParamsFromGrid <- function(alphas,all.a, n.points)
     new.list <- singlePointGridExpansion(all.a[order(all.a)], alphas, n.points)
   }else
   {
-    range.a <- log(range(alphas))
-    new.list <- exp(seq(range.a[1],range.a[2],length = n.points))
+    range.a <- range(alphas)
+    new.list <- (seq(range.a[1],range.a[2],length = n.points))
   }
-  
+  if(any(is.na(new.list)))
+  {
+    message("detected possible ERROR in proposed parameters")
+    print(new.list)
+    message("Dropping NAs")
+    new.list <- new.list[!is.na(new.list)]
+  }
+  if(any(new.list < 0))
+  {
+    message('Detected negatives in proposed parameters; dropping these')
+    new.list <- new.list[new.list > 0]
+  }
+  if(length(new.list) == 0)
+  {
+    message("Possible error, no terms detected")
+    message("Retruning original input.")
+    return(alphas)
+  }
 return(new.list)
 
 }
@@ -138,8 +159,9 @@ readIndata <- function(infiles, as, ls,ks, path, tail.str="_B_SE.*.factors.txt")
 
 }
 
-
-
+#we are running the script.
+if (sys.nframe() == 0){
+ 
 #TODO: modify so look at cophenetic correlation across all those with a given K
 option_list <- list(
   make_option(c("--input_path"), type = 'character', help = "Specify the path with all the runs (one directory)"),
@@ -161,16 +183,16 @@ if(args$debug)
   args <- list()
   #="/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/renv_f/results/ukbb_GWAS_h2-0.1_rg-0.9/model_selection_nov2022_renv/"
   #path="/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/renv_f/results/ukbb_GWAS_h2-0.1_rg-0.9/model_selection_nov2022_log_grid/"
-  path = "/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results/udler_original/model_grid_search/"
+  path = "/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results/udler_original/model_grid_search_k6/"
   #path="/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/renv_f/results/ukbb_GWAS_h2-0.1_rg-0.9/model_selection_nov2022_renv/2nd_iter/"
   #read.files = "/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results/ukbb_GWAS_h2-0.1_rg-0.9/factorization/full_list_night_oct18.txt"
   #read.files = "/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization//results/ukbb_GWAS_h2-0.1_rg-0.9/model_selection_nov2022/runs.so.far.txt"
   #read.files="/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/renv_f/results/ukbb_GWAS_h2-0.1_rg-0.9/model_selection_nov2022_log_grid/all.runs.dec5.txt"
-  read.files="/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results/udler_original/model_grid_search/full.run.list.txt"
+  read.files="/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results/udler_original/model_grid_search_k6/full.run.list.txt"
   
   #read.files = "/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/renv_f/results/ukbb_GWAS_h2-0.1_rg-0.9/model_selection_nov2022_renv/2nd_iter/all.param.runs.txt"
   #ofile = "/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results/infertility/p0.001_FULL/coph.results.oct_18.txt"
-  ofile = "/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results/udler_original/model_grid_search/"
+  ofile = "/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results/udler_original/model_grid_search_k6/run_performance.txt"
   #args$betas <- "/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwas_extracts/ukbb_GWAS_h2-0.1_rg-0.9/B.tsv"
   args$betas <- "/scratch16/abattle4/ashton/snp_networks/scratch/udler_td2/processed_data/beta_signed_matrix.tsv"
   args$scale_n <- "/scratch16/abattle4/ashton/snp_networks/scratch/udler_td2/processed_data/sample_counts_matrix.tsv"
@@ -242,7 +264,7 @@ for(k in unique(ks))
       "Corr_per_factor_pair"=unlist(corr.results.per.k),"Corr_per_factor_pair_SQ"=unlist(corr.results.per.k2), "Med_Average_R2" = unlist(corr.avg), 
       "Settings" = names(coph.results), "Init_K" = k, "Group_nonempty_average" = non.empty.count, 
       "F_sparsity" = unlist(f.sparsity), "L_sparsity" = unlist(l.sparsity), "nruns" = unlist(nruns), "Avg_pve"=unlist(pve)))
-  #need the cohenetic correlation across
+  #need the cohenetic correlation across all from the same group
   for(mats in all.matrices.f[[k]])
   {
     for(m in mats)
@@ -267,7 +289,10 @@ n.by.k <- lapply(true.k.groups, function(x) length(x))
 m <- data.frame("Actual_K" = 1:length(coph.by.k), "K_group_coph" = unlist(coph.by.k), "N" = unlist(n.by.k))
 #The true stability of each matrix at a given K is importna
 write.table(m %>% filter(!is.na(K_group_coph)),file = paste0(ofile, "k_coph.txt"), quote = FALSE, row.names = FALSE)
+#12/20: ADD IN UPDATED VERSION OF WHAT I THINK YUAN WAS DOING... ....
 final.out <- final.out %>% tidyr::separate(Settings, into = c("Alpha", "Lambda"), sep= "_",remove = FALSE) #%>% left_join(., m, by = "Actual_K")
+by.group.med <- final.out %>% group_by(Group_nonempty_average) %>% summarize("Coph_med" = median(Coph))
+final.out <- left_join(final.out, by.group.med, by = "Group_nonempty_average")
 write.table(final.out,file = paste0(ofile, "all.txt"), quote = FALSE, row.names = FALSE)
 
 #######3recommend the best one
@@ -279,16 +304,20 @@ library(tidyr)
 # F sparsity needs to be > 0.1 and < 0.8
 # PVE needs to be > 20%?
 # Of these options, choose the one that has minimal off-diagonal R2
-acceptable.k <- (m %>% filter(K_group_coph > 0.9))$Actual_K
-message("K settings that pass threshold:")
-print(paste(acceptable.k))
+#acceptable.k <- (m %>% filter(K_group_coph > 0.9))$Actual_K
+#message("K settings that pass threshold:")
+#print(paste(acceptable.k))
+#tops <- (data.frame(final.out) %>% tidyr::drop_na() %>% filter(Coph > 0.9) %>% filter(F_sparsity > 0.3, F_sparsity < 0.9) %>% 
+#          arrange(Med_Average_R2) %>% filter(Group_nonempty_average %in% acceptable.k, Med_Average_R2 < 0.01, Avg_pve > 0.5, L_sparsity > 0.05))
+#adopting the more lenient interpretation of what I believe Yuan was doing...
+#another change- don't put a hard R2 filter in there, just pick the minimal ones (?)
 tops <- (data.frame(final.out) %>% tidyr::drop_na() %>% filter(Coph > 0.9) %>% filter(F_sparsity > 0.3, F_sparsity < 0.9) %>% 
-          arrange(Med_Average_R2) %>% filter(Group_nonempty_average %in% acceptable.k, Med_Average_R2 < 0.01, Avg_pve > 0.5, L_sparsity > 0.05))
+          arrange(Med_Average_R2) %>% filter(!is.na(Coph_med), Coph_med > 0.9, Avg_pve > 0.5, L_sparsity > 0.05))
 if(nrow(tops) == 0)
 {
   acceptable.k <- (m %>% filter(K_group_coph > 0.8))$Actual_K
   tops <- (data.frame(final.out) %>% tidyr::drop_na() %>% filter(Coph > 0.9) %>% filter(F_sparsity > 0.3, F_sparsity < 0.9) %>% 
-             arrange(Med_Average_R2) %>% filter(Group_nonempty_average %in% acceptable.k, Med_Average_R2 < 0.01, Avg_pve > 0.5, L_sparsity > 0.05))
+             arrange(Med_Average_R2) %>% filter(Group_nonempty_average %in% acceptable.k, Avg_pve > 0.5, L_sparsity > 0.05))
 }
 
 message("Top recommended settings")
@@ -301,6 +330,10 @@ if(nrow(tops) >= 1)
 {
   new.a <- ProposeSparsityParamsFromGrid(best.a,a.n, 4)
   new.l <- ProposeSparsityParamsFromGrid(best.l,l.n,4)
+  print("Alpha:")
+  print(paste0((new.a),collapse = ","))
+  print("Lambda:")
+  print(paste0((new.l),collapse = ","))
 }else #(nrow(tops) == 0)
 {
   message("paramters too strict, select manually")
@@ -329,5 +362,6 @@ if(visualize)
   plot(tops$Avg_pve, ends$Med_Average_R2, xlim = c(0,1), ylim = c(0,0.1), 
        pch = 19, xlab = "PVE", ylab = "Factor correlation")
   
+}
 }
 

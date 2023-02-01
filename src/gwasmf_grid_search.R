@@ -6,13 +6,14 @@ SourcePackages <- function()
   source(paste0(dir, "fit_F.R"))
   source(paste0(dir, "update_FL.R"))
   source(paste0(dir, "fit_L.R"))
-  source(paste0(dir, "plot_sfunctions.R"))
+  source(paste0(dir, "plot_functions.R"))
   source(paste0(dir, 'compute_obj.R'))
   source(paste0(dir, 'buildFactorMatrices.R'))
   source(paste0(dir, 'sparsity_scaler.R'))
   source(paste0(dir, 'cophenetic_calc.R'))
   source(paste0(dir, 'read_in_tools.R'))
   source(paste0(dir, 'regressionUtils.R'))
+  source(paste0(dir, 'evaluateRunsMany.R'))
   source(paste0(dir, 'pve.R'))
 }
 
@@ -35,15 +36,19 @@ updateStatement  <- function(l,a,l_og, a_og, run,time)
 
 initializeGwasMF <- function(X,W, snp.ids, trait.names, K=0)
 {
-  pacman::p_load(tidyr, plyr, dplyr, ggplot2, stringr, 
+  pacman::p_load(tidyr, ggplot2, stringr, 
                  penalized, cowplot, parallel, doParallel, logr, 
                  coop, data.table, glmnet, nFactors)
+  #library(plyr)
+  library(dplyr)
   
   dir ="/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/src/"
   source(paste0(dir, "gwasmf_grid_search.R"))
+  source("/scratch16/abattle4/ashton/snp_networks/scratch/testing_gwasMF_code/model_selection/bic_autofit_functions.R")
   SourcePackages()
   
   args <- defaultSettings(K=K)
+  args$pve_init <- FALSE
   option <- readInSettings(args)
   option$swap <- FALSE
   option$alpha1 <- 1e-10
@@ -70,8 +75,17 @@ initializeGwasMF <- function(X,W, snp.ids, trait.names, K=0)
        "hp" = hp, "all_ids" = snp.ids, "names" = trait.names, "initk" = initk)
 }
 
+
+singleRunFromScratch <- function(X,W,a, l, option, niter = 50)
+{
+  option[['alpha1']] <- as.numeric(a)
+  option[['lambda1']] <- as.numeric(l)
+  option$iter <- niter
+  Update_FL(as.matrix(X), as.matrix(W), option)
+}
+
 #getGridMatrices(args, option, alphas, lambdas, param.iters)
-getGridMatrices <- function(args, option, alphas, lambdas, param.iters)
+getGridMatrices <- function(X,W,args, option, alphas, lambdas, param.iters)
 {
   args$parameter_optimization <- param.iters
   all.runs <- list()
@@ -93,7 +107,7 @@ getGridMatrices <- function(args, option, alphas, lambdas, param.iters)
           {
             message("We are subsampling to ", option$subsample)
             samp <- sample(1:nrow(X), option$subsample)
-            X <- input.dat$X[samp,]; W <- input.dat$W[samp,]; all_ids <- input.dat$ids[samp]
+            X <- as.matrix(X)$X[samp,]; W <- as.matrix(W)$W[samp,]; #all_ids <- input.dat$ids[samp]
             #This works, but need to adjust the parameters. COuld implement okay, but not doing now.f
           }
         run_stats[[opti]] <- Update_FL(as.matrix(X), as.matrix(W), option)
@@ -114,13 +128,16 @@ getGridMatrices <- function(args, option, alphas, lambdas, param.iters)
 #runSingle(meth, effect.matrix, K, se_m=se, covar = c.mat, bic.var = args$bic_var)
 #snp_ids = paste0("rs", 1:nrow(X))
 #trait_names = paste0("T",1:ncol(X))
-gwasMFGrid <- function(X,W, snp_ids, trait_names, K=0, param.iters = 10, subsample = FALSE)
+#res <- gwasMFGrid(X,W, paste0("rs", 1:nrow(X)), paste0("T",1:ncol(X)), K=0, Kmax = K)
+gwasMFGrid <- function(X,W, snp_ids, trait_names, K=0, Kmax = -1, subsample = FALSE, nrep.first = 5, nrep.second = 10)
 {
   d <- initializeGwasMF(X,W, snp_ids, trait_names, K=0)
   option <- d$options; args <- d$args; hp <- d$hp; all_ids <- d$all_ids; names <- d$names
+  option$pve_init <- TRUE
+  args$pve_init <- TRUE
   args$auto_grid_search <- TRUE
   option$subsample <- subsample
-
+   
     #Not sure if I need this now...
   if(FALSE) 
   {
@@ -138,14 +155,14 @@ gwasMFGrid <- function(X,W, snp_ids, trait_names, K=0, param.iters = 10, subsamp
   message(paste0("Number of traits for analysis: ", ncol(X)))
 
   message("initializing for automatic grid search")
-  init.params <- GetCoarseSparsityParams(X,W,option, burn.in.reps = 1, logs = TRUE, n.points = 4)
+  init.params <- GetCoarseSparsityParams(X,W,option, burn.in.reps = 1, logs = TRUE, n.points = 4) #TODO- find a faster way to do this.
   alphas <- init.params$alphas; lambdas <- init.params$lambdas
   message("Alphas")
   print(alphas)
   message("Lambdas")
   print(lambdas)
   
-  grid.solutions <- getGridMatrices(args, option, alphas, lambdas, 7)
+  grid.solutions <- getGridMatrices(X, W, args, option, alphas, lambdas, nrep.first)
 
   check_stats = max(sapply(grid.solutions, length))
   if(check_stats == 1)
@@ -156,14 +173,30 @@ gwasMFGrid <- function(X,W, snp_ids, trait_names, K=0, param.iters = 10, subsamp
   
   ret <- GetNextParams(alphas, lambdas,init.k, grid.solutions)
   option$conv0 <- 0.01
-  grid.solutions.round.final <- getGridMatrices(args, option, ret$alphas, ret$lambdas, 10)
+  grid.solutions.round.final <- getGridMatrices(X,W,args, option, ret$alphas, ret$lambdas, nrep.second)
+  #Above is good.
+  final.run <- GetGridPerformanceMetrics(ret$alphas, ret$lambdas, grid.solutions.round.final, init.k)
   
-  return(ret)
+  best.params <- SelectTopRun(final.run, grid.solutions.round.final, maxK=Kmax)
+  
+  reg.run <- singleRunFromScratch(X,W,best.params$alpha, best.params$lambda, option, niter = 50)
+  d <- DropFactorsByObjective(X,W,reg.run$U,reg.run$V, minK=Kmax, option, maxK = Kmax)
+  #Question to answer- is it best to choose according to number of params and then parse it down, or how?
+  #For now- pick the one that corresponds to your target number of factors
+  #Above
+  return(list(d, reg.run))
   }
 
 
 GetGridPerformanceMetrics <- function(alphas, lambdas,grid.output, init.k)
 {
+  #if("dplyr" %in% (.packages())){
+   # detach("package:dplyr", unload=TRUE) 
+  #  detach("package:plyr", unload=TRUE) 
+  #} 
+  #library(plyr)
+ # library(dplyr)
+  
   presumed.order <-unlist(lapply(alphas, function(i) lapply(lambdas, function(j) paste0(i,"_",j))))
   #Fi
   init.k <- 9
@@ -202,11 +235,25 @@ GetGridPerformanceMetrics <- function(alphas, lambdas,grid.output, init.k)
     #need the cohenetic correlation across all from the same group
   }
   final.out <- data.frame(final.out %>% tidyr::separate(Settings, into = c("Alpha", "Lambda"), sep= "_",remove = FALSE))
-  by.group.med <- final.out %>% group_by(Group_nonempty_average) %>% summarise("Coph_med" = median(Coph))
+  by.group.med <- final.out %>% dplyr::group_by(Group_nonempty_average) %>% summarise("Coph_med" = median(Coph))
   left_join(final.out, by.group.med, by = "Group_nonempty_average")
 }
 
+
+SelectTopRun <- function(perf.df, runs.by.name, maxK=-1)
+{
   
+  filtered.df <- perf.df %>% filter(Coph > 0.9, Coph_med > 0.9, Avg_pve > 0.5, Avg_pve < 1,
+                     V_sparsity_raw > 0.05, U_sparsity_raw > 0.01 ) %>% arrange(Med_Average_R2)
+  if(maxK != -1)
+  {
+    filtered.df <- filtered.df %>% filter(Group_nonempty_average <= maxK)
+    
+  }
+  #Return the top settings
+  #Choosingt he one with the minium correlation
+  return(list("alpha"=as.numeric(filtered.df[1,]$Alpha), "lambda"=as.numeric(filtered.df[1,]$Lambda)))
+}
 GetNextParams <- function(alphas, lambdas,init.k, all.solutions)
 {
   perf.df <- GetGridPerformanceMetrics(alphas, lambdas,all.solutions, init.k)
@@ -214,11 +261,20 @@ GetNextParams <- function(alphas, lambdas,init.k, all.solutions)
              arrange(Med_Average_R2) %>% filter(!is.na(Coph_med), Coph_med > 0.9, Avg_pve > 0.5, U_sparsity_raw > 0.05)
     
   #how do we narrow this down to a small number of points to search?
-  best.a <- unique(as.numeric(gsub(tops$Alpha, pattern = "A", replacement = "")))
-  best.l <- unique(as.numeric(gsub(tops$Lambda, pattern = "L", replacement = "")))
   if(nrow(tops) >= 1)
   {
-    new.a <- ProposeSparsityParamsFromGrid(best.a,alphas, 4)
+  best.a <- unique(as.numeric(gsub(tops$Alpha, pattern = "A", replacement = "")))
+  best.l <- unique(as.numeric(gsub(tops$Lambda, pattern = "L", replacement = "")))
+  if(length(best.a) > 2 & length(best.l) > 2)
+  {
+	  message("Selection criteria not strict enough, parsing down further")
+	tops <- (tops %>% filter( V_sparsity_raw > 0.1) %>% arrange(Med_Average_R2))[1:2,] #Just choosing the top 
+  	best.a <- unique(as.numeric(gsub(tops$Alpha, pattern = "A", replacement = "")))
+  	best.l <- unique(as.numeric(gsub(tops$Lambda, pattern = "L", replacement = "")))
+	
+
+  }  
+  new.a <- ProposeSparsityParamsFromGrid(best.a,alphas, 4)
     new.l <- ProposeSparsityParamsFromGrid(c(best.l),lambdas,4)
     print("Alpha:")
     print(paste0((new.a),collapse = ","))
@@ -228,7 +284,7 @@ GetNextParams <- function(alphas, lambdas,init.k, all.solutions)
   {
     message("Parameters too strict. Choosing the most stable solution with any sparsity and K > 1.")
     #Just choosing the most stable one with some sparsity
-    tops <- data.frame(final.out) %>% tidyr::drop_na() %>% 
+    tops <- data.frame(perf.df) %>% tidyr::drop_na() %>% 
       filter(Group_nonempty_average > 1, V_sparsity_raw > 0) %>% arrange(-Coph) %>% slice(1)  
   }
   return(list("alphas" = new.a, "lambdas" = new.l))

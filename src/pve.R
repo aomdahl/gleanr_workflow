@@ -81,23 +81,28 @@ mean.na <- function(vec){
 
 PercentVarEx <- function(x,v, K=NULL, center= FALSE)
 {
+  if(all(v == 0) | nrow(v) <= 1)
+  {
+	message("empty data passed in, crisis averted")
+	  return(c(NA))
+  }
   PMA_PVE(x,v, K=NULL, center= FALSE)
 }
 
-
-PMASolveWrapper <- function(xfill, vk)
+getVE <- function(xfill, vk)
 {
-  
-  tryCatch({
+  new.ve <- tryCatch({
     xk <- xfill%*%vk%*%solve(t(vk)%*%vk, tol = 1e-20)%*%t(vk)
     svdxk <- svd(xk)
     sum(svdxk$d^2)
-  },
-  error=function(cond) {
+  },  error=function(cond) {
+    message("caught error calculating PVE")
     message(cond)
     # Choose a return value in case of error
     return(NA)
-  })
+  }
+  )
+  new.ve
 }
 
 PMA_PVE <- function(x,v, K=NULL, center= FALSE)
@@ -118,14 +123,27 @@ PMA_PVE <- function(x,v, K=NULL, center= FALSE)
   {
     K=ncol(v)
   }
+  if(!is.numeric(K))
+  {
+	  print("K is not numeric....")
+	  return(c(NA))
+  }
   v <- matrix(v, ncol=K)
+  if(ncol(v) == 1 & nrow(v) == 1)
+  {
+	  return(c(NA))
+  }
   ve <- NULL # variance explained
   xfill <- x
   if(center) xfill <- x-mean.na(x)
   xfill[is.na(x)] <- mean.na(xfill)
   for(k in 1:K){
     vk <- matrix(v[,1:k], ncol=k)
-    ve <- c(ve, PMASolveWrapper(xfill, vk))
+    
+
+    ve <- c(ve, getVE(xfill,vk))
+
+    
   }
   pve <- ve/sum(svd(xfill)$d^2) # proportion of variance explained
   if(K > 1)
@@ -157,6 +175,7 @@ PMA_PVE <- function(x,v, K=NULL, center= FALSE)
 pve
   
 }
+
 
 
 
