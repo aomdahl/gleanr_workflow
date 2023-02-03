@@ -41,8 +41,24 @@ fit_F <- function(X, W, L, option, formerF = NULL){
     	x = X[, col];
 	    w = W[, col];
         ## weight the equations on both sides
-		xp = unlist(w) * x;
-		Lp = unlist(w)* L; #CONFIRMEd: this has desired behavior.
+    if(option$gls)
+    {
+      #adjusting for covariance structure.... here it is LD in U
+      #We need to make the covariance matrix is mostly empty...
+      covar <- diag(1/w) %*% option$LD %*% diag(1/w) #rather than doing this for each SNP each time, we should just do it once for all SNPs
+      #TODO- implement this later
+      u_inv_t <- buildWhiteningMatrix(covar, blockify = FALSE) #already blockifyied the matrix...
+      #this condition isn't necessarily reasonable, because adjustment might happen to force PD matrix.
+      #might need to enforce this directly
+      #stopifnot(all(diag(u_inv_t) == w)) #this isn't necessarily true. only if its a diagonal covar matri.
+      xp <- adjustMatrixAsNeeded(x, covar, whitener=u_inv_t)
+      Lp <- adjustMatrixAsNeeded(L, covar, whitener=u_inv_t)
+    }else
+    {
+      xp = unlist(w) * x;
+      Lp = as.matrix(unlist(w)* L); #CONFIRMEd: this has desired behavior.
+    }
+
     if(all(Lp == 0))
     {
       print("all 0 case, beware.")
@@ -58,7 +74,7 @@ fit_F <- function(X, W, L, option, formerF = NULL){
 		if(option[["carry_coeffs"]])
 		{
 		  fit = penalized(response = X, penalized = dat_i[,paste0('F', seq(1, ncol(Lp)))], data=dat_i,
-		                  unpenalized = ~0, lambda1 = option[['lambda1']], lambda2=1e-10,
+		                  unpenalized = ~0, lambda1 = option[['lambda1']], lambda2=1e-20,
 		                  positive = option$posF, standardize = FALSE, trace = FALSE, startbeta = formerF[col,], maxiter=50 )
 		  f = coef(fit, 'all')
 		} else if(option[["regression_method"]] == "OLS")
@@ -75,7 +91,7 @@ fit_F <- function(X, W, L, option, formerF = NULL){
 		  lambdas <- c(0, rep(option[['lambda1']], (ncol(Lp) - 1))) #no lasso on that first column
 
 		  fit = penalized(response = X, penalized = dat_i[,paste0('F', seq(1, ncol(Lp)))], data=dat_i,
-		                  unpenalized = ~0, lambda1 =lambdas, lambda2=1e-10,
+		                  unpenalized = ~0, lambda1 =lambdas, lambda2=1e-20,
 		                  positive = option$posF, standardize = FALSE, trace = FALSE, epsilon = option$epsilon, maxiter= 50)
 		  
 		  f = coef(fit, 'all')
@@ -85,7 +101,7 @@ fit_F <- function(X, W, L, option, formerF = NULL){
 		}
 		else {
 		  fit = penalized(response = X, penalized = dat_i[,paste0('F', seq(1, ncol(Lp)))], data=dat_i,
-		                  unpenalized = ~0, lambda1 =option[['lambda1']], lambda2=1e-10,
+		                  unpenalized = ~0, lambda1 =option[['lambda1']], lambda2=1e-20,
 		                  positive = option$posF, standardize = FALSE, trace = FALSE, maxiter= 50)
 		  f = coef(fit, 'all')
 		}

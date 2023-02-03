@@ -24,10 +24,11 @@
   ################################################################################################################################
   
   source("/home/aomdahl1/scratch16-abattle4/ashton/snp_networks/gwas_decomp_ldsc/src/factorization_methods.R")
-  suppressWarnings(library(penalized))
+  library(penalized)
   library(foreach)
   library(doParallel)
   library(svMisc)
+  library(RcppEigen)
   #Function for running the fitting step. Options include
   #carry_coeffs: this uses the previous iteration to initialize the current one. Thought it might provide a speed boost, but the difference seemed to be minimal.
   #glmnet: This uses the glmnet function; just exploring options
@@ -69,18 +70,20 @@
     if(option[["carry_coeffs"]])
     {
       fit = penalized(response = X, penalized = dat_i[,paste0('F', seq(1,ncol(FactorMp)))], data=dat_i,
-                      unpenalized = ~0, lambda1 = option[['alpha1']], lambda2=1e-10,
+                      unpenalized = ~0, lambda1 = option[['alpha1']], lambda2=1e-20,
                       positive = FALSE, standardize = FALSE, trace = FALSE, startbeta = formerL);
       l = coef(fit, 'all');
     }else if (option[["regression_method"]] == "OLS") {
-      fit <- lm(xp~FactorMp + 0) 
+      #fit <- lm(xp~FactorMp + 0) 
+      #message("Using fast lm")
+      fit <- fastLmPure(as.matrix(FactorMp), xp)
       l = coef(fit) #check this, but I think its correct
     }
     else if(option[["regression_method"]] == "glmnet" & option[["fixed_ubiq"]]) 
       {
       penalties <- c(0, rep(1, (ncol(FactorMp) - 1)))
-      #fit <- glmnet(x = dat_i[,paste0('F', seq(1,ncol(FactorMp)))], y = xp, alpha = 1, lambda = option[['alpha1']], 
-                    #intercept = FALSE, penalty.factor = penalties)
+      fit <- glmnet(x = dat_i[,paste0('F', seq(1,ncol(FactorMp)))], y = xp, alpha = 1, lambda = option[['alpha1']], 
+                    intercept = FALSE, penalty.factor = penalties)
       #l = coef(fit, 'all')[,1][-1];
       l = glmnetLASSO(dat_i, xp, ncol(FactorMp), option[['alpha1']], penalties)
     }	
@@ -108,8 +111,8 @@
       #Above was not correct- it was supposed to be sparse,, not sure why this is what it is
       lambdas <-  rep(option[['alpha1']], ncol(FactorMp))
       fit = penalized(response = X, penalized = dat_i[,paste0('F', seq(1, ncol(FactorMp)))], data=dat_i,
-                      unpenalized = ~0, lambda1 =lambdas, lambda2=1e-10,
-                      positive = FALSE, standardize = FALSE, trace = FALSE, epsilon = option$epsilon, maxiter = 10) #seet a limit on maxiter.
+                      unpenalized = ~0, lambda1 =lambdas, lambda2=1e-20,
+                      positive = FALSE, standardize = FALSE, trace = FALSE, epsilon = option$epsilon,maxiter = 30) #seet a limit on maxiter.
       #Note- some rudimentary testing done, setting maxiter doesn't necessarily help. 
       l = coef(fit, 'all')
     }	else if(option$regression_method == "None"){
@@ -117,7 +120,7 @@
       
     }	else {
       fit = penalized(response = X, penalized = dat_i[,paste0('F', seq(1,ncol(FactorMp)))], data=dat_i,
-                      unpenalized = ~0, lambda1 = option[['alpha1']], lambda2=1e-10,
+                      unpenalized = ~0, lambda1 = option[['alpha1']], lambda2=1e-20,
                       positive = FALSE, standardize = FALSE, trace = FALSE);
       l = coef(fit, 'all');
     }
@@ -164,7 +167,7 @@
       } else if(any(is.na(l$l)))
       {
         bad.cols <- c(bad.cols, which(is.na(l$l)))
-        message("setting to 0")
+        message("Dropping columns containing NA in burn-in, indicative of strong multi-colinearity")
         l$l[is.na(l$l)] <- 0
         L = suppressMessages(bind_rows(L, l$l))
       }
@@ -219,7 +222,7 @@
         dat_i = data.frame(cbind(xp, FactorMp));
         colnames(dat_i) = c('X', paste0('F', seq(1, ncol(FactorMp))));
         fit = penalized(response = X, penalized = dat_i[,paste0('F', seq(1,ncol(FactorMp)))], data=dat_i,
-                        unpenalized = ~0, lambda1 = option[['alpha1']], lambda2=1e-10,
+                        unpenalized = ~0, lambda1 = option[['alpha1']], lambda2=1e-20,
                         positive = FALSE, standardize = FALSE, trace = FALSE,epsilon = option$epsilon);
         sub_l <- bind_rows(sub_l, coef(fit, 'all'))
       }
