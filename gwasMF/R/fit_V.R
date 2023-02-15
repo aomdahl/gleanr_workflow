@@ -42,6 +42,7 @@ fit_V <- function(X, W, U, option, formerV = NULL){
 	r.v <- c()
 	lambda_list <- c()
 	sparsity.est <- c()
+	running.loglik <- 0
 	## fit each factor one by one -- because of the element-wise multiplication from weights!
 	for(col in seq(1, ncol(X))){
 		if(option$V > 0)
@@ -53,6 +54,7 @@ fit_V <- function(X, W, U, option, formerV = NULL){
         ## weight the equations on both sides
     if(option$gls)
     {
+      #TODO: simplify. Just need C, not both S and C here.
       #adjusting for covariance structure.... here it is LD in U
       #We need to make the covariance matrix is mostly empty...
       covar <- diag(1/w) %*% option$LD %*% diag(1/w) #rather than doing this for each SNP each time, we should just do it once for all SNPs
@@ -85,8 +87,9 @@ fit_V <- function(X, W, U, option, formerV = NULL){
 		{
 		  fit = penalized::penalized(response = X, penalized = dat_i[,paste0('F', seq(1, ncol(Lp)))], data=dat_i,
 		                  unpenalized = ~0, lambda1 = option[['lambda1']], lambda2=0,
-		                  positive = option$posF, standardize = FALSE, trace = FALSE, startbeta = formerV[col,], maxiter=50 )
-		  f = coef(fit, 'all')
+		                  positive = option$posF, standardize = option$std_coef, trace = FALSE, startbeta = formerV[col,], maxiter=50 )
+		  f = penalized::coef(fit, 'all')
+		  ll = fit@loglik
 		} else if(option[["regression_method"]] == "OLS")
 		{
 		  fit <- lm(xp~Lp + 0)
@@ -98,13 +101,19 @@ fit_V <- function(X, W, U, option, formerV = NULL){
 				f = glmnetLASSO(dat_i, xp, ncol(U), option[['lambda1']], penalties)
    	} else if(option[["fixed_ubiq"]] & option[["regression_method"]] == "penalized")
 		{
-		  lambdas <- c(0, rep(option[['lambda1']], (ncol(Lp) - 1))) #no lasso on that first column
-
-		  fit = penalized::penalized(response = X, penalized = dat_i[,paste0('F', seq(1, ncol(Lp)))], data=dat_i,
-		                  unpenalized = ~0, lambda1 =lambdas, lambda2=0,
-		                  positive = option$posF, standardize = FALSE, trace = FALSE, epsilon = option$epsilon, maxiter= 50)
-
-		  f = coef(fit, 'all')
+		  #lambdas <- c(0, rep(option[['lambda1']], (ncol(Lp) - 1)))
+   	  lambdas <- c(rep(option[['lambda1']], (ncol(Lp) - 1)))#no lasso on that first column
+		  #lambdas.2 <- c(0.5, rep(0, (ncol(Lp) - 1)))
+      #trying the new thing....
+		  #fit = penalized::penalized(response = X, penalized = dat_i[,paste0('F', seq(1, ncol(Lp)))], data=dat_i,
+		  #                unpenalized = ~0, lambda1 =lambdas, lambda2=0,
+		  #                positive = option$posF, standardize = option$std_coef, trace = FALSE, epsilon = option$epsilon, maxiter= 50)
+		  fit = penalized::penalized(response = X, penalized = dat_i[,paste0('F', seq(2, ncol(Lp)))], data=dat_i,
+		                                            unpenalized = ~F1 + 0, lambda1 =option[['lambda1']], lambda2=1e-10,
+		                                            positive = option$posF, standardize = option$std_coef, trace = FALSE) #, epsilon = option$epsilon, maxiter= 50)
+		  f = penalized::coef(fit, 'all')
+		  ll = fit@loglik
+		  #f= penalized::coef(fit, 'all')/penalized::weights(fit)
 		} else if(option$regression_method == "None")
 		{
 		  f = c()
@@ -112,8 +121,9 @@ fit_V <- function(X, W, U, option, formerV = NULL){
 		else {
 		  fit = penalized::penalized(response = X, penalized = dat_i[,paste0('F', seq(1, ncol(Lp)))], data=dat_i,
 		                  unpenalized = ~0, lambda1 =option[['lambda1']], lambda2=0,
-		                  positive = option$posF, standardize = FALSE, trace = FALSE, maxiter= 50)
-		  f = coef(fit, 'all')
+		                  positive = option$posF, standardize = option$std_coef, trace = FALSE, maxiter= 50)
+		  f = penalized::coef(fit, 'all')
+		  ll = fit@loglik
 		}
 
 		if(option$traitSpecificVar)
@@ -124,6 +134,7 @@ fit_V <- function(X, W, U, option, formerV = NULL){
 		  r.v <- c(r.v, res.var)
 		}
 		FactorM = rbind(FactorM, f);
+		running.loglik <- running.loglik + ll
 	}
 
 	updateLog(paste0('Updating Factor matrix takes ',  round(difftime(Sys.time(), tStart, units = "mins"), digits = 3), ' min'), option)
@@ -146,7 +157,7 @@ fit_V <- function(X, W, U, option, formerV = NULL){
   #      FactorM[,1] <- ones
   #  }
 
-    return(list("V" = FactorM, "sparsity_space"=sparsity.est))
+    return(list("V" = FactorM, "sparsity_space"=sparsity.est, "total.log.lik" = running.loglik))
 }
 
 

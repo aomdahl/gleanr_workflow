@@ -87,11 +87,13 @@
     {
       fit = penalized::penalized(response = X, penalized = dat_i[,paste0('F', seq(1,ncol(FactorMp)))], data=dat_i,
                       unpenalized = ~0, lambda1 = option[['alpha1']], lambda2=0,
-                      positive = FALSE, standardize = FALSE, trace = FALSE, startbeta = formerU);
+                      positive = FALSE, standardize = option$std_coef, trace = FALSE, startbeta = formerU);
       l = penalized::coef(fit, 'all');
+      ll = fit@loglik
     }else if (option[["regression_method"]] == "OLS") {
       fit <- RcppArmadillo::fastLmPure(as.matrix(FactorMp), xp)
       l = coef(fit) #check this, but I think its correct
+      ll = loglik(fit)
     }
     else if(option[["regression_method"]] == "glmnet" & option[["fixed_ubiq"]])
       {
@@ -100,40 +102,44 @@
                     intercept = FALSE, penalty.factor = penalties)
       #l = coef(fit, 'all')[,1][-1];
       l = glmnet::glmnetLASSO(dat_i, xp, ncol(FactorMp), option[['alpha1']], penalties)
+      ll = loglik(fit)
     }
     else if(option[["regression_method"]] == "fastReg"){
       td <- t(dat_i[,paste0('F', seq(1,ncol(FactorMp)))])
       XTX <- td %*% dat_i[,paste0('F', seq(1,ncol(FactorMp)))]
       XTY <- td %*% xp
       fit <- elasticnet::elasticnet(XTX, XTY, lam2 = -1, lam1 = option[['alpha1']])
+      ll = loglik(fit)
     }
     else if(option[["regression_method"]] == "ridge_L"){
 
       print("doing the ridge L")
       fit = penalized::penalized(response = X, penalized = dat_i[,paste0('F', seq(1,ncol(FactorMp)))], data=dat_i,
                       unpenalized = ~0, lambda1 = 1e-15, lambda2=option[['alpha1']],
-                      positive = FALSE, standardize = FALSE, trace = FALSE);
+                      positive = FALSE, standardize = option$std_coef, trace = FALSE);
       l = penalized::coef(fit, 'all');
-
+      ll = fit@loglik
     }
     else if( option[["regression_method"]] == "penalized" & option[["fixed_ubiq"]])
     {
-      lambdas <-  rep(option[['alpha1']], ncol(FactorMp))
       fit = penalized::penalized(response = X, penalized = dat_i[,paste0('F', seq(1, ncol(FactorMp)))], data=dat_i,
-                      unpenalized = ~0, lambda1 =lambdas, lambda2=0,
-                      positive = FALSE, standardize = FALSE, trace = FALSE, epsilon = option$epsilon,maxiter = 30) #set a limit on maxiter.
+                      unpenalized = ~0, lambda1 =option[['alpha1']], lambda2=0,
+                      positive = FALSE, standardize = option$std_coef, trace = FALSE) #maxiter = 30) #epsilon = option$epsilon)# #These limtations were hurting me...
       l = penalized::coef(fit, 'all')
+      ll = fit@loglik
+      #l = penalized::coef(fit, 'all')/penalized::weights(fit)
     }	else if(option$regression_method == "None"){
       l = c()
 
     }	else {
       fit = penalized::penalized(response = X, penalized = dat_i[,paste0('F', seq(1,ncol(FactorMp)))], data=dat_i,
                       unpenalized = ~0, lambda1 = option[['alpha1']], lambda2=0,
-                      positive = FALSE, standardize = FALSE, trace = FALSE);
+                      positive = FALSE, standardize = option$std_coef, trace = FALSE);
       l = penalized::coef(fit, 'all');
+      ll = fit@loglik
     }
     if(option$actively_calibrating_sparsity) { max.sparsity <- rowiseMaxSparsity(xp, FactorMp)}
-    return(list("l" = l, "max_sparse"=max.sparsity))
+    return(list("l" = l, "max_sparse"=max.sparsity, "loglik" = ll, "penalty" = fit@penalty))
 
   }
 
@@ -142,6 +148,7 @@
     bad.cols <- c()
   	L = NULL
   	sparsity.est <- c()
+  	running.log.lik <- 0
   	tS = Sys.time()
     #updateLog("Updating L...", option)
   	for(row in seq(1,nrow(X))){
@@ -186,14 +193,14 @@
   		{
   		  sparsity.est <- c(sparsity.est, l$max_sparse)
   		}
-
+  		running.log.lik <- running.log.lik + l$loglik
   	}
   	updateLog(paste0('Updating Loading matrix takes ', round(difftime(Sys.time(), tS, units = "mins"), digits = 3), ' min'), option);
     if(!is.null(L))
     {
       L <- as.matrix(L)
     }
-  	return(list("U" = L, "sparsity_space"=sparsity.est, "redundant_cols" = unique(bad.cols)))
+  	return(list("U" = L, "sparsity_space"=sparsity.est, "redundant_cols" = unique(bad.cols), "total.log.lik"=running.log.lik))
   }
 
 
@@ -225,7 +232,7 @@
         colnames(dat_i) = c('X', paste0('F', seq(1, ncol(FactorMp))));
         fit = penalized::penalized(response = X, penalized = dat_i[,paste0('F', seq(1,ncol(FactorMp)))], data=dat_i,
                         unpenalized = ~0, lambda1 = option[['alpha1']], lambda2=0,
-                        positive = FALSE, standardize = FALSE, trace = FALSE,epsilon = option$epsilon);
+                        positive = FALSE, standardize = option$std_coef, trace = FALSE,epsilon = option$epsilon);
         sub_l <- dplyr::bind_rows(sub_l, penalized::coef(fit, 'all'))
       }
       sub_l
