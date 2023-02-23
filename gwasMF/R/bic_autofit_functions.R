@@ -1,3 +1,21 @@
+UpdateAndCheckSparsityParam <-  function(prev.list, new, errorReport = FALSE)
+{
+ if(!is.null(prev.list))
+    {
+
+	 prev <- prev.list[length(prev.list)]
+	  new <- new[1]
+	if( errorReport & !is.null(prev.list) > 1 & (abs(new-prev)/prev > 1.5))
+	  {
+	    message("WARNING: large jumpy in sparsity parameter encountered....")
+	    message("Current: ", prev)
+	    message("New: ", new)
+	  }
+	}
+  return(c(prev.list, new))
+}
+
+
 #Estimator of the L1 degrees of freedom
 MatrixDFV <- function(mat_in, fixed_first = FALSE){
   print("RED ALERT- USING THE BAD V")
@@ -729,9 +747,12 @@ getBICMatrices <- function(opath,option,X,W,all_ids, names, min.iter = 2, max.it
       }
 
       #scoretest <- GetUBICOptim(init.alpha, X,W,optimal.v, option )
+      #Trying this as SANN instead ob rent- meant to be bette ron rough surfaces.
+      message('here.')
       test <- optim(par = init.alpha, fn =  GetUBICOptim, method = "Brent", lower = min(alphas)*0.1, upper = max(alphas),
-                    X=X, W=W, initV = optimal.v, option = option)
+                    X=X, W=W, initV = optimal.v, option = option, control= list('trace'=1))
       u.fits <- FitUs(X, W, optimal.v, c(test$par),option, weighted = TRUE)
+      #Checkloop
       bic.list.u <- c(test$value)
       alphas <- c(test$par)
     }else
@@ -740,8 +761,9 @@ getBICMatrices <- function(opath,option,X,W,all_ids, names, min.iter = 2, max.it
       bic.list.u <- unlist(u.fits$BIC[,bic.type])
 
     }
+    rec.dat$alphas <- UpdateAndCheckSparsityParam(rec.dat$alphas, alphas, errorReport = TRUE)
 
-    rec.dat$alphas <- c(rec.dat$alphas, alphas);  rec.dat$bic.a <- c(rec.dat$bic.a,bic.list.u)
+    rec.dat$bic.a <- c(rec.dat$bic.a,bic.list.u)
     #Pick the best choice from here, using threshold.
     optimal.iter.dat <- selectOptimalInstance(u.fits, bic.list.u, alphas)
     optimal.u <- optimal.iter.dat$m
@@ -777,7 +799,7 @@ getBICMatrices <- function(opath,option,X,W,all_ids, names, min.iter = 2, max.it
         #scoretest <- GetVBICOptim(init.lambda, X,W,optimal.u, option )
         #test <- GetVBICOptim(par, X,W,optimal.u, option, weighted = TRUE, bic.method = 4)
         test <- optim(par = init.lambda, fn =  GetVBICOptim, method = "Brent", lower = min(lambdas)*0.1, upper = max(lambdas),
-                      X=X, W=W, initU = optimal.u, option = option)
+                      X=X, W=W, initU = optimal.u, option = option, control= list('trace'=1))
         v.fits <- FitVs(X,W, optimal.u,c(test$par),option, weighted = TRUE)
         bic.list.v <- c(test$value)
         lambdas <- c(test$par)
@@ -798,7 +820,8 @@ getBICMatrices <- function(opath,option,X,W,all_ids, names, min.iter = 2, max.it
 
     #Record new data
     rec.dat$V_sparsities = c(rec.dat$V_sparsities, matrixSparsity(optimal.v, ncol(X)));
-    rec.dat$lambdas <- c(rec.dat$lambdas, lambdas);  rec.dat$bic.l <- c(rec.dat$bic.l,bic.list.v)
+    rec.dat$lambdas <- UpdateAndCheckSparsityParam(rec.dat$lambdas, lambdas, errorReport = TRUE)
+    rec.dat$bic.l <- c(rec.dat$bic.l,bic.list.v)
     if(ncol(optimal.u) == ncol(optimal.v))
     {
       rec.dat$X_hat <- c(rec.dat$X_hat, norm(optimal.u %*% t(optimal.v), type = 'F'))
@@ -835,7 +858,7 @@ getBICMatrices <- function(opath,option,X,W,all_ids, names, min.iter = 2, max.it
     {
       message("Only down to 1 factor, best be stopping now.")
       #align
-      aligned <- AlignFactorMatrices(X,W,U,V); optimal.u <- aligned$U; optimal.v<- aligned$V
+      aligned <- AlignFactorMatrices(X,W,optimal.u,optimal.v); optimal.u <- aligned$U; optimal.v<- aligned$V
       if(i < min.iter)
       {
         message("Zeroed-out the results very quickly, this suggests some kind of instability...")
@@ -1057,10 +1080,10 @@ runStdPipeClean <- function(args,alpha,lambda, opath = "", initV = NULL)
 #'
 #' @return
 #' @export
-gwasMFBIC <- function(X,W, snp.ids, trait.names, K=0, gwasmfiter =5, rep.run = FALSE, bic.var= "mle", use.init.k = FALSE, init.mat = "V", is.sim = FALSE, save.path = "")
+gwasMFBIC <- function(X,W, snp.ids, trait.names, C = NULL, K=0, gwasmfiter =5, rep.run = FALSE, bic.var= "mle", use.init.k = FALSE, init.mat = "V", is.sim = FALSE, save.path = "")
 {
   opath = ""
-  d <- initializeGwasMF(X,W, snp.ids, trait.names, K=ifelse(use.init.k, K, 0), init.mat=init.mat) #Either use specified, or prune down as we
+  d <- initializeGwasMF(X,W,snp.ids, trait.names, K=ifelse(use.init.k, K, 0), init.mat=init.mat) #Either use specified, or prune down as we
   option <- d$options; args <- d$args; hp <- d$hp; all_ids <- d$all_ids; names <- d$namesl;
   option$svd_init <- TRUE; args$svd_init <- TRUE
   K.cap <- K
