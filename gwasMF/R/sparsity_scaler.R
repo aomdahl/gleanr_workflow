@@ -192,7 +192,8 @@ SelectCoarseSparsityParamsGlobal <- function(param.space,n.points = 3, logs = TR
       div = abs(dm - min(param.space))/n.divs
       #seq(min(param.space), dm, by = div)
       #c(min(param.space) * 0.001, min(param.space) * 0.01, min(param.space)* 0.1, seq(min(param.space), dm, by = div))
-      10^(seq(log10(min(param.space) * 0.001), dm, length.out = n.points))
+      #10^(seq(log10(min(param.space) * 0.01), dm, length.out = n.points))
+      (seq((min(param.space)), (dm), length.out = n.points))
     }
     else
     {
@@ -202,8 +203,9 @@ SelectCoarseSparsityParamsGlobal <- function(param.space,n.points = 3, logs = TR
   {
     #Issue- if they are small, we are increasing, not decreasing
     #Update to log 10
-    s <- seq(log10(1e-5), log10(dm), length.out = (n.points + 1))
-    return(10^(s)[2:(n.points+1)])
+    #s <- seq(log10(1e-5), log10(dm), length.out = (n.points + 1))
+    s <- 10^(seq(log10(min(param.space)* 0.1), log10(dm), length.out = n.points))
+    s
   }
 
 }

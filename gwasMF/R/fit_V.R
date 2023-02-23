@@ -45,6 +45,7 @@ fit_V <- function(X, W, U, option, formerV = NULL){
 	running.loglik <- 0
 	## fit each factor one by one -- because of the element-wise multiplication from weights!
 	for(col in seq(1, ncol(X))){
+	  ll = NULL
 		if(option$V > 0)
 		{
 			svMisc::progress(col, ncol(X), progress.bar = TRUE)
@@ -79,7 +80,11 @@ fit_V <- function(X, W, U, option, formerV = NULL){
 		## Fit: xp = U %*% f with l1 penalty on f -- |lambda1 * f|
 		dat_i = as.data.frame(cbind(xp, Lp));
 		colnames(dat_i) = c('X', paste0('F', seq(1, ncol(Lp))));
-
+		if(any(is.na(colnames(dat_i))) | any(is.na(paste0('F', seq(2,ncol(Lp))))))
+		{
+		  message("In here, what is going on?")
+		  message("please debug.")
+		}
 		# unpenalized = ~0 - suppress the intercept
 		# positive = TRUE  - constrains the estimated regression coefficients of all penalized covariates to be non-negative
 		# lambda2=1e-10    - avoid singularity in fitting
@@ -104,15 +109,22 @@ fit_V <- function(X, W, U, option, formerV = NULL){
 		  #lambdas <- c(0, rep(option[['lambda1']], (ncol(Lp) - 1)))
    	  lambdas <- c(rep(option[['lambda1']], (ncol(Lp) - 1)))#no lasso on that first column
 		  #lambdas.2 <- c(0.5, rep(0, (ncol(Lp) - 1)))
-      #trying the new thing....
-		  #fit = penalized::penalized(response = X, penalized = dat_i[,paste0('F', seq(1, ncol(Lp)))], data=dat_i,
-		  #                unpenalized = ~0, lambda1 =lambdas, lambda2=0,
-		  #                positive = option$posF, standardize = option$std_coef, trace = FALSE, epsilon = option$epsilon, maxiter= 50)
-		  fit = penalized::penalized(response = X, penalized = dat_i[,paste0('F', seq(2, ncol(Lp)))], data=dat_i,
-		                                            unpenalized = ~F1 + 0, lambda1 =option[['lambda1']], lambda2=1e-10,
-		                                            positive = option$posF, standardize = option$std_coef, trace = FALSE) #, epsilon = option$epsilon, maxiter= 50)
-		  f = penalized::coef(fit, 'all')
-		  ll = fit@loglik
+   	  if(length(lambdas) == 0)
+   	  {
+   	    fit <- RcppArmadillo::fastLmPure(as.matrix(Lp), xp)
+   	    f = as.vector(coef(fit)) #check this, but I think its correct
+   	    #ll = logLik(fit)
+   	    ll = penLL(length(xp), xp - as.matrix(Lp) %*% fit$coefficients) # hack for now
+   	  }else
+   	  {
+   	    fit <- penalized::penalized(response = X, penalized = dat_i[,paste0('F', seq(2, ncol(Lp)))], data=dat_i,
+   	                                unpenalized = ~F1 + 0, lambda1 =option[['lambda1']], lambda2=1e-10,
+   	                                positive = option$posF, standardize = option$std_coef, trace = FALSE) #, epsilon = option$epsilon, maxiter= 50)
+
+
+   	    f = penalized::coef(fit, 'all')
+   	    ll = fit@loglik
+   	  }
 		  #f= penalized::coef(fit, 'all')/penalized::weights(fit)
 		} else if(option$regression_method == "None")
 		{

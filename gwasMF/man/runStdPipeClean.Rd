@@ -4,7 +4,7 @@
 \alias{runStdPipeClean}
 \title{Wrapper to run}
 \usage{
-runStdPipeClean(args, alpha, lambda, opath = "")
+runStdPipeClean(args, alpha, lambda, opath = "", initV = NULL)
 }
 \arguments{
 \item{args}{List of all arguments needed to run the pipeline, including path to input data files}
@@ -13,10 +13,10 @@ runStdPipeClean(args, alpha, lambda, opath = "")
 
 \item{lambda}{\eqn{\lambda} sparsity parameter for V matrix (numeric)}
 
-\item{opath}{(optional) prefix for output files (numeric)}
+\item{opath}{(optional) prefix for output files (string)}
 }
 \value{
-a list cotaining all return gwasMF
+a list containing all return gwasMF items
 }
 \description{
 Wrapper to run

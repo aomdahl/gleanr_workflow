@@ -1,5 +1,14 @@
 #Helper functions for reading in and parseing code.
 #TODO: develop some testing cases for each of these
+quickSort <- function(tab, option, col = 1)
+{
+  if(!option$sort)
+  {
+    return(tab)
+  }
+  tab[order(tab[,..col], decreasing = TRUE),]
+}
+
 
 readInParamterSpace <- function(args)
 {
@@ -117,10 +126,10 @@ matrixGWASQC <- function(X, W, id.list, na_thres = 0.5, is.sim = FALSE)
 #@param args- argument object in R
 #@return a list containing the values, their corresponding weights, and the SNPS in the matching order
 
-readInBetas <- function(fpath)
+readInBetas <- function(fpath, option)
 {
   `%>%` <- magrittr::`%>%`
-  data.table::fread(fpath) %>% quickSort(.)
+  data.table::fread(fpath) %>% quickSort(.,option)
 }
 
 #Function to read in a covariance matrix.
@@ -187,7 +196,7 @@ readInLambdaGC <- function(fpath,X, names)
     lambdagc <- as.matrix((do.call("rbind", lapply(1:nrow(X), function(x) unlist(GC[,..ecol])))), nrow = nrow(X))
     GC <- lambdagc
   } else { #matrix version.
-    GC <- GC %>% dplyr::filter(!row_number() %in% r$drops) %>% dplyr::filter(unlist(.[,1]) %in% all_ids) %>% quickSort(.)
+    GC <- GC %>% dplyr::filter(!row_number() %in% r$drops) %>% dplyr::filter(unlist(.[,1]) %in% all_ids) %>% quickSort(.,args)
     if(!all(all_ids == GC[,1])) {
       message("genomic correction values not in correct order, please advise...")
       GC <- as.matrix(GC %>% select(-1) %>% apply(., 2, as.numeric))
@@ -201,7 +210,9 @@ readInData <- function(args)
 {
   `%>%` <- magrittr::`%>%`
   #Load the effect size data
-  effects <- readInBetas(args$gwas_effects)
+
+  effects <- readInBetas(args$gwas_effects, args)
+  print("asdf")
   all_ids <- unlist(effects[,1])
     #Get the trait names out
   if(args$trait_names == "")
@@ -223,7 +234,7 @@ readInData <- function(args)
   } else if(args$weighting_scheme == "B_SE")
   {
     message("Scaling by 1/SE.")
-    W_se <- data.table::fread(args$uncertainty) %>% dplyr::filter(unlist(.[,1]) %in% all_ids) %>% quickSort(.)
+    W_se <- data.table::fread(args$uncertainty) %>% dplyr::filter(unlist(.[,1]) %in% all_ids) %>% quickSort(.,args)
     stopifnot(all(all_ids == W_se[,1]))
     W_se <- W_se[,-1]
     W <- 1/ W_se
@@ -253,7 +264,7 @@ readInData <- function(args)
   #Consider moving this into GWASQC, limit studies with fewer than N samples?
   if(args$scale_n != "")
   {
-    N <- data.table::fread(args$scale_n) %>% dplyr::filter(!row_number() %in% r$drops) %>% dplyr::filter(unlist(.[,1]) %in% all_ids) %>% quickSort(.)
+    N <- data.table::fread(args$scale_n) %>% dplyr::filter(!row_number() %in% r$drops) %>% dplyr::filter(unlist(.[,1]) %in% all_ids) %>% quickSort(.,args)
     if(!all(all_ids == N[,1]))
     {
       #This would occur if we are missing variants.
@@ -265,7 +276,7 @@ readInData <- function(args)
 
       first <- do.call("rbind", pre)
       new_rows <- cbind("SNP" = vars,first)
-      N <- rbind(N, new_rows) %>% quickSort(.)
+      N <- rbind(N, new_rows) %>% quickSort(.,args)
       stopifnot(all(all_ids == N[,1]))
     }
     N <- as.matrix(N[,-1] %>% apply(., 2, as.numeric))
@@ -325,6 +336,7 @@ readInSettings <- function(args)
   option[["gls"]] <- ifelse(args$covar_matrix != "", TRUE, FALSE)
   option[["covar"]] <- args$covar_matrix
   option$auto_grid_search <- args$auto_grid_search
+  option$sorted_vars <- args$sort
   #Experimental
   option$burn.in <- 0
   option$fix.alt.setting <- NA
@@ -347,7 +359,8 @@ readInSettings <- function(args)
   }
   option[["posF"]] <- args$posF
   option$out <- args$output
-  option$logu <- args$output
+  #option$logu <- args$output
+  option$logu <- NULL #for not writing to log fie output.
   option[["MAP_autofit"]] <- as.numeric(args$MAP_autofit)
   option$intercept_ubiq <- FALSE
   option$traitSpecificVar <- FALSE
@@ -360,6 +373,7 @@ readInSettings <- function(args)
   }
   option[["ncores"]] <- args$cores
   option[["fixed_ubiq"]] <- args$fixed_first
+  option$std_coef <- args$std_coef
   return(option)
 }
 
@@ -376,7 +390,9 @@ defaultSettings <- function(K=0, init.mat = "V")
   args$output <- "/scratch16/abattle4/ashton/snp_networks/scratch/testing_gwasMF_code/matrix_simulations/RUN"
   opath <- "gwasMF"
   args$simulation <- TRUE
-  args$converged_obj_change <- 0.05
+  args$sort <- FALSE #b/c default for sims.
+  args$converged_obj_change <- 0.001
+  args$std_coef <- FALSE
   if(init.mat == "U")
   {
     args$init_L <- "std"
@@ -388,6 +404,7 @@ defaultSettings <- function(K=0, init.mat = "V")
 DefaultSeed2Args <- function()
 {
   args <- list()
+  args$std_coef <- FALSE
   args$gwas_effects <-"/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwas_extracts/ukbb_GWAS_h2-0.1_rg-0.9/B.tsv"
   args$uncertainty <- "/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwas_extracts/ukbb_GWAS_h2-0.1_rg-0.9/SE.tsv"
   args$fixed_first <- TRUE
@@ -416,11 +433,13 @@ DefaultSeed2Args <- function()
   args$auto_grid_search <- FALSE
   args$regression_method = "penalized"
   args$converged_obj_change <- 0.001
+  args$sort <- TRUE
   args
 }
 YuanSimEasy <- function()
 {
   args <- list()
+  args$std_coef <- FALSE
   args$covar_matrix = ""
   args$gwas_effects <-"/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/yuan_simulations/Input_tau100_seed1_X.txt"
   args$uncertainty <- "/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/yuan_simulations/Input_tau100_seed1_W.txt"
@@ -446,6 +465,7 @@ YuanSimEasy <- function()
   args$init_L <- ""
   args$epsilon <- 1e-8
   args$verbosity <- 1
+  args$sort <- FALSE
   args$scale_n <- ""
   args$MAP_autofit <- -1
   args$auto_grid_search <- FALSE
@@ -459,6 +479,8 @@ YuanSimEasy <- function()
 UdlerArgs <- function()
 {
   args <- list()
+  args$sort <- TRUE
+  args$std_coef <- FALSE
   args$covar_matrix = ""
   args$gwas_effects <-"/scratch16/abattle4/ashton/snp_networks/scratch/udler_td2/processed_data/beta_signed_matrix.tsv"
   args$uncertainty <- "/scratch16/abattle4/ashton/snp_networks/scratch/udler_td2/processed_data/se_matrix.tsv"

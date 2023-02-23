@@ -78,10 +78,17 @@
     }
     #if we are doing the burn in....
     max.sparsity <- NULL
+    ll = NULL
+    penalty = NULL
     # Fit: xp' = FactorMp %*% l with l1 penalty on l -- |alpha1 * l|
     #Removed the transpose on X, getting the wrong dimensions
     dat_i = as.data.frame(cbind((xp), FactorMp));
     colnames(dat_i) = c('X', paste0('F', seq(1, ncol(FactorMp))));
+    if(any(is.na(colnames(dat_i))) | any(is.na(paste0('F', seq(1,ncol(FactorMp))))))
+    {
+      message("In here, what is going on?")
+      message("please debug.")
+    }
 
     if(option[["carry_coeffs"]])
     {
@@ -90,10 +97,12 @@
                       positive = FALSE, standardize = option$std_coef, trace = FALSE, startbeta = formerU);
       l = penalized::coef(fit, 'all');
       ll = fit@loglik
+      penalty = fit@penalty
     }else if (option[["regression_method"]] == "OLS") {
       fit <- RcppArmadillo::fastLmPure(as.matrix(FactorMp), xp)
-      l = coef(fit) #check this, but I think its correct
-      ll = loglik(fit)
+      l = as.vector(coef(fit)) #check this, but I think its correct
+      #ll = logLik(fit)
+      ll = penLL(length(xp), xp - as.matrix(FactorMp) %*% fit$coefficients) # hack for now
     }
     else if(option[["regression_method"]] == "glmnet" & option[["fixed_ubiq"]])
       {
@@ -119,6 +128,7 @@
                       positive = FALSE, standardize = option$std_coef, trace = FALSE);
       l = penalized::coef(fit, 'all');
       ll = fit@loglik
+      penalty = fit@penalty
     }
     else if( option[["regression_method"]] == "penalized" & option[["fixed_ubiq"]])
     {
@@ -127,6 +137,7 @@
                       positive = FALSE, standardize = option$std_coef, trace = FALSE) #maxiter = 30) #epsilon = option$epsilon)# #These limtations were hurting me...
       l = penalized::coef(fit, 'all')
       ll = fit@loglik
+      penalty = fit@penalty
       #l = penalized::coef(fit, 'all')/penalized::weights(fit)
     }	else if(option$regression_method == "None"){
       l = c()
@@ -137,9 +148,10 @@
                       positive = FALSE, standardize = option$std_coef, trace = FALSE);
       l = penalized::coef(fit, 'all');
       ll = fit@loglik
+      penalty = fit@penalty
     }
     if(option$actively_calibrating_sparsity) { max.sparsity <- rowiseMaxSparsity(xp, FactorMp)}
-    return(list("l" = l, "max_sparse"=max.sparsity, "loglik" = ll, "penalty" = fit@penalty))
+    return(list("l" = l, "max_sparse"=max.sparsity, "loglik" = ll, "penalty" = penalty))
 
   }
 
@@ -168,32 +180,45 @@
   		  #print(paste0('Updating Loading matrix takes ', round(difftime(Sys.time(), tS, units = "mins"), digits = 3)))
   		}
   		#Gettings some very bizarre errors about names and such, some weird hacks to work around it.
-  		if(length(l$l) == 1)
+  		if(option$regression_method != "None")
   		{
-  		  l$l <- matrix(l$l)
-  		  suppressMessages(names(l$l) <- "F1")
-  		}
-      if(is.null(L))
-      {
-          L = l$l
-      } else if(is.null(L) & is.null(l)){
-          message("Matrix is empty...")
-          return(list("U" = NULL, "sparsity_space"=sparsity.est))
-      } else if(any(is.na(l$l)))
-      {
-        bad.cols <- c(bad.cols, which(is.na(l$l)))
-        message("Dropping columns containing NA in burn-in, indicative of strong multi-colinearity")
-        l$l[is.na(l$l)] <- 0
-        L = suppressMessages(dplyr::bind_rows(L, l$l))
-      }
-      else{
+    		if(length(l$l) == 1)
+    		{
+    		  l$l <- matrix(l$l)
+    		  suppressMessages(names(l$l) <- "F1")
+    		}
+        if(is.null(L) | row == 1)
+        {
+            L = matrix(l$l, ncol = ncol(V))
+        } else if(is.null(L) & is.null(l)){
+            message("Matrix is empty...")
+            return(list("U" = NULL, "sparsity_space"=sparsity.est))
+        } else if(any(is.na(l$l)))
+        {
+          bad.cols <- c(bad.cols, which(is.na(l$l)))
+          message("Dropping columns containing NA in burn-in, indicative of strong multi-colinearity")
+          l$l[is.na(l$l)] <- 0
           L = suppressMessages(dplyr::bind_rows(L, l$l))
-      }
-  		if(option$actively_calibrating_sparsity) #we are in the process of burning in with OLS and calibrating sparsity
-  		{
-  		  sparsity.est <- c(sparsity.est, l$max_sparse)
-  		}
-  		running.log.lik <- running.log.lik + l$loglik
+        }
+        else{
+          if(is.null(names(L)))
+          {
+            colnames(L) = paste0("F", 1:ncol(L))
+          }
+          #if(option$regression_method == "OLS")
+         # {
+            L = rbind(L, l$l)
+          #}else
+          #{
+          #  L = suppressMessages(dplyr::bind_rows((L), (l$l)))
+          #}
+        }
+    		}
+    		if(option$actively_calibrating_sparsity) #we are in the process of burning in with OLS and calibrating sparsity
+    		{
+    		  sparsity.est <- c(sparsity.est, l$max_sparse)
+    		}
+    		running.log.lik <- running.log.lik + l$loglik
   	}
   	updateLog(paste0('Updating Loading matrix takes ', round(difftime(Sys.time(), tS, units = "mins"), digits = 3), ' min'), option);
     if(!is.null(L))

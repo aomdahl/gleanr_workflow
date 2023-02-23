@@ -161,7 +161,7 @@ DefineSparsitySpace <- function(X,W,fixed,loading, option, fit = "None")
 initV <- function(X,W,option, preV = NULL)
 {
   #message("hard-coding seed.")
-  set.seed(3)
+  #set.seed(3)
   D = ncol(X)
   if(!option[['preinitialize']])
   {
@@ -570,7 +570,7 @@ Update_FL <- function(X, W, option, preV = NULL, preU = NULL, burn.in = FALSE){
     # if number of factors decrease because of empty factor, the change in ||F||_F = 100
 
     #Tracking change in F....
-    if(CheckVEmpty(V)) {message("V is empty; ending");  return(UpdateTrackingParams(tracking.data, X,W,U,V,option))}
+    if(CheckVEmpty(V)) {message("V is empty; ending");  return(UpdateTrackingParams(tracking.data, X,W,U,V,option, loglik = iteration.ll.total))}
     colnames(V) = seq(1, ncol(V));
 
 
