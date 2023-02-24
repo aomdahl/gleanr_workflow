@@ -752,7 +752,6 @@ getBICMatrices <- function(opath,option,X,W,all_ids, names, min.iter = 2, max.it
       test <- optim(par = init.alpha, fn =  GetUBICOptim, method = "Brent", lower = min(alphas)*0.1, upper = max(alphas),
                     X=X, W=W, initV = optimal.v, option = option, control= list('trace'=1))
       u.fits <- FitUs(X, W, optimal.v, c(test$par),option, weighted = TRUE)
-      #Checkloop
       bic.list.u <- c(test$value)
       alphas <- c(test$par)
     }else
@@ -850,7 +849,7 @@ getBICMatrices <- function(opath,option,X,W,all_ids, names, min.iter = 2, max.it
     jk <- NA
     if(ncol(optimal.u) == ncol(optimal.v))
     {
-      jk <- compute_obj(X, W, optimal.u, optimal.v, option, decomp = TRUE)
+      jk <- compute_obj(X, W, optimal.u, optimal.v, option, decomp = TRUE, loglik = TRUE)
     }
 
     rec.dat$sparsity.obj[[i]] <- jk
@@ -1083,8 +1082,12 @@ runStdPipeClean <- function(args,alpha,lambda, opath = "", initV = NULL)
 gwasMFBIC <- function(X,W, snp.ids, trait.names, C = NULL, K=0, gwasmfiter =5, rep.run = FALSE, bic.var= "mle", use.init.k = FALSE, init.mat = "V", is.sim = FALSE, save.path = "")
 {
   opath = ""
-  d <- initializeGwasMF(X,W,snp.ids, trait.names, K=ifelse(use.init.k, K, 0), init.mat=init.mat) #Either use specified, or prune down as we
-  option <- d$options; args <- d$args; hp <- d$hp; all_ids <- d$all_ids; names <- d$namesl;
+  if(is.null(C))
+  {
+    C = diag(ncol(X))
+  }
+  d <- initializeGwasMF(X,W,C, snp.ids, trait.names, K=ifelse(use.init.k, K, 0), init.mat=init.mat) #Either use specified, or prune down as we
+  option <- d$options; args <- d$args; hp <- d$hp; all_ids <- d$all_ids; names <- d$namesl; W_c <- d$W_c
   option$svd_init <- TRUE; args$svd_init <- TRUE
   K.cap <- K
   option$bic.var <- bic.var
