@@ -64,13 +64,14 @@ DefineSparsitySpaceInit <- function(X, W, option, burn.in = 5)
     }
     else
     {
-      if(option$fixed_ubiq)
-      {
-        U.dat <- DefineSparsitySpace(Xint, Wint, V[,-1], "U", new.options, fit = "None")
-      }else
-      {
+      #2-24 changes
+      #if(option$fixed_ubiq)
+      #{
+      #  U.dat <- DefineSparsitySpace(Xint, Wint, V[,-1], "U", new.options, fit = "None") #this is associated with alpha
+      #}else
+      #{
         U.dat <- DefineSparsitySpace(Xint, Wint, V, "U", new.options, fit = "None")
-      }
+      #}
       new.options$K = ncol(V)
       param.space[[1]] <- list("alpha" = U.dat, "lambda"= NULL)
       return(list("V_burn" = V, "U_burn"=NULL, "max_sparsity_params"=param.space, "new.k" =new.options$K))
@@ -121,16 +122,16 @@ DefineSparsitySpaceInit <- function(X, W, option, burn.in = 5)
 #TODO: get the organization right- this is the internal function that does the work, Init version is just a wrapper around it.
 #    U.dat <- DefineSparsitySpace(Xint, Wint, V, "U", new.options, fit = "OLS")
 #Get the sparsity parameters associated with the regression step to learn "loading"
-DefineSparsitySpace <- function(X,W,fixed,loading, option, fit = "None")
+DefineSparsitySpace <- function(X,W,fixed,learning, option, fit = "None")
 {
   new.options <- option
   new.options$regression_method <- fit
   new.options$actively_calibrating_sparsity <- TRUE
-  if(loading == "V")
+  if(learning == "V")
   {
     free.dat <- FitVWrapper(X, W, fixed, new.options);
     #HERE
-  }else
+  }else #learning U
   {
     red.cols <- c(1)
     while(!is.null(red.cols))
@@ -181,7 +182,9 @@ initV <- function(X,W,option, preV = NULL)
       if(option$svd_init)
       {
         message("initializing with SVD")
+        #message("BEWARE- not including the first factor, just the 2nd and on. May be omitting important signal as a result.")
         V <- svd$u[,1:(option$K-1)]
+        #V <- svd$u[,2:(option$K)]
       } #otherwise its random.
 
     } else if(option[['f_init']] == 'plieotropy')
@@ -266,8 +269,8 @@ UpdateTrackingParams <- function(sto.obj, X,W,U,V,option, sparsity.thresh = 1e-5
   {
     sto.obj$model.loglik <- c(sto.obj$model.loglik,loglik)
   }
-    obj_updated = compute_obj(X, W, U, V, option, loglik = loglik);
-    sto.obj$decomp_obj = compute_obj(X, W, U, V, option,decomp = TRUE,loglik = loglik)
+    obj_updated = compute_obj(X, W, U, V, option);
+    sto.obj$decomp_obj = compute_obj(X, W, U, V, option,decomp = TRUE)
   if(is.na(sto.obj$obj[1]))
   {
     sto.obj$obj[1] <- obj_updated
@@ -455,7 +458,7 @@ ConvergenceConditionsMet <- function(iter,X,W, U,V,tracker,option, initV = FALSE
   #option 2: objective change is small
   #Objective hasn't been updated yet in tracker. That's the issue
 
-  obj_updated = compute_obj(X, W, U, V, option, loglik = loglik);
+  obj_updated = compute_obj(X, W, U, V, option);
   #This isnt right
   objective_change = tracker$obj[length(tracker$obj)]- obj_updated; #newer one should be smaller than previous
   obj.change.percent <- objective_change/abs(tracker$obj[length(tracker$obj)])
