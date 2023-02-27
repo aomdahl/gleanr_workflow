@@ -172,6 +172,14 @@ SelectCoarseSparsityParamsGlobal <- function(param.space,n.points = 3, logs = TR
   {
     return(NULL)
   }
+  if(all(param.space == 0))
+  {
+    message("All parameters set to 0. Terminate soon.")
+    return(rep(1e-10, n.points))
+  }
+  #The median- half of the phenotypes are zeroed out
+  #the Mode:
+  #mean- what it takes to zero out on average.
   #dm <- DensityMode(param.space)
   #mode is not high enough is some cases, want something more extreme. Just do the max.
   dm <- max(param.space)
@@ -285,7 +293,19 @@ sparsityParamsL<- function(Z, FactorM, option){
 #@param z: single row ofo the Z scores
 #@param FactorM: The F matrix we regress on
 #@return: the recommend range for a single row
-rowiseMaxSparsity <- function(z, FactorM){
+rowiseMaxSparsity <- function(z, FactorM, fixed_first = FALSE){
+
+  if(fixed_first)
+  {
+    #2-24 changes
+    #actually from yesterday
+    #may need adust this- we aren't actually going strictly against X, we maybe need to regress out 1st col?
+    #message("Correcting for fixed first factor effects!")
+    #fit <- lm(z ~ FactorM[,1] + 0)
+    FactorM <- FactorM[,-1]
+    #z <- z - fitted(fit)
+
+  }
   norm(t(FactorM) %*% z, type = "I")
 }
 

@@ -76,7 +76,7 @@ fit_V <- function(X, W, U, option, formerV = NULL){
     {
       print("all 0 case, beware.")
     }
-    if(option$actively_calibrating_sparsity) { sparsity.est <- c(sparsity.est, rowiseMaxSparsity(xp, Lp))}
+    if(option$actively_calibrating_sparsity) { sparsity.est <- c(sparsity.est, rowiseMaxSparsity(xp, Lp, fixed_first = option$fixed_ubiq))}
 		## Fit: xp = U %*% f with l1 penalty on f -- |lambda1 * f|
 		dat_i = as.data.frame(cbind(xp, Lp));
 		colnames(dat_i) = c('X', paste0('F', seq(1, ncol(Lp))));

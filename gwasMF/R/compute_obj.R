@@ -1,5 +1,5 @@
 ##############################################################################################################
-## Compute objective: ||(X - LF') .* W||_F^2 + alpha1*|L|_1 + lambda1*|F|_1
+## Compute objective:
 ##############################################################################################################
 
 
@@ -84,7 +84,7 @@ penalizedLogLikU <- function(X,W,U,V, use.resid = NULL, fixed_first = FALSE)
   total.log.lik
 }
 
-compute_obj <- function(X, W, L, FactorM, option, decomp = FALSE, loglik = TRUE){
+compute_obj <- function(X, W, L, FactorM, option, decomp = FALSE, loglik = TRUE, globalLL=FALSE){
 
 	if(is.null(FactorM) | is.null(L))
 	{
@@ -117,7 +117,15 @@ compute_obj <- function(X, W, L, FactorM, option, decomp = FALSE, loglik = TRUE)
   {
     #Residual_penalty = -loglik #passed
     #message("Replacing with my calculated log lik")
-    mine = penalizedLogLik(X,W,L,FactorM, fixed_first = FALSE)
+    if(globalLL)
+    {
+      message("Doing global ll instead...")
+      mine = penLL(nrow(X) * ncol(X),residuals )
+    }else
+    {
+      mine = penalizedLogLik(X,W,L,FactorM, fixed_first = FALSE)
+    }
+
     #message("Mine:  ", mine)
     #message("penalized_summed: ",loglik )
     Residual_penalty = -mine

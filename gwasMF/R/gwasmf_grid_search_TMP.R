@@ -64,7 +64,7 @@ initializeGwasMF <- function(X,W,C,snp.ids, trait.names, K=0, init.mat = "V")
   option$fixed_ubiqs <- TRUE
   W_c <- buildWhiteningMatrix(C, blockify = TRUE)
   list("args" = args, "options" = option,
-       "hp" = hp, "all_ids" = snp.ids, "names" = trait.names, "initk" = initk, "W_c" = W_c)
+       "hp" = hp, "all_ids" = snp.ids, "names" = trait.names, "initk" = initk)
 }
 
 
@@ -135,7 +135,7 @@ gwasMFGrid <- function(X,W, snp_ids, trait_names, C=NULL, K=0, Kmax = -1, subsam
     C <- diag(ncol(X))
   }
   d <- initializeGwasMF(X,W, C,snp_ids, trait_names, K=0)
-  option <- d$options; args <- d$args; hp <- d$hp; all_ids <- d$all_ids; names <- d$names; W_c <- d$W_c
+  option <- d$options; args <- d$args; hp <- d$hp; all_ids <- d$all_ids; names <- d$names
   option$pve_init <- FALSE
   args$pve_init <- FALSE
   args$auto_grid_search <- TRUE

@@ -162,7 +162,7 @@ CalcMatrixBIC.loglikversion <- function(X,W,U,V, which.learning, df = NULL, lm.f
 #'
 #' @return
 #' @export
-CalcMatrixBIC.loglikGLOBALversion <- function(X,W,U,V, which.learning, df = NULL, lm.fit.residuals = NULL, decomp = FALSE,...)
+CalcMatrixBIC.loglikGLOBALversion <- function(X,W,U,V, which.learning, df = NULL, lm.fit.residuals = NULL,...)
 {
   `%>%` <- magrittr::`%>%`
   n=nrow(X)
@@ -177,22 +177,13 @@ CalcMatrixBIC.loglikGLOBALversion <- function(X,W,U,V, which.learning, df = NULL
   }
   #message("Not scaling by n*d here anymore...")
   #ret <- -model.ll + (log(n*d)/(n*d))*df
-  if(decomp)
+  ret <- -2*model.ll + log(n*d)*df
+  if(!is.null(lm.fit.residuals))
   {
-    message("log fit: ", -2*model.ll)
-    message("df term: ", log(n*d)*df)
-  }
-  if(which.learning == "U" & df == 0)
-  {
-    message("Red alert: we have zeroed out everything")
-    message("This means our model thinks there is no signal whatsoever. Also possible.")
-  }
-    ret <- -2*model.ll + log(n*d)*df
-    if(!is.null(lm.fit.residuals))
-    {
       lm.ll = penLL(n*d, lm.fit.residuals)
       ret <- lm.ll/(model.ll) + (log(n*d)/(n*d))*df
-    }
+  }
+
   return(ret)
 }
 
@@ -683,7 +674,7 @@ ProposeNewSparsityParams <- function(bic.list,sparsity.params, curr.dist, curr.i
 #  bic.dat <- getBICMatrices(opath,option,X,W,all_ids, names)
   #getBICMatrices(opath,option,X,W,all_ids, names, burn.in.iter = 1)
   #option$bic.var <- "mle". #unbiased is oto strong here
-getBICMatrices <- function(opath,option,X,W,all_ids, names, min.iter = 2, max.iter = 30, burn.in.iter = 0, bic.type = 4, use.optim = TRUE)
+getBICMatrices <- function(opath,option,X,W,all_ids, names, min.iter = 2, max.iter = 20, burn.in.iter = 0, bic.type = 4, use.optim = TRUE)
 {
   message("using BIC type:  ", bic.type)
 #If we get columns with NA at this stage, we want to reset and drop those columns at the beginning.
@@ -757,7 +748,7 @@ getBICMatrices <- function(opath,option,X,W,all_ids, names, min.iter = 2, max.it
 
       #scoretest <- GetUBICOptim(init.alpha, X,W,optimal.v, option )
       #Trying this as SANN instead ob rent- meant to be bette ron rough surfaces.
-      #message('here.')
+      message('here.')
       test <- optim(par = init.alpha, fn =  GetUBICOptim, method = "Brent", lower = min(alphas)*0.1, upper = max(alphas),
                     X=X, W=W, initV = optimal.v, option = option, control= list('trace'=1))
       u.fits <- FitUs(X, W, optimal.v, c(test$par),option, weighted = TRUE)
@@ -858,7 +849,7 @@ getBICMatrices <- function(opath,option,X,W,all_ids, names, min.iter = 2, max.it
     jk <- NA
     if(ncol(optimal.u) == ncol(optimal.v))
     {
-      jk <- compute_obj(X, W, optimal.u, optimal.v, option, decomp = TRUE, loglik = TRUE)
+      jk <- compute_obj(X, W, optimal.u, optimal.v, option, decomp = TRUE)
     }
 
     rec.dat$sparsity.obj[[i]] <- jk
@@ -978,7 +969,7 @@ if(option$plots)
   plotFactors(apply(reg.run$V, 2, function(x) x/norm(x, "2")), trait_names = o$rownames, title = title)
   ggsave(paste0(option$out,opath, ".factors.png"))
 }
-#DEBUGGING: objective differs:
+
 return(reg.run)
 }
 

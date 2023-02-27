@@ -25,7 +25,6 @@ GetUBICOptim <- function(par, X,W,initV, option, weighted = TRUE, bic.method = 4
   #fit U according to the given alpha
   curr.u <- fit_U(X, W, initV, option)
   U <- curr.u$U
-  fixed_first = option$fixed_ubiq
   df.dat=MatrixDFU(U,fixed_first=FALSE) #don't account for with U
   bic = switch(
     bic.method,
