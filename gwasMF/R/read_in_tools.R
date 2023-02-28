@@ -206,24 +206,10 @@ readInLambdaGC <- function(fpath,X, names)
   }
   GC
 }
-readInData <- function(args)
-{
-  `%>%` <- magrittr::`%>%`
-  #Load the effect size data
 
-  effects <- readInBetas(args$gwas_effects, args)
-  print("asdf")
-  all_ids <- unlist(effects[,1])
-    #Get the trait names out
-  if(args$trait_names == "")
-  {
-    message("No trait names provided. Using the identifiers in the tabular effect data instead.")
-    names <- unlist(names(effects)[-1])
-  } else{
-    names <- scan(args$trait_names, what = character(), quiet = TRUE)
-  }
+SpecifyWeightingScheme <- function(effects, all_ids, args)
+{
   effects <- as.matrix(effects[,-1])
-  message("need to clean up the read in code...")
   #Look at the weighting scheme options...
   if(args$weighting_scheme == "Z" || args$weighting_scheme == "B")
   {
@@ -252,9 +238,39 @@ readInData <- function(args)
     message("No form selected. Please try again.")
     quit()
   }
+  return(list("X" = X, "W" = W))
+}
+#' Load the relevant datasets for analysis based on an argument vector
+#'
+#' @param args Specifies the paths to files and program settings to run. Includes *gwas_effects, weighting_scheme, uncertainty, genomic_correction,* and *covar_matrix arguments*
+#'
+#' @return A list with entries:
+#' "X": sorted GWAS effect sizes,
+#' "W": sorted GWAS uncertainty weights (1/SE),
+#' "ids": sorted ID order, "trait_names" = names of the traits,
+#' "C": the read in covariance matrix and "W_c": the (blockified) matrix to be used for decorrelation
+#' @export
+readInData <- function(args)
+{
+  `%>%` <- magrittr::`%>%`
+  #Load the effect size data
+
+  effects <- readInBetas(args$gwas_effects, args)
+
+    all_ids <- unlist(effects[,1])
+    #Get the trait names out
+  if(args$trait_names == "")
+  {
+    message("No trait names provided. Using the identifiers in the tabular effect data instead.")
+    names <- unlist(names(effects)[-1])
+  } else{
+    names <- scan(args$trait_names, what = character(), quiet = TRUE)
+  }
+
+  weighted.dat <- SpecifyWeightingScheme(effects, all_ids, args)
 
   #remove NAs, extreme values.
-  r <- matrixGWASQC(X,W,all_ids, is.sim = args$simulation)
+  r <- matrixGWASQC(weighted.dat$X,weighted.dat$W,all_ids, is.sim = args$simulation)
   X <- r$clean_X;  W <- r$clean_W; all_ids <- r$snp.list
     if(length(r$dropped_cols) > 1 || r$dropped_cols != 0)
   {
@@ -295,13 +311,10 @@ readInData <- function(args)
     X <- X * (1/sqrt(GC)) # we don't weight by this, we actually adjust the effect sizes by this.
   }
 
-  C=NULL
- if(args$covar_matrix != "")
- {
-   message("Including covariance structure from sample overlap...")
+   message("Reading in covariance structure from sample overlap...")
    C <- readInCovariance(args$covar_matrix, names)
- }
-  return(list("X" = X, "W" = W, "ids" = all_ids, "trait_names" = names, "C" = C))
+   W_c <- buildWhiteningMatrix(C, blockfiy = TRUE)
+  return(list("X" = X, "W" = W, "ids" = all_ids, "trait_names" = names, "C" = C, "W_c" = W_c))
 
 }
 
@@ -333,7 +346,8 @@ readInSettings <- function(args)
   option[["ridge_L"]] <- FALSE
   option[['debug']] <- args$debug
   option[["subsample"]] <- args$subsample
-  option[["gls"]] <- ifelse(args$covar_matrix != "", TRUE, FALSE)
+  #option[["gls"]] <- ifelse(args$covar_matrix != "", TRUE, FALSE)
+  option$gls <- FALSE
   option[["covar"]] <- args$covar_matrix
   option$auto_grid_search <- args$auto_grid_search
   option$sorted_vars <- args$sort

@@ -19,11 +19,11 @@ GetVBICOptim <- function(par, X,W,initU, option, weighted = TRUE, bic.method = 4
   return(bic)
 }
 
-GetUBICOptim <- function(par, X,W,initV, option, weighted = TRUE, bic.method = 4,...)
+GetUBICOptim <- function(par, X,W,W_c,initV, option, weighted = TRUE, bic.method = 4,...)
 {
   option$alpha1 <- par
   #fit U according to the given alpha
-  curr.u <- fit_U(X, W, initV, option)
+  curr.u <- fit_U(X, W,W_c, initV, option)
   U <- curr.u$U
   df.dat=MatrixDFU(U,fixed_first=FALSE) #don't account for with U
   bic = switch(

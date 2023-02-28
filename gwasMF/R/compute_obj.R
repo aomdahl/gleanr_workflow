@@ -4,7 +4,18 @@
 
 
 
-calcGlobalResiduals <- function(X,W,U,V, C = NULL, fixed_first = FALSE)
+#' Helper function to get the residuals across all terms
+#'
+#' @param X Matrix of raw effect sizes (N x M)
+#' @param W Matrix of weights corresponding to effect sizes
+#' @param U Current estimate of loadings (U, N x K)
+#' @param V Currest estimate of factors (V, M x K)
+#' @param W_c Inverse cholesky decomposition decorrelation matrix (M x M), optional
+#' @param fixed_first Do we omit the first factor?
+#'
+#' @return the matrix of residuals, N x M
+#' @export
+calcGlobalResiduals <- function(X,W,U,V, W_cov = NULL, fixed_first = FALSE)
 {
 
   if(fixed_first)
@@ -16,18 +27,19 @@ calcGlobalResiduals <- function(X,W,U,V, C = NULL, fixed_first = FALSE)
     U <- U[,-1]
     #message("Need to think about how Covariance structure applies here...")
   }
-  if(!is.null(C))
+  if(!is.null(W_cov))
   {
-    return(C %*% (W * X - W * (U %*% t(V))))
+    return((W * X - W * (U %*% t(V))) %*% t(W_cov)) #Why at the end? This is how the matrix math shakes out
   }
   return((W * X - W * (U %*% t(V))))
 }
-penalizedLogLik <- function(X,W,U,V,...)
+
+penalizedLogLik <- function(X,W,W_c, U,V,...)
 {
   #simple way
   #NOTE: this will be different from the simple sum of provided terms because those calculated at a given iteration use the previous step's U to get the liklihood when estimating V.
   #This calculation gets the liklihood as is.
-  penalizedLogLikV(X,W,U,V,...) + penalizedLogLikU(X,W,U,V,...)
+  penalizedLogLikV(X,W, U,V,...) + penalizedLogLikU(X,W,W_c,U,V,...)
 }
 
 
@@ -35,6 +47,7 @@ penalizedLogLikV <- function(X,W,U,V, use.resid = NULL,...)
 {
   #simple way
   total.log.lik <- 0
+  message("For now, not including the covariance term in the residuals WRT V- they have no bearing on the regression step.")
   residuals = calcGlobalResiduals(X,W,U,V,...)
   if(!is.null(use.resid))
   {
@@ -63,11 +76,11 @@ penLL <- function(n, resids)
   (-n/2) * (log(2*pi/n) + 1 + log(ss + .Machine$double.xmin))
 }
 
-penalizedLogLikU <- function(X,W,U,V, use.resid = NULL, fixed_first = FALSE)
+penalizedLogLikU <- function(X,W,W_c, U,V, use.resid = NULL, fixed_first = FALSE)
 {
   #simple way
   total.log.lik <- 0
-  residuals = calcGlobalResiduals(X,W,U,V)
+  residuals = calcGlobalResiduals(X,W,U,V, W_cov=W_c)
   if(!is.null(use.resid))
   {
     residuals = use.resid
@@ -84,7 +97,7 @@ penalizedLogLikU <- function(X,W,U,V, use.resid = NULL, fixed_first = FALSE)
   total.log.lik
 }
 
-compute_obj <- function(X, W, L, FactorM, option, decomp = FALSE, loglik = TRUE, globalLL=FALSE){
+compute_obj <- function(X, W, W_c, L, FactorM, option, decomp = FALSE, loglik = TRUE, globalLL=FALSE){
 
 	if(is.null(FactorM) | is.null(L))
 	{
@@ -98,7 +111,7 @@ compute_obj <- function(X, W, L, FactorM, option, decomp = FALSE, loglik = TRUE,
   }
   M = ncol(X)
   N = nrow(X)
-  residuals = calcGlobalResiduals(X,W,L, FactorM, fixed_first = FALSE);
+  residuals = calcGlobalResiduals(X,W,L, FactorM, W_cov =W_c, fixed_first = FALSE);
 	#Residual_penalty = sum(sum(residual^2));
 #	Residual_penalty = sum(residual^2) / (2 * nrow(L));
 #After some quick evaluation, we either scale everything or don't scale at all. For simplicity we scale nothing.
@@ -123,7 +136,7 @@ compute_obj <- function(X, W, L, FactorM, option, decomp = FALSE, loglik = TRUE,
       mine = penLL(nrow(X) * ncol(X),residuals )
     }else
     {
-      mine = penalizedLogLik(X,W,L,FactorM, fixed_first = FALSE)
+      mine = penalizedLogLik(X,W,W_c,L,FactorM, fixed_first = FALSE)
     }
 
     #message("Mine:  ", mine)

@@ -36,6 +36,7 @@
 #' fixed_ubiq: this allows for a ubiquitous factor by removing the L1 constraint from the first column.
 #' @param x unscaled coefficients for single SNP across M studies
 #' @param w Standard errors associated with row of x SNPs
+#' @param W_c the decorrelation covariance matrix used in the GLS form of this software.
 #' @param V Fixed factor matrix from previous iteration
 #' @param option List of setting options (here, function accesses: traitSpecificVar, gls, carry_coeffs,regression_method,actively_calibrating_sparsity)
 #' @param formerU Matrix of U from previous iteration to use in this one
@@ -54,13 +55,14 @@
 #'    option[['lambda1']] = 0.1;
 #'   L_predict = fit_U(X, W, F, option);
 #'
-  one_fit <- function(x, w, V, option, formerU, r.v){
+  one_fit <- function(x, w, W_c, V, option, formerU, r.v){
     if(option$traitSpecificVar && !is.null(r.v))
     {
       xp = x / sqrt(r.v);
       FactorMp = diag(1/sqrt(r.v)) %*% V;
     }else if(option$gls)
     {
+      message("Don't use this option, we have a better way to do it...")
       #adjusting for covariance structure....
       #We need to make the covariance matrix is mostly empty...
       covar <- diag(1/w) %*% option$covar %*% diag(1/w) #rather than doing this for each SNP each time, we should just do it once for all SNPs
@@ -73,8 +75,8 @@
       FactorMp <- adjustMatrixAsNeeded(V, covar, whitener=u_inv_t)
     }
     else{
-      xp = unlist(w * x);
-      FactorMp = diag(w) %*% V; #scaling this way is much smaller
+      xp = W_c %*% unlist(w * x);
+      FactorMp = W_c %*% (diag(w) %*% V); #scaling this way is much smaller
     }
     #if we are doing the burn in....
     max.sparsity <- NULL
@@ -156,7 +158,7 @@
   }
 
   #U = fit_U(X, W, FactorM, option, ...);
-  fit_U<- function(X, W, V, option, formerU, r.v = NULL){
+  fit_U<- function(X, W,W_c, V, option, formerU, r.v = NULL){
     bad.cols <- c()
   	L = NULL
   	sparsity.est <- c()
@@ -172,11 +174,11 @@
   		w = W[row, ];
   		if(option[['carry_coeffs']])
   		{
-  		  l = one_fit(x, w, as.matrix(V), option, formerU[row,], r.v);
+  		  l = one_fit(x, w, W_c, as.matrix(V), option, formerU[row,], r.v);
   		}		else {
   		  #l = one_fit(x, w, as.matrix(V), option, NULL, r.v);
   		  #tS = Sys.time();
-  		  l = one_fit(x,w, as.matrix(V), option, NULL, r.v);
+  		  l = one_fit(x,w,W_c, as.matrix(V), option, NULL, r.v);
   		  #print(paste0('Updating Loading matrix takes ', round(difftime(Sys.time(), tS, units = "mins"), digits = 3)))
   		}
   		#Gettings some very bizarre errors about names and such, some weird hacks to work around it.
@@ -230,7 +232,7 @@
 
 
 #Should be working fine... need to do some testing though!
-  fitUParallel <- function(X, W, V, option, formerU){
+  fitUParallel <- function(X, W, W_c, V, option, formerU){
 
     L = NULL
     tS = Sys.time()
@@ -251,8 +253,8 @@
         x = X[row, ];
         w = W[row, ];
 
-        xp = matrix(w * x, nrow = nrow(V), ncol = 1); #elementwise multiplication
-        FactorMp = diag(w) %*% v;  #same as below
+        xp = W_c %*% matrix(w * x, nrow = nrow(V), ncol = 1); #elementwise multiplication
+        FactorMp = W_c %*% diag(w) %*% v;  #same as below
         dat_i = data.frame(cbind(xp, FactorMp));
         colnames(dat_i) = c('X', paste0('F', seq(1, ncol(FactorMp))));
         fit = penalized::penalized(response = X, penalized = dat_i[,paste0('F', seq(1,ncol(FactorMp)))], data=dat_i,
@@ -274,7 +276,8 @@
 #'
 #' @param X the matrix to be decomposed (N x T, N is the number of data points, T is the number of features)
 #' @param W the weight matrix, same size as in X, containing standard errors of the GWAS estimates
-#' @param V learned factor matrix  (T x K, T is the number of features, K is the number of factors)
+#' @param W_c the whitening matrix, associated with covariance structure, a M x M
+#' @param V learned factor matrix  (M x K, M is the number of features, K is the number of factors)
 #' @param option list with parameters including lambda1, the l1 penalty parameter for the U matrix
 #' (relevant arguments include: ncores,)
 #' @param ... arguments passed on to FitU
@@ -282,16 +285,16 @@
 #' @return A list containing the return matrix U, the distribution of maximum sparsity parameters, and any columns dropped because they contained NAs
 #' @export
 #'
-  FitUWrapper <- function(X,W,V, option, prevU = NULL,...)
+  FitUWrapper <- function(X,W,W_c,V, option, prevU = NULL,...)
   {
     if(option[['ncores']] > 1) #This is not working at all. Can't tell you why. But its not. Need to spend some time debugging at some point.
     {
       log_print("Fitting L in parallel")
-      U = fitUParallel(X, W, V, option, formerU = prevU); #preL is by default Null, unless yo specify!
+      U = fitUParallel(X, W,W_c, V, option, formerU = prevU); #preL is by default Null, unless yo specify!
 
     }else
     {
-      U = fit_U(X, W, V, option,formerU = prevU, ...);
+      U = fit_U(X, W, W_c, V, option,formerU = prevU, ...);
 
     }
     return(U)

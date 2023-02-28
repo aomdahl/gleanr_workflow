@@ -118,7 +118,7 @@ CalcMatrixBIC.loglikversion <- function(X,W,U,V, which.learning, df = NULL, lm.f
   }else
   {
     #learning U
-    model.ll = penalizedLogLikU(X,W,U,V)
+    model.ll = penalizedLogLikU(X,W,W_c,U,V)
   }
   if(is.null(df))
   {
@@ -134,7 +134,7 @@ CalcMatrixBIC.loglikversion <- function(X,W,U,V, which.learning, df = NULL, lm.f
     }else
     {
       #learning U
-      lm.ll = penalizedLogLikU(X,W,U,V, use.resid = lm.fit.residuals)
+      lm.ll = penalizedLogLikU(X,W,W_c,U,V, use.resid = lm.fit.residuals)
     }
     #ret <- neg.ll/(lm.ll) + (log(n*d)/(n*d))*df
     #the goal is to get a ratio which is SMALLER if the fit is better, larger if the fit is worse.
@@ -162,7 +162,7 @@ CalcMatrixBIC.loglikversion <- function(X,W,U,V, which.learning, df = NULL, lm.f
 #'
 #' @return
 #' @export
-CalcMatrixBIC.loglikGLOBALversion <- function(X,W,U,V, which.learning, df = NULL, lm.fit.residuals = NULL, decomp = FALSE,...)
+CalcMatrixBIC.loglikGLOBALversion <- function(X,W,U,V, which.learning, W_cov = NULL, df = NULL, lm.fit.residuals = NULL, decomp = FALSE,...)
 {
   `%>%` <- magrittr::`%>%`
   n=nrow(X)
@@ -418,7 +418,7 @@ DropEmptyColumnsPipe <- function(lin)
 }
 
 #Recalculate the sparsity params for U
-FitUs <- function(X, W, initV, alphas,option, weighted = FALSE)
+FitUs <- function(X, W, W_c, initV, alphas,option, weighted = FALSE)
 {
   bic.var = option$bic.var
   l.fits <- list()
@@ -427,7 +427,7 @@ FitUs <- function(X, W, initV, alphas,option, weighted = FALSE)
     a <- alphas[[i]]
     message(i)
     option$alpha1 <- a
-    l.fits[[i]] <- fit_U(X, W, initV, option)
+    l.fits[[i]] <- fit_U(X, W, W_c, initV, option)
 
   }
   #TODO: recode this, so don't need the logic statement. Downstream should be able to handle it
@@ -683,11 +683,12 @@ ProposeNewSparsityParams <- function(bic.list,sparsity.params, curr.dist, curr.i
 #  bic.dat <- getBICMatrices(opath,option,X,W,all_ids, names)
   #getBICMatrices(opath,option,X,W,all_ids, names, burn.in.iter = 1)
   #option$bic.var <- "mle". #unbiased is oto strong here
-getBICMatrices <- function(opath,option,X,W,all_ids, names, min.iter = 2, max.iter = 30, burn.in.iter = 0, bic.type = 4, use.optim = TRUE)
+getBICMatrices <- function(opath,option,X,W,W_c, all_ids, names, min.iter = 2, max.iter = 30, burn.in.iter = 0, bic.type = 4, use.optim = TRUE)
 {
   message("using BIC type:  ", bic.type)
 #If we get columns with NA at this stage, we want to reset and drop those columns at the beginning.
-  burn.in.sparsity <- DefineSparsitySpaceInit(X, W, option, burn.in = burn.in.iter) #If this finds one with NA, cut them out here, and reset K; we want to check pve here too.
+  #Currently, just using NULL for W_ld
+  burn.in.sparsity <- DefineSparsitySpaceInit(X, W, W_c, NULL, option, burn.in = burn.in.iter) #If this finds one with NA, cut them out here, and reset K; we want to check pve here too.
 
   #optimal.v <- DropLowPVE(X,W,burn.in.sparsity$V_burn, thresh = 0.01)  #skipping... in sims seems to be bad?
   if(option$u_init != "")
@@ -728,7 +729,7 @@ getBICMatrices <- function(opath,option,X,W,all_ids, names, min.iter = 2, max.it
     rec.dat$V_sparsities = c(rec.dat$V_sparsities, matrixSparsity(optimal.v, ncol(X)));
     rec.dat$bic.l <- c(rec.dat$bic.l,unlist(v.fits$BIC[,bic.type]))
     #update the parameters for U based on the new V
-    u.sparsity <- DefineSparsitySpace(X,W,optimal.v, "U", option) #Here in case we hit the max.
+    u.sparsity <- DefineSparsitySpace(X,W,W_c, optimal.v, "U", option) #Here in case we hit the max.
     alphas <- SelectCoarseSparsityParamsGlobal(u.sparsity, n.points = 15)
   }
   #$Remove low PVE right now.
@@ -759,13 +760,13 @@ getBICMatrices <- function(opath,option,X,W,all_ids, names, min.iter = 2, max.it
       #Trying this as SANN instead ob rent- meant to be bette ron rough surfaces.
       #message('here.')
       test <- optim(par = init.alpha, fn =  GetUBICOptim, method = "Brent", lower = min(alphas)*0.1, upper = max(alphas),
-                    X=X, W=W, initV = optimal.v, option = option, control= list('trace'=1))
-      u.fits <- FitUs(X, W, optimal.v, c(test$par),option, weighted = TRUE)
+                    X=X, W=W, initV = optimal.v, option = option, W_c = W_c, control= list('trace'=1))
+      u.fits <- FitUs(X, W, W_c, optimal.v, c(test$par),option, weighted = TRUE)
       bic.list.u <- c(test$value)
       alphas <- c(test$par)
     }else
     {
-      u.fits <- FitUs(X, W, optimal.v, alphas,option, weighted = TRUE)
+      u.fits <- FitUs(X, W, W_c, optimal.v, alphas,option, weighted = TRUE)
       bic.list.u <- unlist(u.fits$BIC[,bic.type])
 
     }
@@ -781,7 +782,7 @@ getBICMatrices <- function(opath,option,X,W,all_ids, names, min.iter = 2, max.it
 
     #now get the new lambdas for V:
     #Is this what we want?
-    v.sparsity <- DefineSparsitySpace(X,W,as.matrix(optimal.u),"V", option)
+    v.sparsity <- DefineSparsitySpace(X,W,W_ld, as.matrix(optimal.u),"V", option)
     if((i == 1 & option$u_init == "") | use.optim)
     {
       lambdas <- SelectCoarseSparsityParamsGlobal(v.sparsity, n.points = 15)
@@ -839,7 +840,7 @@ getBICMatrices <- function(opath,option,X,W,all_ids, names, min.iter = 2, max.it
     }
 
     #update the parameters for U based on the new V
-    u.sparsity <- DefineSparsitySpace(X,W,optimal.v, "U", option) #Here in case we hit the max.
+    u.sparsity <- DefineSparsitySpace(X,W,W_c, optimal.v, "U", option) #Here in case we hit the max.
     if(use.optim)
     {
       alphas <- SelectCoarseSparsityParamsGlobal(u.sparsity, n.points = 15)
@@ -907,7 +908,7 @@ checkConvergenceBICSearch <- function(index, record.data, conv.perc.thresh = 0.1
 #TODO: try with random, and with non-random.
 #gwasML_ALS_Routine(opath, option, X, W, bic.dat$optimal.v)
 # gwasML_ALS_Routine(opath, option, X, W, bic.dat$optimal.v)
-gwasML_ALS_Routine <- function(option, X, W, optimal.init, maxK=0, opath = "")
+gwasML_ALS_Routine <- function(option, X, W,W_c, optimal.init, maxK=0, opath = "")
 {
 
   message(paste0("Starting at k:", option$K))
@@ -915,7 +916,7 @@ gwasML_ALS_Routine <- function(option, X, W, optimal.init, maxK=0, opath = "")
 #{
 #  reg.run <- Update_FL(X, W, option, preU = optimal.init)
 #}
-reg.run <- Update_FL(X, W, option, preV = optimal.init)
+reg.run <- Update_FL(X, W, W_c, option, preV = optimal.init)
 
 if(maxK != 0)
 {
@@ -996,7 +997,7 @@ runFullPipeClean <- function(args, gwasmfiter =5, save.pipe = FALSE,rep.run = FA
   #Read in the hyperparameters to explore
   hp <- readInParamterSpace(args)
   input.dat <- readInData(args)
-  X <- input.dat$X; W <- input.dat$W; all_ids <- input.dat$ids; names <- input.dat$trait_names
+  X <- input.dat$X; W <- input.dat$W; all_ids <- input.dat$ids; names <- input.dat$trait_names; W_c <- input.dat$W_c
   if(option$K == 0)
   {
     message('Iniitializing X to the max -1')
@@ -1010,17 +1011,17 @@ runFullPipeClean <- function(args, gwasmfiter =5, save.pipe = FALSE,rep.run = FA
     set.seed(22)
     option$svd_init <- FALSE
     bii = 4
-    bic.dat2 <- getBICMatrices(opath,option,X,W,all_ids, names, burn.in.iter = bii, ...)
-    bic.dat3 <- getBICMatrices(opath,option,X,W,all_ids, names, burn.in.iter = bii, ...)
-    bic.dat4 <- getBICMatrices(opath,option,X,W,all_ids, names, burn.in.iter = bii, ...)
-    bic.dat5 <- getBICMatrices(opath,option,X,W,all_ids, names, burn.in.iter = bii, ...)
+    bic.dat2 <- getBICMatrices(opath,option,X,W,W_c,all_ids, names, burn.in.iter = bii, ...)
+    bic.dat3 <- getBICMatrices(opath,option,X,W,W_c,all_ids, names, burn.in.iter = bii, ...)
+    bic.dat4 <- getBICMatrices(opath,option,X,W,W_c,all_ids, names, burn.in.iter = bii, ...)
+    bic.dat5 <- getBICMatrices(opath,option,X,W,W_c,all_ids, names, burn.in.iter = bii, ...)
       if(save.pipe) {
         save(bic.dat2,bic.dat3,bic.dat4,bic.dat5, file = paste0(option$out,"BIC_iter.MULTIPLES.Rdata" ))
       }
     }
 
 
-  bic.dat <- getBICMatrices(opath,option,X,W,all_ids, names, burn.in.iter = bii, ...)
+  bic.dat <- getBICMatrices(opath,option,X,W,W_c, all_ids, names, burn.in.iter = bii, ...)
 
   if(save.pipe) {
   save(bic.dat, file = paste0(option$out,opath, "BIC_iter.Rdata" ))
@@ -1029,7 +1030,7 @@ runFullPipeClean <- function(args, gwasmfiter =5, save.pipe = FALSE,rep.run = FA
   option$K <- bic.dat$K
   option$alpha1 <- bic.dat$alpha
   option$lambda1 <- bic.dat$lambda
-  ret <- gwasML_ALS_Routine(option, X, W, bic.dat$optimal.v, maxK=bic.dat$K) #I like this better
+  ret <- gwasML_ALS_Routine(option, X, W, W_c, bic.dat$optimal.v, maxK=bic.dat$K) #I like this better
   ret[["snp.ids"]] <- all_ids
   ret[["trait.names"]] <- names
   list("als" = ret, "bic.search"=bic.dat)
@@ -1064,7 +1065,7 @@ runStdPipeClean <- function(args,alpha,lambda, opath = "", initV = NULL)
 
   option$alpha1 <- alpha
   option$lambda1 <- lambda
-  ret <-gwasML_ALS_Routine(option, X, W, initV, maxK = option$K)
+  ret <-gwasML_ALS_Routine(option, X, W, W_c, initV, maxK = option$K)
   ret[["snp.ids"]] <- all_ids
   ret[["trait.names"]] <- names
   ret
@@ -1102,7 +1103,7 @@ gwasMFBIC <- function(X,W, snp.ids, trait.names, C = NULL, K=0, gwasmfiter =5, r
   option$bic.var <- bic.var
   #Do the bic learning...
   use.optim <- TRUE
-  bic.dat <- getBICMatrices(opath,option,X,W,all_ids, names)
+  bic.dat <- getBICMatrices(opath,option,X,W,W_c, all_ids, names)
   if(is.sim)
   {
     save(bic.dat, file = paste0(save.path, "bic.RData"))
@@ -1111,10 +1112,10 @@ gwasMFBIC <- function(X,W, snp.ids, trait.names, C = NULL, K=0, gwasmfiter =5, r
   if(rep.run)
   {
     option$svd_init <- FALSE
-    bic.dat2 <- getBICMatrices(opath,option,X,W,all_ids, names)
-    bic.dat3 <- getBICMatrices(opath,option,X,W,all_ids, names)
-    bic.dat4 <- getBICMatrices(opath,option,X,W,all_ids, names)
-    bic.dat5 <- getBICMatrices(opath,option,X,W,all_ids, names)
+    bic.dat2 <- getBICMatrices(opath,option,X,W,W_c, all_ids, names)
+    bic.dat3 <- getBICMatrices(opath,option,X,W,W_c,all_ids, names)
+    bic.dat4 <- getBICMatrices(opath,option,X,W,W_c,all_ids, names)
+    bic.dat5 <- getBICMatrices(opath,option,X,W,W_c,all_ids, names)
   }
 
   option <- bic.dat$options
@@ -1142,7 +1143,7 @@ gwasMFBIC <- function(X,W, snp.ids, trait.names, C = NULL, K=0, gwasmfiter =5, r
           option$V <- TRUE
           option$alpha1 <- alphas.many[i] #Best from the previous. Seems to have converd..
           option$lambda1 <- lambdas.many[i]
-          ret.list[[j]] <- gwasML_ALS_Routine(option, X, W, NULL, maxK=K.cap)
+          ret.list[[j]] <- gwasML_ALS_Routine(option, X, W,W_c, NULL, maxK=K.cap)
         }
         all.runs[[i]] <- ret.list
       }
@@ -1158,7 +1159,7 @@ gwasMFBIC <- function(X,W, snp.ids, trait.names, C = NULL, K=0, gwasmfiter =5, r
     ret <- all.runs[[best]][[1]]
   } else
   {
-    ret <- gwasML_ALS_Routine(option, X, W, bic.dat$optimal.v, maxK=K.cap)
+    ret <- gwasML_ALS_Routine(option, X, W, W_c, bic.dat$optimal.v, maxK=K.cap)
     if(is.sim)
     {
       save(ret, file = paste0(save.path, "als.RData"))

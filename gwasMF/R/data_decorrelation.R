@@ -60,13 +60,13 @@ blockify <- function(cormat, blocks)
 #buildWhiteningMatrix(decorrelate)
 buildWhiteningMatrix<- function(covar, blockify = FALSE,...)
 {
+  if(is.null(covar)){
+    message("buildWhiteningMatrix- decorrelating with an identity matrix.")
+    return(diag(nrow(covar))) #Just return an identity matrix, we aren't going to do anything....
+  }
   if(blockify)
   {
     covar <- blockifyCovarianceMatrix(covar,...)
-  }
-  if(is.null(covar)){
-    message("here... where we should be")
-    return(NULL)
   }
   if(!isSymmetric(covar, tol=1e-3))
   {
@@ -79,7 +79,9 @@ buildWhiteningMatrix<- function(covar, blockify = FALSE,...)
     covar <- lqmm::make.positive.definite(covar)
   }
 
-  solve(t(chol(covar)))
+  #I think this was wrong...
+  #solve(t(chol(covar)))
+  solve((chol(covar)))
 }
 
 #Account for whitening, if sppecified:

@@ -39,7 +39,7 @@ cor2 <- function(x) {
 #@return U_burn: the burn-in estimate of U
 #@return max_sparsity_params: a list indexed by iteration containing the list of max alphas and lambdas (i.e. list[[i]]$alpha))
 #DefineSparsitySpaceInit(X, W, option, burn.in = burn.in.iter)
-DefineSparsitySpaceInit <- function(X, W, option, burn.in = 5)
+DefineSparsitySpaceInit <- function(X, W,W_c, W_ld, option, burn.in = 5)
 {
   #Perform burn.in # of iterations with no sparsity (OLS) and calculate the maximum sparsity value at each step.
   new.options <- option
@@ -57,7 +57,7 @@ DefineSparsitySpaceInit <- function(X, W, option, burn.in = 5)
     {
       message("initializing with U")
       U <- initU(Xint, Wint, new.options)
-      V.dat <- DefineSparsitySpace(Xint, Wint, U, "V", new.options, fit = "None")
+      V.dat <- DefineSparsitySpace(Xint, Wint, W_ld, U, "V", new.options, fit = "None")
       new.options$K = ncol(U)
       param.space[[1]] <- list("alpha" = NULL, "lambda"= V.dat)
       return(list("V_burn" =NULL , "U_burn"=U, "max_sparsity_params"=param.space, "new.k" =new.options$K))
@@ -70,7 +70,7 @@ DefineSparsitySpaceInit <- function(X, W, option, burn.in = 5)
       #  U.dat <- DefineSparsitySpace(Xint, Wint, V[,-1], "U", new.options, fit = "None") #this is associated with alpha
       #}else
       #{
-        U.dat <- DefineSparsitySpace(Xint, Wint, V, "U", new.options, fit = "None")
+        U.dat <- DefineSparsitySpace(Xint, Wint,W_c, V, "U", new.options, fit = "None")
       #}
       new.options$K = ncol(V)
       param.space[[1]] <- list("alpha" = U.dat, "lambda"= NULL)
@@ -88,12 +88,12 @@ DefineSparsitySpaceInit <- function(X, W, option, burn.in = 5)
   {
     print(i)
     #U.dat <- FitUWrapper(Xint,Wint,V, new.options)
-    U.dat <- DefineSparsitySpace(Xint, Wint, V, "U", new.options, fit = "OLS")
+    U.dat <- DefineSparsitySpace(Xint, Wint, W_ld, V, "U", new.options, fit = "OLS")
     new.options$K = ncol(U.dat$U) #Update if it has changed
     #If we have ones with NA, they need to get dropped
     #if we have columns with NAs here, we want them gone now so it doesn't jank up downstream stuff.
     #V.dat <- FitVWrapper(Xint, Wint, U.dat$U, new.options, V);
-    V.dat <- DefineSparsitySpace(Xint, Wint,U.dat$U, "V", new.options, fit = "OLS")
+    V.dat <- DefineSparsitySpace(Xint, Wint,W_ld,U.dat$U, "V", new.options, fit = "OLS")
     if(i > 3)
     {
       #this might be high but oh well...
@@ -122,22 +122,41 @@ DefineSparsitySpaceInit <- function(X, W, option, burn.in = 5)
 #TODO: get the organization right- this is the internal function that does the work, Init version is just a wrapper around it.
 #    U.dat <- DefineSparsitySpace(Xint, Wint, V, "U", new.options, fit = "OLS")
 #Get the sparsity parameters associated with the regression step to learn "loading"
-DefineSparsitySpace <- function(X,W,fixed,learning, option, fit = "None")
+#TODO: makea. test here to check the dimensions of W_c and X and fixed. Needs to line upo.
+#' Title
+#'
+#' @param X
+#' @param W
+#' @param W_cov
+#' @param fixed
+#' @param learning
+#' @param option
+#' @param fit
+#'
+#' @return
+#' @export
+
+DefineSparsitySpace <- function(X,W,W_cov,fixed,learning, option, fit = "None")
 {
   new.options <- option
   new.options$regression_method <- fit
   new.options$actively_calibrating_sparsity <- TRUE
+
   if(learning == "V")
   {
+    #Not implemented W_cov adjustment for V at this time...
     free.dat <- FitVWrapper(X, W, fixed, new.options);
     #HERE
   }else #learning U
   {
+    #Check: ensure
+    stopifnot(!is.null(W_cov))
+    stopifnot(nrow(W_cov) == ncol(X))
     red.cols <- c(1)
     while(!is.null(red.cols))
     {
 
-      free.dat <- FitUWrapper(X,W, fixed, new.options)
+      free.dat <- FitUWrapper(X,W, W_cov, fixed, new.options)
       red.cols <- free.dat$redundant_cols
       if(!is.null(red.cols)){
         message("capturing redundant columns...")
@@ -511,7 +530,7 @@ MatrixChange <- function(new, old)
 
 #Main workhorse function
 #1.26 changes- drop the burn in.
-Update_FL <- function(X, W, option, preV = NULL, preU = NULL, burn.in = FALSE){
+Update_FL <- function(X, W, W_c, option, preV = NULL, preU = NULL, burn.in = FALSE){
   # number of features - to avoid using T in R
   D = ncol(X)
   tStart0 = Sys.time()
@@ -529,7 +548,7 @@ Update_FL <- function(X, W, option, preV = NULL, preU = NULL, burn.in = FALSE){
 
   } else if(burn.in)
   {
-    burn.in.sparsity <- DefineSparsitySpaceInit(X, W, option, burn.in = 4)
+    burn.in.sparsity <- DefineSparsitySpaceInit(X, W,W_c, option, burn.in = 4)
     V <- burn.in.sparsity$V_burn
   }
   else{ #initialize by F as normal.
@@ -543,7 +562,7 @@ Update_FL <- function(X, W, option, preV = NULL, preU = NULL, burn.in = FALSE){
   #Case where you use previous iteration estimates to inform next iteration..
   og_option <- option[['carry_coeffs']]
   option[['carry_coeffs']] <- FALSE
-  U = FitUWrapper(X,W,V, option)
+  U = FitUWrapper(X,W,W_c,V, option)
   U <- U$U
   option[['carry_coeffs']] <- og_option
 
@@ -578,7 +597,7 @@ Update_FL <- function(X, W, option, preV = NULL, preU = NULL, burn.in = FALSE){
 
 
     ## update L
-    U <- FitUWrapper(X,W,V, option,r.v = trait.var[iii,])
+    U <- FitUWrapper(X,W,W_c,V, option,r.v = trait.var[iii,])
     iteration.ll.total <- iteration.ll.total + U$total.log.lik
     if(length(U$redundant_cols) > 0)
     {
