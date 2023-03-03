@@ -58,11 +58,11 @@ blockify <- function(cormat, blocks)
 
 
 #buildWhiteningMatrix(decorrelate)
-buildWhiteningMatrix<- function(covar, blockify = FALSE,...)
+buildWhiteningMatrix<- function(covar, dim, blockify = FALSE,...)
 {
   if(is.null(covar)){
     message("buildWhiteningMatrix- decorrelating with an identity matrix.")
-    return(diag(nrow(covar))) #Just return an identity matrix, we aren't going to do anything....
+    return(diag((dim))) #Just return an identity matrix, we aren't going to do anything....
   }
   if(blockify)
   {
@@ -96,7 +96,7 @@ adjustMatrixAsNeeded <- function(X, covar, whitener = NULL)
   {
     if(is.null(whitener))
     {
-      U_t_inv <- buildWhiteningMatrix(covar)
+      U_t_inv <- buildWhiteningMatrix(covar, ncol(X))
     }else
     {
       U_t_inv <- whitener

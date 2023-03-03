@@ -29,9 +29,9 @@ GetUBICOptim <- function(par, X,W,W_c,initV, option, weighted = TRUE, bic.method
   bic = switch(
     bic.method,
     "1" = CalcMatrixBIC(t(X),t(W),initV,U,df=df.dat,...), #if you do this, more nuanced things needed.
-    '2' =  CalcMatrixBIC.loglikversion(X,W,U,initV, which.learning = "U", df = df.dat),
+    '2' =  CalcMatrixBIC.loglikversion(X,W,U,initV, which.learning = "U",W_cov = W_c, df = df.dat),
     '3' = NA,
-    "4" = CalcMatrixBIC.loglikGLOBALversion(X,W,U,initV, which.learning = "U", df = df.dat)
+    "4" = CalcMatrixBIC.loglikGLOBALversion(X,W,U,initV, which.learning = "U", W_cov = W_c, df = df.dat)
   )
   return(bic)
 }

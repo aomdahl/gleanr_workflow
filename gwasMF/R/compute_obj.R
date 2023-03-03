@@ -162,7 +162,7 @@ compute_obj <- function(X, W, W_c, L, FactorM, option, decomp = FALSE, loglik = 
   }
 	return(obj)
 }
-reportObjectivePerFactor <- function(X,W,L,FactorM, option)
+reportObjectivePerFactor <- function(X,W,W_c,L,FactorM, option)
 {
   init = 1
   if(option$fixed_ubiq)
@@ -179,7 +179,7 @@ reportObjectivePerFactor <- function(X,W,L,FactorM, option)
     print(curr.indices)
     #does adding this in increase our objective
     #What do we do with the objective and ubiq 1?
-    print(compute_obj(X, W, L[,curr.indices], FactorM[,curr.indices], option))
+    print(compute_obj(X, W,W_c, L[,curr.indices], FactorM[,curr.indices], option))
   }
 
 }
@@ -194,19 +194,22 @@ reportObjectivePerFactor <- function(X,W,L,FactorM, option)
 
 calcMSE <- function(X,W,Fa, L,...)
 {
-
+  message("Not accounting for covariance here, just looking at mse with data.")
   sum(calcGlobalResiduals(X,W,L,Fa)^2,...)
 }
 
 #Beta test function- can we pick out the best factors by how they contribute (or don't) to the objective?
 #This will balance in sparsity better than PVE does.
-#DropFactorsByObjective(X,W,reg.run$U,reg.run$V, minK=maxK, option, maxK = maxK)
-DropFactorsByObjective <- function(X,W,U,V, minK, option, maxK = NULL,drop.min.change = TRUE)
+DropFactorsByObjective <- function(X,W,W_c,U,V, minK, option, maxK = NULL,drop.min.change = TRUE)
 {
-	if(is.null(maxK) | maxK == 0)
+
+	if(is.null(maxK) | length(maxK) == 0 | maxK == 0)
 	{
 		maxK = ncol(X) - 1
+	  message("Warning case- beware.. max k is off.")
 	}
+  print(maxK)
+  print("Did this work???")
   #1) End if only 1 column left doing fixed ubiq version
   if(ncol(as.matrix(V)) == 1 && option$fixed_ubiq)
   {
@@ -227,7 +230,7 @@ DropFactorsByObjective <- function(X,W,U,V, minK, option, maxK = NULL,drop.min.c
     return(list("U"=U, "V" = V, "K" = ncol(V)))
   }
   # function(X, W, L, FactorM, option)
-  init.obj <- compute_obj(X,W, U, V, option)
+  init.obj <- compute_obj(X,W,W_c, U, V, option)
   drop.set <- remaining.set
   if(option$fixed_ubiq)
   {
@@ -243,7 +246,7 @@ DropFactorsByObjective <- function(X,W,U,V, minK, option, maxK = NULL,drop.min.c
   #A greedy approach to remove factors- drop the one that minimizes the objective overall
   for(i in drop.set) #we don't drop ubiq one
   {
-    new.obj <- compute_obj(X,W, U[,-i], V[,-i], option, loglik = TRUE)
+    new.obj <- compute_obj(X,W,W_c, U[,-i], V[,-i], option, loglik = TRUE)
      if(new.obj < min.obj)
     {
       min.index <- i
@@ -259,7 +262,7 @@ DropFactorsByObjective <- function(X,W,U,V, minK, option, maxK = NULL,drop.min.c
     min.increase = Inf
     for(i in drop.set) #we don't drop ubiq one
     {
-      new.obj <- compute_obj(X,W, U[,-i], V[,-i], option)
+      new.obj <- compute_obj(X,W,W_c, U[,-i], V[,-i], option)
       diff = new.obj - init.obj
       if(diff < min.increase)
       {
@@ -267,7 +270,7 @@ DropFactorsByObjective <- function(X,W,U,V, minK, option, maxK = NULL,drop.min.c
         min.increase <- diff
       }
     }
-    return(DropFactorsByObjective(X,W,U[,-min.index],V[,-min.index], minK, option, maxK = maxK, drop.min.change = TRUE))
+    return(DropFactorsByObjective(X,W,W_c,U[,-min.index],V[,-min.index], minK, option, maxK = maxK, drop.min.change = TRUE))
   }
 
 
@@ -275,7 +278,7 @@ DropFactorsByObjective <- function(X,W,U,V, minK, option, maxK = NULL,drop.min.c
   if((min.obj == init.obj | min.index == -1) & (ncol(U) > maxK))
   {
     #Now we need to call the funciton again, except this time specify the condition of choosing the one which increases the objective the smallest amount.
-    return(DropFactorsByObjective(X,W,U[,-min.index],V[,-min.index], minK, option, maxK = maxK, drop.min.change = TRUE))
+    return(DropFactorsByObjective(X,W,W_c,U[,-min.index],V[,-min.index], minK, option, maxK = maxK, drop.min.change = TRUE))
   }
   #3) End if dropping any more factors increases the objective and we have reached the max number of K
   else if((min.obj == init.obj | min.index == -1) & (ncol(U) <= maxK))
@@ -283,12 +286,49 @@ DropFactorsByObjective <- function(X,W,U,V, minK, option, maxK = NULL,drop.min.c
     return(list("U"=U, "V" = V, "K" = ncol(V)))
   }else
   {
-    return(DropFactorsByObjective(X,W,U[,-min.index],V[,-min.index], minK, option))
+    return(DropFactorsByObjective(X,W,W_c,U[,-min.index],V[,-min.index], minK, option, maxK=maxK))
   }
 }
 
 PruneFactorsByObjective <- function(X,W,U,V, minK, option)
 {
-  keep.dat <- DropFactorsByObjective(X,W,U,V, minK, option)
+  keep.dat <- DropFactorsByObjective(X,W,W_c,U,V, minK, option)
   return(list("U"))
 }
+
+#' Calculate the change in objective with each individual matrix update
+#'
+#' @param X data
+#' @param W uncertainty
+#' @param W_c decorrelation matrix
+#' @param old.mat the old version of the matrix you just updated
+#' @param new.mat the new version of the matrix you just updated
+#' @param companion.mat the complement of the matrix you just updated
+#' @param fixed.term which term the complement is (u or v)
+#' @param option list of options
+#' @return at list of updated objectives with each change
+#' @export
+GetStepWiseObjective <- function(X,W,W_c,old.mat,new.mat, companion.mat,fixed.term, option)
+{
+  iteration.objectives <- c()
+    temp.mat <- old.mat
+    if(ncol(old.mat) > ncol(new.mat))
+    {
+      for(i in 1:(ncol(old.mat) - ncol(new.mat)))
+      {
+        new.mat <- cbind(new.mat, rep(0, nrow(new.mat)))
+      }
+    }
+    for(r in 1:nrow(new.mat))
+    {
+      temp.mat[r,] <- new.mat[r,] #update at each step.
+      if(fixed.term == "U") #we were learning V
+      {
+        iteration.objectives <- c(iteration.objectives, compute_obj(X,W,W_c,L = companion.mat, FactorM = temp.mat, option, globalLL = TRUE))
+      }else
+      {
+        iteration.objectives <- c(iteration.objectives, compute_obj(X,W,W_c,L = temp.mat, FactorM = companion.mat,option, globalLL = TRUE))
+      }
+    }
+    iteration.objectives
+  }

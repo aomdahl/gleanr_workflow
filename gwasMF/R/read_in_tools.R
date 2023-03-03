@@ -136,7 +136,7 @@ readInBetas <- function(fpath, option)
 #This code was copied from "projection_regression_helper.R", but belongs here
 readInCovariance <- function(p, name_order)
 {
-  if(p == "") {return(NULL)}
+  if(p == "" | is.null(p)) {return(NULL)}
   else
   {
     message("We make the strong assumption that the matrix rows and columns are in the same order. (check by looking at diags)")
@@ -313,7 +313,7 @@ readInData <- function(args)
 
    message("Reading in covariance structure from sample overlap...")
    C <- readInCovariance(args$covar_matrix, names)
-   W_c <- buildWhiteningMatrix(C, blockfiy = TRUE)
+   W_c <- buildWhiteningMatrix(C, ncol(X), blockfiy = TRUE)
   return(list("X" = X, "W" = W, "ids" = all_ids, "trait_names" = names, "C" = C, "W_c" = W_c))
 
 }
@@ -344,7 +344,7 @@ readInSettings <- function(args)
   option[["parallel"]] <- FALSE
   option[["fastReg"]] <- FALSE
   option[["ridge_L"]] <- FALSE
-  option[['debug']] <- args$debug
+  option[['debug']] <- FALSE #args$debug
   option[["subsample"]] <- args$subsample
   #option[["gls"]] <- ifelse(args$covar_matrix != "", TRUE, FALSE)
   option$gls <- FALSE

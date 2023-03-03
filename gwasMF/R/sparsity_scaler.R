@@ -139,10 +139,10 @@ DensityMode <- function(ln)
 }
 
 #Wrapper for quickly selecting coarse sparsity params from scratch, with burn in.
-GetCoarseSparsityParams <- function(X,W,option, burn.in.reps = 1,...)
+GetCoarseSparsityParams <- function(X,W,W_c,option, burn.in.reps = 1,...)
 {
   message("In here...")
-  param.space <- DefineSparsitySpaceInit(X, W, option, burn.in = burn.in.reps)
+  param.space <- DefineSparsitySpaceInit(X, W,W_c,NULL, option, burn.in = burn.in.reps)
   return(SelectCoarseSparsityParams(param.space,burn.in.reps,...))
 }
 

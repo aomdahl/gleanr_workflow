@@ -68,16 +68,42 @@ initializeGwasMF <- function(X,W,C,snp.ids, trait.names, K=0, init.mat = "V")
 }
 
 
-singleRunFromScratch <- function(X,W,a, l, option, niter = 50)
+#' Perform a single itertion of factorization with given options and arguments
+#' I'm pretty sure this is redundant with other code, but here is again.
+#'
+#' @param X input data matrix
+#' @param W uncertainy matrix
+#' @param W_c decorrelation matrix
+#' @param a alpha to run at
+#' @param l lambda to run at
+#' @param option option settings
+#' @param niter how many iterations to allow.
+#'
+#' @return the full factorization return data
+#' @export
+singleRunFromScratch <- function(X,W,W_c,a, l, option, niter = 100)
 {
   option[['alpha1']] <- as.numeric(a)
   option[['lambda1']] <- as.numeric(l)
   option$iter <- niter
-  Update_FL(as.matrix(X), as.matrix(W), option)
+  Update_FL(as.matrix(X), as.matrix(W),W_c, option)
 }
 
 #getGridMatrices(args, option, alphas, lambdas, param.iters)
-getGridMatrices <- function(X,W,args, option, alphas, lambdas, param.iters)
+#' Performs the grid expansion for alphas and lambdas introduced here..
+#'
+#' @param X data matrix
+#' @param W uncertainty weightings
+#' @param W_c Decorrelation matrix
+#' @param args Argument list
+#' @param option option list
+#' @param alphas list of alphas to test
+#' @param lambdas list of lambdas to test
+#' @param param.iters Number of iterations to repeat each run at to get stability.
+#'
+#' @return list containing all the run data.
+#' @export
+getGridMatrices <- function(X,W,W_c,args, option, alphas, lambdas, param.iters)
 {
   args$parameter_optimization <- param.iters
   all.runs <- list()
@@ -107,7 +133,7 @@ getGridMatrices <- function(X,W,args, option, alphas, lambdas, param.iters)
             X <- as.matrix(X)$X[samp,]; W <- as.matrix(W)$W[samp,]; #all_ids <- input.dat$ids[samp]
             #This works, but need to adjust the parameters. COuld implement okay, but not doing now.f
           }
-        run_stats[[opti]] <- Update_FL(as.matrix(X), as.matrix(W), option)
+        run_stats[[opti]] <- Update_FL(as.matrix(X), as.matrix(W), as.matrix(W_c),option)
         }
         run.id <- paste0(option$K, "_", a, "_", l)
         run.ids <- c(run.ids, run.id)
@@ -136,8 +162,8 @@ gwasMFGrid <- function(X,W, snp_ids, trait_names, C=NULL, K=0, Kmax = -1, subsam
   }
   d <- initializeGwasMF(X,W, C,snp_ids, trait_names, K=0)
   option <- d$options; args <- d$args; hp <- d$hp; all_ids <- d$all_ids; names <- d$names; W_c <- d$W_c
-  option$pve_init <- FALSE
-  args$pve_init <- FALSE
+  option$svd_init <- FALSE
+  args$svd_init <- FALSE
   args$auto_grid_search <- TRUE
   option$subsample <- subsample
 
@@ -158,14 +184,14 @@ gwasMFGrid <- function(X,W, snp_ids, trait_names, C=NULL, K=0, Kmax = -1, subsam
   message(paste0("Number of traits for analysis: ", ncol(X)))
 
   message("initializing for automatic grid search")
-  init.params <- GetCoarseSparsityParams(X,W,option, burn.in.reps = 2, logs = TRUE, n.points = 4) #TODO- find a faster way to do this.
+  init.params <- GetCoarseSparsityParams(X,W,W_c,option, burn.in.reps = 2, logs = TRUE, n.points = 4) #TODO- find a faster way to do this.
   alphas <- init.params$alphas; lambdas <- init.params$lambdas
   message("Alphas")
   print(alphas)
   message("Lambdas")
   print(lambdas)
 
-  grid.solutions <- getGridMatrices(X, W, args, option, alphas, lambdas, nrep.first)
+  grid.solutions <- getGridMatrices(X, W,W_c, args, option, alphas, lambdas, nrep.first)
 
   check_stats = max(sapply(grid.solutions, length))
   if(check_stats == 1)
@@ -175,15 +201,20 @@ gwasMFGrid <- function(X,W, snp_ids, trait_names, C=NULL, K=0, Kmax = -1, subsam
   }
 
   ret <- GetNextParams(alphas, lambdas,init.k, grid.solutions)
-  option$conv0 <- 0.01
-  grid.solutions.round.final <- getGridMatrices(X,W,args, option, ret$alphas, ret$lambdas, nrep.second)
+  option$conv0 <- 0.001
+  grid.solutions.round.final <- getGridMatrices(X,W,W_c,args, option, ret$alphas, ret$lambdas, nrep.second)
   #Above is good.
   final.run <- GetGridPerformanceMetrics(ret$alphas, ret$lambdas, grid.solutions.round.final, init.k)
 
   best.params <- SelectTopRun(final.run, grid.solutions.round.final, maxK=Kmax)
-
-  reg.run <- singleRunFromScratch(X,W,best.params$alpha, best.params$lambda, option, niter = 50)
-  d <- DropFactorsByObjective(X,W,reg.run$U,reg.run$V, minK=Kmax, option, maxK = Kmax)
+  if(any(is.na(best.params)))
+  {
+    message("Unable to find final parameters.")
+    return(NULL)
+  }
+  reg.run <- singleRunFromScratch(X,W,W_c, best.params$alpha, best.params$lambda, option, niter = 100)
+  #function(X,W,W_c,U,V, minK, option, maxK = NULL,drop.min.change = TRUE)
+  d <- DropFactorsByObjective(X,W,W_c,reg.run$U,reg.run$V, minK=Kmax, option, maxK = Kmax)
   #Question to answer- is it best to choose according to number of params and then parse it down, or how?
   #For now- pick the one that corresponds to your target number of factors
   #Above
@@ -252,6 +283,15 @@ SelectTopRun <- function(perf.df, runs.by.name, maxK=-1)
   {
     filtered.df <- filtered.df %>% filter(Group_nonempty_average <= maxK)
 
+  }
+  if(nrow(filtered.df) < 1)
+  {
+    filtered.df <- perf.df %>% filter(Coph > 0.9, Coph_med > 0.9)  %>% arrange(Med_Average_R2)
+    if(nrow(filtered.df) < 1)
+    {
+      message("Unable to find stable meatrix")
+      return(list("alpha"=NA, "lambda"=NA))
+    }
   }
   #Return the top settings
   #Choosingt he one with the minium correlation

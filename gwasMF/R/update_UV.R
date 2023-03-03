@@ -88,7 +88,7 @@ DefineSparsitySpaceInit <- function(X, W,W_c, W_ld, option, burn.in = 5)
   {
     print(i)
     #U.dat <- FitUWrapper(Xint,Wint,V, new.options)
-    U.dat <- DefineSparsitySpace(Xint, Wint, W_ld, V, "U", new.options, fit = "OLS")
+    U.dat <- DefineSparsitySpace(Xint, Wint, W_c, V, "U", new.options, fit = "OLS")
     new.options$K = ncol(U.dat$U) #Update if it has changed
     #If we have ones with NA, they need to get dropped
     #if we have columns with NAs here, we want them gone now so it doesn't jank up downstream stuff.
@@ -105,7 +105,7 @@ DefineSparsitySpaceInit <- function(X, W,W_c, W_ld, option, burn.in = 5)
         n <- DropSpecificColumns(drops, U.dat$U, V.dat$V)
         U.dat$U <- n$U
         new.options$K <- ncol(U.dat$U)
-        V.dat <- DefineSparsitySpace(Xint, Wint,U.dat$U, "V", new.options, fit = "OLS")
+        V.dat <- DefineSparsitySpace(Xint, Wint,W_ld,U.dat$U, "V", new.options, fit = "OLS")
       }
 
     }
@@ -265,7 +265,7 @@ initU <- function(X,W,option, prevU = NULL)
 }
 
 #helper code to clean things up, just keep track of those relevant metrics,
-UpdateTrackingParams <- function(sto.obj, X,W,U,V,option, sparsity.thresh = 1e-5, loglik = NULL)
+UpdateTrackingParams <- function(sto.obj, X,W,W_c,U,V,option, sparsity.thresh = 1e-5, loglik = NULL)
 {
   if(is.null(sto.obj))
   {
@@ -288,8 +288,8 @@ UpdateTrackingParams <- function(sto.obj, X,W,U,V,option, sparsity.thresh = 1e-5
   {
     sto.obj$model.loglik <- c(sto.obj$model.loglik,loglik)
   }
-    obj_updated = compute_obj(X, W, U, V, option);
-    sto.obj$decomp_obj = compute_obj(X, W, U, V, option,decomp = TRUE)
+    obj_updated = compute_obj(X, W,W_c, U, V, option);
+    sto.obj$decomp_obj = compute_obj(X, W,W_c, U, V, option,decomp = TRUE)
   if(is.na(sto.obj$obj[1]))
   {
     sto.obj$obj[1] <- obj_updated
@@ -461,7 +461,7 @@ AlignFactorMatrices <- function(X,W,U, V)
 }
 # converge if: 1). Change of the values in factor matrix is small. ie. The factor matrix is stable. 2). Change in the objective function becomes small; 3). reached maximum number of iterations
 #If the objective goes negative, you want the old one
-ConvergenceConditionsMet <- function(iter,X,W, U,V,tracker,option, initV = FALSE, loglik = NULL)
+ConvergenceConditionsMet <- function(iter,X,W,W_c, U,V,tracker,option, initV = FALSE, loglik = NULL)
 {
   #TODO double check tracker$V tracks with the old
   #1 conveged
@@ -477,7 +477,7 @@ ConvergenceConditionsMet <- function(iter,X,W, U,V,tracker,option, initV = FALSE
   #option 2: objective change is small
   #Objective hasn't been updated yet in tracker. That's the issue
 
-  obj_updated = compute_obj(X, W, U, V, option);
+  obj_updated = compute_obj(X, W,W_c, U, V, option);
   #This isnt right
   objective_change = tracker$obj[length(tracker$obj)]- obj_updated; #newer one should be smaller than previous
   obj.change.percent <- objective_change/abs(tracker$obj[length(tracker$obj)])
@@ -534,6 +534,7 @@ Update_FL <- function(X, W, W_c, option, preV = NULL, preU = NULL, burn.in = FAL
   # number of features - to avoid using T in R
   D = ncol(X)
   tStart0 = Sys.time()
+  es.objective <- c()
   V = NULL
   #Random initialization of F
   if(!is.null(preV))
@@ -548,7 +549,7 @@ Update_FL <- function(X, W, W_c, option, preV = NULL, preU = NULL, burn.in = FAL
 
   } else if(burn.in)
   {
-    burn.in.sparsity <- DefineSparsitySpaceInit(X, W,W_c, option, burn.in = 4)
+    burn.in.sparsity <- DefineSparsitySpaceInit(X, W,W_c,NULL, option, burn.in = 4)
     V <- burn.in.sparsity$V_burn
   }
   else{ #initialize by F as normal.
@@ -562,12 +563,13 @@ Update_FL <- function(X, W, W_c, option, preV = NULL, preU = NULL, burn.in = FAL
   #Case where you use previous iteration estimates to inform next iteration..
   og_option <- option[['carry_coeffs']]
   option[['carry_coeffs']] <- FALSE
+
   U = FitUWrapper(X,W,W_c,V, option)
   U <- U$U
   option[['carry_coeffs']] <- og_option
 
   #Start tracking stats
-  tracking.data <- UpdateTrackingParams(NULL, X,W,U,V,option)
+  tracking.data <- UpdateTrackingParams(NULL, X,W,W_c,U,V,option)
   #If U is already empty, than we know that the matrix is too sparse, and we should just end there.
   if(CheckUEmpty(U)) {message("U is empty; ending");return(tracking.data)}
   #If we are doing a measure of per-trait variance over time...
@@ -580,45 +582,56 @@ Update_FL <- function(X, W, W_c, option, preV = NULL, preU = NULL, burn.in = FAL
       print(iii)
       option <- UpdateSparsityMAPAutofit(iii, U,V, option)
     }
-    V = fit_V(X, W, U, option, V); #by iter 3 really slows down, due to the L1 requirements. Yea this won't do....
-    iteration.ll.total <- V$total.log.lik
-    V = V$V #Just get the matrix out.
+
+
+
+    V.new = fit_V(X, W, U, option, V); #by iter 3 really slows down, due to the L1 requirements. Yea this won't do....
+    iteration.ll.total <- V.new$total.log.lik
+    if(option$debug)
+    {es.objective <- c(es.objective, GetStepWiseObjective(X,W,W_c,V,V.new$V, U,"U",option))}
+    V = V.new$V #Just get the matrix out.
     #get the factor specific variance....
     if(option$traitSpecificVar)
     {
-      trait.var[iii,] <- V$r.v
-      V <- V$V
+      trait.var[iii,] <- V.new$r.v
+      V <- V.new$V
     }
     # if number of factors decrease because of empty factor, the change in ||F||_F = 100
 
     #Tracking change in F....
-    if(CheckVEmpty(V)) {message("V is empty; ending");  return(UpdateTrackingParams(tracking.data, X,W,U,V,option, loglik = iteration.ll.total))}
+    if(CheckVEmpty(V)) {message("V is empty; ending");  return(UpdateTrackingParams(tracking.data, X,W,W_c,U,V,option, loglik = iteration.ll.total))}
     colnames(V) = seq(1, ncol(V));
 
 
     ## update L
-    U <- FitUWrapper(X,W,W_c,V, option,r.v = trait.var[iii,])
-    iteration.ll.total <- iteration.ll.total + U$total.log.lik
-    if(length(U$redundant_cols) > 0)
+    U.new <- FitUWrapper(X,W,W_c,V, option,r.v = trait.var[iii,])
+    if(option$debug)
+    {
+      #ES stands for each step.
+      es.objective <- c(es.objective, GetStepWiseObjective(X,W,W_c,U,U.new$U, V,"V",option))
+    }
+
+    iteration.ll.total <- iteration.ll.total + U.new$total.log.lik
+    if(length(U.new$redundant_cols) > 0)
     {
       message("Dropping some cols...")
-      print(U$redundant_cols)
-      r <- DropSpecificColumns(U$redundant_cols, U$U, V)
+      print(U.new$redundant_cols)
+      r <- DropSpecificColumns(U.new$redundant_cols, U.new$U, V)
       U <- r$U; V <- r$V
     }
       else{
-        U <- U$U
+        U <- U.new$U
       }
 
     # if L is empty, stop
-    if(CheckUEmpty(U)) {message("U is empty; ending"); return(UpdateTrackingParams(tracking.data, X,W,U,V,option, loglik = iteration.ll.total))} #Update and end.
+    if(CheckUEmpty(U)) {message("U is empty; ending"); return(UpdateTrackingParams(tracking.data, X,W,W_c,U,V,option, loglik = iteration.ll.total))} #Update and end.
     colnames(U) = seq(1, ncol(U)) ;
 
     # Drop low PVE and align two matrices
     #V <- DropLowPVE(X,W,V)
     updated.mats <- AlignFactorMatrices(X,W,U, V); U <- updated.mats$U; V <- updated.mats$V
 
-    convergence.status <- ConvergenceConditionsMet(iii,X,W,U, V, tracking.data, option, initV = is.null(preV), loglik = iteration.ll.total)
+    convergence.status <- ConvergenceConditionsMet(iii,X,W,W_c,U, V, tracking.data, option, initV = is.null(preV), loglik = iteration.ll.total)
     if(convergence.status %in% c("converged", "exceeded"))
     {
       message("Convergence criteria met...")
@@ -628,16 +641,17 @@ Update_FL <- function(X, W, W_c, option, preV = NULL, preU = NULL, burn.in = FAL
       if(convergence.status == "exceeded")
       {
         #return the previous iteration, not the next
-        ret <- UpdateTrackingParams(tracking.data, X,W,tracking.data$U,tracking.data$V,
+        ret <- UpdateTrackingParams(tracking.data, X,W,W_c,tracking.data$U,tracking.data$V,
                                     option, loglik = iteration.ll.total)
       }else
       {
-        ret <- UpdateTrackingParams(tracking.data, X,W,U,V,
+        ret <- UpdateTrackingParams(tracking.data, X,W,W_c,U,V,
                                     option, loglik = iteration.ll.total)
       }
+      if(option$debug){ret$globalfit <- es.objective}
      return(ret)
     }else{
-      tracking.data <- UpdateTrackingParams(tracking.data, X,W,U,V,
+      tracking.data <- UpdateTrackingParams(tracking.data, X,W,W_c,U,V,
                                             option, loglik = iteration.ll.total)
 
       if(option$V > 0){

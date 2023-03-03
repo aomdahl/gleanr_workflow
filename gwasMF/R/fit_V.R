@@ -43,6 +43,7 @@ fit_V <- function(X, W, U, option, formerV = NULL){
 	lambda_list <- c()
 	sparsity.est <- c()
 	running.loglik <- 0
+	obj.updates <- c() #tracking the objective at each step.
 	## fit each factor one by one -- because of the element-wise multiplication from weights!
 	for(col in seq(1, ncol(X))){
 	  ll = NULL
@@ -147,6 +148,9 @@ fit_V <- function(X, W, U, option, formerV = NULL){
 		}
 		FactorM = rbind(FactorM, f);
 		running.loglik <- running.loglik + ll
+
+		#track the objective, if set
+
 	}
 
 	updateLog(paste0('Updating Factor matrix takes ',  round(difftime(Sys.time(), tStart, units = "mins"), digits = 3), ' min'), option)
@@ -158,7 +162,11 @@ fit_V <- function(X, W, U, option, formerV = NULL){
 	  ret$sparsity_space = sparsity.est
 	  return(ret)
 	}
-
+#if(option$debug) {
+#  obj.updates <- c(obj.updates, compute_obj(X,W,W_c,U,))
+#  (X, W, U, option, formerV = NULL)
+#  compute_obj <- function(X, W, W_c, L, FactorM, option, decomp = FALSE, loglik = TRUE, globalLL=FALSE)
+#}
 
   #  if(option$intercept_ubiq) #Force the ubiquitous term to be fixed. Run with fixed_ubiq? doesn't really matter{
   #  {
@@ -169,7 +177,7 @@ fit_V <- function(X, W, U, option, formerV = NULL){
   #      FactorM[,1] <- ones
   #  }
 
-    return(list("V" = FactorM, "sparsity_space"=sparsity.est, "total.log.lik" = running.loglik))
+    return(list("V" = FactorM, "sparsity_space"=sparsity.est, "total.log.lik" = running.loglik, "obj.changes" = obj.updates))
 }
 
 

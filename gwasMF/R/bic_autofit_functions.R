@@ -46,7 +46,8 @@ MatrixDFU <- function(mat_in,fixed_first = FALSE)
 }
 
 #CalcMatrixBIC(X,W,U,V,df=df,fixed_first = fixed_first,...)
-CalcMatrixBIC <- function(X,W,U,V, ev="std", weighted = FALSE, df = NULL, fixed_first = FALSE)
+#Note- we assume input to already be in the correct direction, so no transfofmration eeded on the covariance term...
+CalcMatrixBIC <- function(X,W,U,V, W_cov = NULL, ev="std", weighted = FALSE, df = NULL, fixed_first = FALSE)
 {
   `%>%` <- magrittr::`%>%`
   #Calculated based on my understanding of what is given by equations 12 and 7 in Lee et al 2010
@@ -79,7 +80,7 @@ CalcMatrixBIC <- function(X,W,U,V, ev="std", weighted = FALSE, df = NULL, fixed_
     errvar <- AltVar(X,U)
   }else if(ev == "ols" & weighted)
   {
-    errvar <- WeightedAltVar(X,W,U, var.method = bic.var)
+    errvar <- WeightedAltVar(X,W,U, var.method = bic.var, W_cov = W_cov)
   }
   else # anuumber gets passed in.
   { #message("in correct place...")
@@ -92,22 +93,24 @@ CalcMatrixBIC <- function(X,W,U,V, ev="std", weighted = FALSE, df = NULL, fixed_
 	  message("something went wrong,..")
     df <- MatrixDFU(V)
   }
-    #if(df == 0)
-    #{
-    #  message("Factorization is perfectly empty.")
-    #  message("TODO- get the program to stop or reset or something.")
-    #}
-    #message("First term ", norm(X*W - (U %*% t(V))*W, type = "F")^2/(n*d * errvar))
-    #message("second term ", (log(n*d)/(n*d))*df)
-  ret <- norm(X*W - (U %*% t(V))*W, type = "F")^2/(n*d * errvar) + (log(n*d)/(n*d))*df
+
+  if(is.null(W_cov))
+  {
+    W_cov <- diag(nrow(X))
+  }
+  ret <- norm(W_cov %*% (X*W - (U %*% t(V))*W), type = "F")^2/(n*d * errvar) + (log(n*d)/(n*d))*df
   #message("Total ", ret)
  #message(". ")
 
   return(ret)
 }
 
-CalcMatrixBIC.loglikversion <- function(X,W,U,V, which.learning, df = NULL, lm.fit.residuals = NULL,...)
+CalcMatrixBIC.loglikversion <- function(X,W,U,V, which.learning, W_cov = NULL, df = NULL, lm.fit.residuals = NULL,...)
 {
+  if(is.null(W_cov) & which.learning == "U")
+  {
+    message("Error case that should never happen -giving U but no covar matrix. at minimum identity matrix.")
+  }
   `%>%` <- magrittr::`%>%`
   n=nrow(X)
   d = ncol(X)
@@ -118,7 +121,7 @@ CalcMatrixBIC.loglikversion <- function(X,W,U,V, which.learning, df = NULL, lm.f
   }else
   {
     #learning U
-    model.ll = penalizedLogLikU(X,W,W_c,U,V)
+    model.ll = penalizedLogLikU(X,W,W_cov,U,V)
   }
   if(is.null(df))
   {
@@ -134,7 +137,7 @@ CalcMatrixBIC.loglikversion <- function(X,W,U,V, which.learning, df = NULL, lm.f
     }else
     {
       #learning U
-      lm.ll = penalizedLogLikU(X,W,W_c,U,V, use.resid = lm.fit.residuals)
+      lm.ll = penalizedLogLikU(X,W,W_cov,U,V, use.resid = lm.fit.residuals)
     }
     #ret <- neg.ll/(lm.ll) + (log(n*d)/(n*d))*df
     #the goal is to get a ratio which is SMALLER if the fit is better, larger if the fit is worse.
@@ -156,6 +159,7 @@ CalcMatrixBIC.loglikversion <- function(X,W,U,V, which.learning, df = NULL, lm.f
 #' @param W uncertainty associated with X (SNPs x studies)
 #' @param U SNPs x K matrix
 #' @param V Studies x K matrix
+#' @param W_cov Covariance matrix to correct for. For now just implemented in U.
 #' @param which.learning if we are learning "V" or "U"
 #' @param df degrees of freedom associated with matrix currently learning
 #' @param lm.fit.residuals Specify these to scale the log-liklihood by the optimal OLS fit. Not recommended.
@@ -169,7 +173,14 @@ CalcMatrixBIC.loglikGLOBALversion <- function(X,W,U,V, which.learning, W_cov = N
   d = ncol(X)
   k = ncol(U)
   #Residuals are the same regardless of
-  resids = calcGlobalResiduals(X,W,U,V,...)
+  if(which.learning == "U")
+  {
+    resids = calcGlobalResiduals(X,W,U,V,W_cov=W_cov,...)
+  }else
+  {
+    resids = calcGlobalResiduals(X,W,U,V, W_cov = NULL,...)
+  }
+
   model.ll = penLL(n*d, resids)
   if(is.null(df))
   {
@@ -237,20 +248,22 @@ RegressOutMatrixComponent <- function(X,W,mc)
   return(ret)
 }
 
-WeightedAltVar <- function(X,W,U, var.method = "mle", fit.resids = FALSE)
+WeightedAltVar <- function(X,W,U, var.method = "mle", fit.resids = FALSE, W_cov = NULL)
 {
+  if(is.null(W_cov))
+  {
+    W_cov <- diag(nrow(X))
+    message("filling in with blank W")
+    print(dim(W_cov))
+  }
   n <- nrow(X) * ncol(X)
-  #after discuussion with eric,guanghao just trying mle
-  #p <- 0
-  #message("N:", n)
-  #message("P:", p)
   resids <- c()
   fit.mat.dat <- NULL
   for(col in 1:ncol(X))
   {
     w <- unlist(W[,col])
-    wx <- (w*X[,col])
-    wu <- w * U
+    wx <- W_cov %*% (w*X[,col])
+    wu <- W_cov %*% (w * U)
     fit <- lm(wx~wu + 0)
     resids <- c(resids, resid(fit))
     if(fit.resids)
@@ -325,15 +338,15 @@ CalcVBIC <- function(X,W,U,V,fixed_first=FALSE,lm.resid = NULL,...)
   return(list(var.based.bic,ll.based.bic,ll.based.bic.ratio,ll.global.bic,ll.global.ratio.bic)) #WE LIKE options 1,2,4
 }
 
-CalcUBIC <- function(X,W,U,V,lm.resid = NULL,...)
+CalcUBIC <- function(X,W,W_c, U,V,lm.resid = NULL,...)
 {
   df.dat <-  MatrixDFU(U)
-  var.based.bic <- CalcMatrixBIC(t(X),t(W),V,U,df=df.dat,...)
+  var.based.bic <- CalcMatrixBIC(t(X),t(W),V,U,df=df.dat,W_cov = W_c,...)
   #And now, the alternative versions:
-  ll.based.bic <- CalcMatrixBIC.loglikversion(X,W,U,V, which.learning = "U", df = df.dat)
-  ll.based.bic.ratio <- CalcMatrixBIC.loglikversion(X,W,U,V, which.learning = "U", df = df.dat, lm.fit.residuals = lm.resid) #OMIT THIS
-  ll.global.bic <- CalcMatrixBIC.loglikGLOBALversion(X,W,U,V, which.learning = "U", df = df.dat)
-  ll.global.ratio.bic <- CalcMatrixBIC.loglikGLOBALversion(X,W,U,V, which.learning = "U", df = df.dat,lm.fit.residuals = lm.resid) #OMIT THIS.
+  ll.based.bic <- CalcMatrixBIC.loglikversion(X,W,U,V, which.learning = "U", df = df.dat, W_cov = W_c)
+  ll.based.bic.ratio <- CalcMatrixBIC.loglikversion(X,W,U,V, which.learning = "U", df = df.dat, lm.fit.residuals = lm.resid, W_cov = W_c)#OMIT THIS
+  ll.global.bic <- CalcMatrixBIC.loglikGLOBALversion(X,W,U,V, which.learning = "U", df = df.dat, W_cov = W_c)
+  ll.global.ratio.bic <- CalcMatrixBIC.loglikGLOBALversion(X,W,U,V, which.learning = "U", df = df.dat,lm.fit.residuals = lm.resid, W_cov = W_c) #OMIT THIS.
   return(list(var.based.bic,ll.based.bic,ll.based.bic.ratio,ll.global.bic,ll.global.ratio.bic)) #WE LIKE options 1,2,4
 }
 
@@ -432,11 +445,11 @@ FitUs <- function(X, W, W_c, initV, alphas,option, weighted = FALSE)
   }
   #TODO: recode this, so don't need the logic statement. Downstream should be able to handle it
   if(weighted) {
-    av <- WeightedAltVar(t(X),t(W),initV, var.method = bic.var, fit.resids  = TRUE)
-    bics <- do.call('rbind', lapply(l.fits, function(x) CalcUBIC(X,W,as.matrix(x$U),initV, ev=av[[1]], weighted = TRUE, lm.resid=av[[2]])))
+    av <- WeightedAltVar(t(X),t(W),initV, var.method = bic.var, fit.resids  = TRUE, W_cov = W_c)
+    bics <- do.call('rbind', lapply(l.fits, function(x) CalcUBIC(X,W,W_c,as.matrix(x$U),initV, ev=av[[1]], weighted = TRUE, lm.resid=av[[2]])))
   }else{
     av <- AltVar(t(X),initV, fit.resids = TRUE) #This step is quite slow.... need to speed this up somehow.
-    bics <-  do.call('rbind', lapply(l.fits, function(x) CalcUBIC(X,W,as.matrix(x$U),initV,ev=av[[1]], lm.resid = av[[2]] )))
+    bics <-  do.call('rbind', lapply(l.fits, function(x) CalcUBIC(X,W,W_c,as.matrix(x$U),initV,ev=av[[1]], lm.resid = av[[2]] )))
   }
 
   return(list("fits" = l.fits, "BIC"=bics, "resid_var" =av))
@@ -851,7 +864,8 @@ getBICMatrices <- function(opath,option,X,W,W_c, all_ids, names, min.iter = 2, m
     #Check convergence
     if(i > min.iter){
 
-      NOT.CONVERGED <- !checkConvergenceBICSearch(i, rec.dat) #returns true if convergence is reached
+      NOT.CONVERGED <- !checkConvergenceBICSearch(i, rec.dat, conv.mode = "SEPARATE") #returns true if convergence is reached
+      #Want to try a different objective- the sum of the terms stabilizes... not each one independently
       message("ongoing objective")
 
     }
@@ -859,7 +873,7 @@ getBICMatrices <- function(opath,option,X,W,W_c, all_ids, names, min.iter = 2, m
     jk <- NA
     if(ncol(optimal.u) == ncol(optimal.v))
     {
-      jk <- compute_obj(X, W, optimal.u, optimal.v, option, decomp = TRUE, loglik = TRUE)
+      jk <- compute_obj(X, W,W_c, optimal.u, optimal.v, option, decomp = TRUE, loglik = TRUE)
     }
 
     rec.dat$sparsity.obj[[i]] <- jk
@@ -889,21 +903,33 @@ getBICMatrices <- function(opath,option,X,W,W_c, all_ids, names, min.iter = 2, m
 #Convergence criteria for the BIC ssearch
 #Converges when K is unchanging from one run to the next, and the percentage size change in the alpha/lambda paramters is less than 5%
 #Might consider making this more generous- if it stays on the same log scale, then that is probably good enough....
-checkConvergenceBICSearch <- function(index, record.data, conv.perc.thresh = 0.1, hard_stop = 20)
+checkConvergenceBICSearch <- function(index, record.data, conv.perc.thresh = 0.1, hard_stop = 20, conv.mode = "SEPARATE")
 {
-  if(index > 5)
+  if(index > 10)
   {
     message("Late stage convergence, terminate soon....")
-    #print(record.data$alpha.s)
-
-    #print(record.data$lambda.s)
   }
-  queries <- c(record.data$Ks[[index]] == record.data$Ks[[index-1]],
-  abs(record.data$alpha.s[[index]] - record.data$alpha.s[[index-1]])/record.data$alpha.s[[index-1]] < conv.perc.thresh,
-  abs(record.data$lambda.s[[index]] - record.data$lambda.s[[index-1]])/record.data$lambda.s[[index-1]] < conv.perc.thresh
+  conv.K <- record.data$Ks[[index]] == record.data$Ks[[index-1]]
+  if(conv.mode == "COMB.SUM")
+  {
+    message("Need to test and debug still, but okay")
+    EPSILON = 1e-4
+   sum.prev = record.data$alpha.s[[index-1]] + record.data$lambda.s[[index-1]]
+   sum.curr = record.data$alpha.s[[index]] + record.data$lambda.s[[index]]
 
-  )
-  return(all(queries))
+   return(  conv.K & (sum.prev - sum.curr) < EPSILON)
+
+  }else
+  {
+    queries <- c(conv.K,
+                 abs(record.data$alpha.s[[index]] - record.data$alpha.s[[index-1]])/record.data$alpha.s[[index-1]] < conv.perc.thresh,
+                 abs(record.data$lambda.s[[index]] - record.data$lambda.s[[index-1]])/record.data$lambda.s[[index-1]] < conv.perc.thresh)
+    return(all(queries))
+  }
+
+
+
+
 }
 #TODO: try with random, and with non-random.
 #gwasML_ALS_Routine(opath, option, X, W, bic.dat$optimal.v)
@@ -917,7 +943,9 @@ gwasML_ALS_Routine <- function(option, X, W,W_c, optimal.init, maxK=0, opath = "
 #  reg.run <- Update_FL(X, W, option, preU = optimal.init)
 #}
 reg.run <- Update_FL(X, W, W_c, option, preV = optimal.init)
-
+print(maxK)
+print(reg.run$V)
+message("DID IT PASS???")
 if(maxK != 0)
 {
   if(ncol(reg.run$V)> maxK)
@@ -939,7 +967,7 @@ if(maxK != 0)
   {
     #function(X,W,U,V, minK, option
     #unction(X,W,U,V, minK, option, maxK = NULL,drop.min.change = TRUE)
-    r <- DropFactorsByObjective(X,W,reg.run$U,reg.run$V, minK=maxK, option, maxK = maxK) #want it to be famed at 5?
+    r <- DropFactorsByObjective(X,W,W_c,reg.run$U,reg.run$V, minK=maxK, option, maxK = maxK) #want it to be famed at 5?
     reg.run$V <- r$V
     reg.run$U <- r$U
     reg.run$K <- r$K
@@ -954,14 +982,14 @@ if(maxK != 0)
     reg.run$U <- r$U
     reg.run$K <- ncol(r$U)
   }
-  if(ncol(reg.run$V) > maxK & maxK != 0) #Still not fixed
-  {
-    message("Dropping by PVE sad face.")
-    keep.cols <- or$ix[1:maxK]
-    reg.run$V <- as.matrix(reg.run$V[,keep.cols])
-    reg.run$U <- as.matrix(reg.run$U[,keep.cols])
-    reg.run$PVE <- reg.run$PVE[keep.cols]
-  }
+  #if((ncol(reg.run$V) > maxK) & (maxK != 0)) #Still not fixed
+  #{
+  #  message("Dropping by PVE sad face.")
+  #  keep.cols <- or$ix[1:maxK]
+  #  reg.run$V <- as.matrix(reg.run$V[,keep.cols])
+  #  reg.run$U <- as.matrix(reg.run$U[,keep.cols])
+  #  reg.run$PVE <- reg.run$PVE[keep.cols]
+  #}
     #print("Top PVEs:")
   #print(reg.run$PVE[keep.cols])
   #print("All PVEs")
@@ -1056,7 +1084,7 @@ runStdPipeClean <- function(args,alpha,lambda, opath = "", initV = NULL)
   #Read in the hyperparameters to explore
   hp <- readInParamterSpace(args)
   input.dat <- readInData(args)
-  X <- input.dat$X; W <- input.dat$W; all_ids <- input.dat$ids; names <- input.dat$trait_names
+  X <- input.dat$X; W <- input.dat$W; all_ids <- input.dat$ids; names <- input.dat$trait_names; W_c <- input.dat$W_c
   if(option$K == 0)
   {
     message('Iniitializing X to the max')
