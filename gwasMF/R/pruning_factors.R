@@ -1,0 +1,216 @@
+#####
+## Functions for pruning of factors.
+######
+
+#' Cut out factors based on objective or some threshold (maxK)
+#'
+#' @param X full effect size data
+#' @param W effect size uncertainty
+#' @param W_c covariance structure of effect sizes
+#' @param reg.run output from Update_FL; full ALS output
+#' @param minK Minimum allowed # of factors. NOT USED
+#' @param maxK Maximum allowecx # of factors
+#' @param option
+#'
+#' @return updated ALS output list (same as Update_FL output)
+#' @export
+PruneNumberOfFactors <- function(X,W,W_c,reg.run, minK, maxK, option)
+{
+  
+  if(maxK == 0)
+  {
+    #this means you need to detect the number of factors)
+    maxK = ncol(reg.run$V)
+  }
+  
+  if(minK > maxK)
+  {
+    message("Invalid case encountered- minK > maxK")
+    return(reg.run)
+    #quit()
+  }
+  
+  ret.dat <- reg.run
+  r <- DropFactorsByObjective(X,W,W_c,ret.dat$U,ret.dat$V, maxK, option, minK = minK) #want it to be framed at 5, for now.
+  ret.dat$V <- r$V
+  ret.dat$U <- r$U
+  ret.dat$K <- r$K
+  if(ncol(reg.run$V) > maxK)
+  {
+    print("in this case...")
+    r <- DropFactorsByFit(X,W,W_c,ret.dat$U,ret.dat$V,maxK, option) #want it to be famed at 5?
+    ret.dat$V <- r$V
+    ret.dat$U <- r$U
+    ret.dat$K <- r$K
+  }
+  ret.dat
+}
+
+
+#This will cut out factors by their fit until the minimum threshold is reached.
+
+#' Drop factors until a specified MaxK is reached
+#'
+#' @param X full data matrix
+#' @param W standard errors
+#' @param W_c Whitening covariance matrix
+#' @param U Predicted U
+#' @param V Predicted V
+#' @param maxK K to parse down to
+#' @param option std options
+#'
+#' @return list containing, U, V and K
+#' @export
+DropFactorsByFit <- function(X,W,W_c,U,V, maxK, option)
+{
+  
+  if(is.null(maxK) | length(maxK) == 0 | maxK == 0)
+  {
+    maxK = ncol(X) - 1
+    message("Warning case- beware.. max k is off.")
+  }
+  
+  if(ncol(as.matrix(V)) == 1 && option$fixed_ubiq)
+  {
+    return(list("U"=U, "V" = V, "K" = ncol(V)))
+  }
+  #2) End if there are no more columns left to remove
+  if(ncol(as.matrix(V)) < 1)
+  {
+    message("All factors removed; none contribute to objective")
+    return(list("U"=U, "V" = V, "K" = NA))
+  }
+  
+  remaining.set <- 1:ncol(V)
+  #Repeat the process until conditions:
+  #we reach our minimum k size threshold
+  if(length(remaining.set) <=  maxK)
+  {
+    return(list("U"=U, "V" = V, "K" = ncol(V)))
+  }
+  init.obj.fit <- compute_obj(X,W,W_c, U, V, option, decomp = TRUE)$Fit.p
+  drop.set <- remaining.set
+  if(option$fixed_ubiq)
+  {
+    drop.set <- 2:ncol(U)
+  }
+  min.obj <- init.obj.fit
+  min.index <- -1
+  if(ncol(V) >= maxK)
+  {
+    min.increase = Inf
+    for(i in drop.set) #we don't drop ubiq one
+    {
+      new.obj.fit <- compute_obj(X,W,W_c, U[,-i], V[,-i], option, decomp = TRUE)$Fit.p
+      print(new.obj.fit)
+      diff = new.obj.fit - init.obj.fit
+      if(diff < min.increase)
+      {
+        min.index <- i
+        min.increase <- diff
+      }
+    }
+    if(!is.infinite(min.increase))
+    {
+      message("Calling the next iteration")
+      message("Dropping: ", min.index)
+      return(DropFactorsByFit(X,W,W_c,U[,-min.index],V[,-min.index], maxK, option))
+    }else
+    {
+      return(list("U"=U, "V" = V, "K" = ncol(V)))
+    }
+    
+  }
+}
+#Beta test function- can we pick out the best factors by how they contribute (or don't) to the objective?
+#This will balance in sparsity better than PVE does.
+#' Title
+#'
+#' @param X full data matrix
+#' @param W standard errors
+#' @param W_c Whitening covariance matrix
+#' @param U Predicted U
+#' @param V Predicted V
+#' @param maxK maximum K to include
+#' @param option GLEANER options object
+#' @param minK fewest number of factors to allow; default is 0
+#'
+#' @return updated U,V,K
+#' @export
+DropFactorsByObjective <- function(X,W,W_c,U,V, maxK, option, minK = 0)
+{
+  
+  if(is.null(maxK) | length(maxK) == 0)
+  {
+    maxK = ncol(X) - 1
+    message("Warning case- beware.. max k is off.")
+  }
+  if(maxK == 0)
+  {
+    message("Pruning in case where no specified limit on K.")
+    maxK = ncol(V)
+  }
+  
+  #1) End if only 1 column left doing fixed ubiq version
+  if(ncol(as.matrix(V)) == 1 && option$fixed_ubiq)
+  {
+    return(list("U"=U, "V" = V, "K" = ncol(V)))
+  }
+  #2) End if there are no more columns left to remove
+  if(ncol(as.matrix(V)) < 1)
+  {
+    message("All factors removed; none contribute to objective")
+    return(list("U"=U, "V" = V, "K" = NA))
+  }
+  
+  remaining.set <- 1:ncol(V)
+  #Repeat the process until conditions:
+  #we reach our minimum k size threshold
+  if(length(remaining.set) <=  minK)
+  {
+    return(list("U"=U, "V" = V, "K" = ncol(V)))
+  }
+  # function(X, W, L, FactorM, option)
+  init.obj <- compute_obj(X,W,W_c, U, V, option)
+  drop.set <- remaining.set
+  if(option$fixed_ubiq)
+  {
+    drop.set <- 2:ncol(U)
+  }
+  min.obj <- init.obj
+  min.index <- -1
+  #Try dropping each one
+  #if removing one reduces the objective, drop that one that results in biggest reduction.
+  #A greedy approach to remove factors- drop the one that minimizes the objective overall
+  for(i in drop.set) #we don't drop ubiq one
+  {
+    new.obj <- compute_obj(X,W,W_c, U[,-i], V[,-i], option, loglik = TRUE)
+    if(new.obj < min.obj)
+    {
+      min.index <- i
+      min.obj <- new.obj
+    }
+  }
+  
+  #Removing any objective increases (or stays the same) rather than decreases.
+  if((min.obj == init.obj | min.index == -1) & (ncol(U) > maxK))
+  {
+    message("No factor reduces objective; none dropped.")
+    return(list("U"=U, "V" = V, "K" = ncol(V)))
+  }
+  #3) End if dropping any more factors increases the objective and we have reached the max number of K
+  else if((min.obj == init.obj | min.index == -1) & (ncol(U) <= maxK))
+  {
+    return(list("U"=U, "V" = V, "K" = ncol(V)))
+  }else
+  {
+    return(DropFactorsByObjective(X,W,W_c,U[,-min.index],V[,-min.index], maxK, option, minK=minK))
+  }
+}
+
+
+PruneFactorsByObjective <- function(X,W,U,V, minK, option)
+{
+  keep.dat <- DropFactorsByObjective(X,W,W_c,U,V, minK, option)
+  return(list("U"))
+}

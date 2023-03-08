@@ -5,6 +5,9 @@ singlePointGridExpansion <- function(sparsity.params, optimal.sparsity.param, n.
   ordered.list <- sorted.sparsity.params$x
   optimal.index = which.min(abs(optimal.sparsity.param-sparsity.params))
   sorted.index <- which(sorted.sparsity.params$ix == optimal.index)
+  #Had a bug- not exact values being compared. Distance is safer than "==" or dealing with all.equal tolerances
+  diffs= ordered.list - optimal.sparsity.param
+  optimal.sparsity.param <- ordered.list[which(diffs == min(diffs))] #The optimal sparsity parameter is the one closest to the full precision optimal sparsity parameter.
   if(min(ordered.list) == optimal.sparsity.param)
   {
     above <- ordered.list[sorted.index + 1]
@@ -24,10 +27,16 @@ singlePointGridExpansion <- function(sparsity.params, optimal.sparsity.param, n.
     above <- ordered.list[sorted.index + 1]
     below <- ordered.list[sorted.index - 1]
   }
+  if(is.null(above) | is.null(below))
+  {
+    print("Error:proposed new paramters are not possible")
+    return(NA)
+    #quit()
+  }
   if(is.na(above) | is.na(below))
   {
-    print("proposed new paramters are not possible")
-    quit()
+    print("Error:proposed new paramters are not possible")
+    #quit()
   }
   if(above == below)
   {
@@ -76,7 +85,7 @@ ProposeSparsityParamsFromGrid <- function(alphas,all.a, n.points)
     message('Detected negatives in proposed parameters; dropping these')
     new.list <- new.list[new.list > 0]
   }
-  if(length(new.list) == 0)
+  if(length(new.list) == 0 | all(is.null(new.list)) | all(is.na(new.list)))
   {
     message("Possible error, no terms detected")
     message("Retruning original input.")
