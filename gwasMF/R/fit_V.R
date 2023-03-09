@@ -43,7 +43,6 @@ fit_V <- function(X, W, U, option, formerV = NULL){
 	lambda_list <- c()
 	sparsity.est <- c()
 	running.loglik <- 0
-	obj.updates <- c() #tracking the objective at each step.
 	## fit each factor one by one -- because of the element-wise multiplication from weights!
 	for(col in seq(1, ncol(X))){
 	  ll = NULL
@@ -119,7 +118,7 @@ fit_V <- function(X, W, U, option, formerV = NULL){
    	  }else
    	  {
    	    fit <- penalized::penalized(response = X, penalized = dat_i[,paste0('F', seq(2, ncol(Lp)))], data=dat_i,
-   	                                unpenalized = ~F1 + 0, lambda1 =option[['lambda1']], lambda2=1e-10,
+   	                                unpenalized = ~F1 + 0, lambda1 =option[['lambda1']], lambda2=0,
    	                                positive = option$posF, standardize = option$std_coef, trace = FALSE) #, epsilon = option$epsilon, maxiter= 50)
 
 
@@ -162,11 +161,7 @@ fit_V <- function(X, W, U, option, formerV = NULL){
 	  ret$sparsity_space = sparsity.est
 	  return(ret)
 	}
-#if(option$debug) {
-#  obj.updates <- c(obj.updates, compute_obj(X,W,W_c,U,))
-#  (X, W, U, option, formerV = NULL)
-#  compute_obj <- function(X, W, W_c, L, FactorM, option, decomp = FALSE, loglik = TRUE, globalLL=FALSE)
-#}
+
 
   #  if(option$intercept_ubiq) #Force the ubiquitous term to be fixed. Run with fixed_ubiq? doesn't really matter{
   #  {
@@ -177,10 +172,40 @@ fit_V <- function(X, W, U, option, formerV = NULL){
   #      FactorM[,1] <- ones
   #  }
 
-    return(list("V" = FactorM, "sparsity_space"=sparsity.est, "total.log.lik" = running.loglik, "obj.changes" = obj.updates))
+    return(list("V" = FactorM, "sparsity_space"=sparsity.est, "total.log.lik" = running.loglik))
 }
 
+FitVGlobal <- function(X, W, U, option)
+{
+  sparsity.est <- NA; penalty = NA; ll = NA; l = NA; FactorM = c()
+  #long.x <- c(t(W_c %*% t(X*W))) #Stacked by column
+  long.x <- c(X*W)
+  weighted.copies <- lapply(1:ncol(X), function(i) diag(W[,i]) %*% U)
+  long.u <- Matrix::bdiag(weighted.copies) #weight this ish too you silly man.
+  K <- ncol(U)
+  dat_i = (as.matrix(long.u))
+  choose.cols <- sapply(1:ncol(dat_i), function(x) x %% K)
+  unpen <- dat_i[,choose.cols == 1]
+  pen <- dat_i[,choose.cols != 1]
+ if(option$fixed_ubiq & option$regression_method == "penalized")
+{
+      fit <- penalized::penalized(response = long.x, penalized =pen,
+                                  unpenalized = ~unpen + 0, lambda1 =option[['lambda1']], lambda2=0,
+                                  positive = option$posF, standardize = option$std_coef, trace = FALSE) #, epsilon = option$epsilon, maxiter= 50)
 
+
+      f = penalized::coef(fit, 'all')
+      ll = fit@loglik
+      #F 1-M are the 1st factor
+      M = ncol(X)
+      FactorM = cbind(f[1:M],matrix(f[(M+1):(M*K)], nrow = M,byrow = TRUE) )
+}
+  #here we don't even pass in the 1st factor, so not an issue.
+  if(option$actively_calibrating_sparsity) { sparsity.est <- rowiseMaxSparsity(long.x, pen, fixed_first = FALSE)}
+
+  return(list("V" = FactorM, "sparsity_space"=sparsity.est, "total.log.lik" = ll))
+
+}
 #' Wrapper for the V function, not serving a purpose at the moment.
 #'
 #' @param X the matrix to be decomposed (N x T, N is the number of data points, T is the number of features)
@@ -196,5 +221,6 @@ fit_V <- function(X, W, U, option, formerV = NULL){
 FitVWrapper <- function(X, W, U, option, formerV = NULL)
 {
   #HERE?
-  fit_V(X, W, as.matrix(U), option, formerV = formerV)
+  #fit_V(X, W, as.matrix(U), option, formerV = formerV)
+  FitVGlobal(X, W, as.matrix(U), option)
 }

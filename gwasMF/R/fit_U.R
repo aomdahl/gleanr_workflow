@@ -157,6 +157,32 @@
 
   }
 
+
+#how can I test and compare this?
+  FitUGlobal <- function(X, W,W_c, V, option, formerU, r.v = NULL)
+  {
+    #it_U(X, W, W_c, initV, option)
+    max.sparsity <- NA; penalty = NA; ll = NA; l = NA;
+    long.x <- c(W_c %*% t(X*W))
+    weighted.copies <- lapply(1:nrow(X), function(i) W_c %*% diag(W[i,]) %*% V)
+    long.v <- Matrix::bdiag(weighted.copies) #weight this ish too you silly man.
+    if( option$regression_method != "None")
+    {    fit = penalized::penalized(response = long.x, penalized = as.matrix(long.v), lambda1 = option[['alpha1']],lambda2=0, unpenalized = ~0,
+                                      positive = FALSE, standardize = option$std_coef, trace = FALSE)
+      l = penalized::coef(fit, 'all')
+      ll = fit@loglik
+      penalty = fit@penalty
+      l = matrix(l, nrow = nrow(X), ncol = ncol(V),byrow = TRUE)
+    }
+
+      #convert back to a U:
+
+      if(option$actively_calibrating_sparsity) { max.sparsity <- rowiseMaxSparsity(as.matrix(long.x), as.matrix(long.v))}
+      return(list("U" = l, "sparsity_space"=max.sparsity, "total.log.lik" = ll, "penalty" = penalty))
+  }
+
+
+
   #U = fit_U(X, W, FactorM, option, ...);
   fit_U<- function(X, W,W_c, V, option, formerU, r.v = NULL){
     bad.cols <- c()
@@ -294,7 +320,8 @@
 
     }else
     {
-      U = fit_U(X, W, W_c, V, option,formerU = prevU, ...);
+      #U = fit_U(X, W, W_c, V, option,formerU = prevU, ...);
+      U = FitUGlobal(X, W,W_c, V, option,formerU = prevU, ...);
 
     }
     return(U)

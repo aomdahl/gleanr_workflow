@@ -535,6 +535,8 @@ Update_FL <- function(X, W, W_c, option, preV = NULL, preU = NULL, burn.in = FAL
   D = ncol(X)
   tStart0 = Sys.time()
   es.objective <- c()
+  em.objective <- list()
+  iter.objective <- list()
   V = NULL
   #Random initialization of F
   if(!is.null(preV))
@@ -567,13 +569,15 @@ Update_FL <- function(X, W, W_c, option, preV = NULL, preU = NULL, burn.in = FAL
   U = FitUWrapper(X,W,W_c,V, option)
   U <- U$U
   option[['carry_coeffs']] <- og_option
-
+  #if(option$debug)
+  #{em.objective[[0]] <- compute_obj(X,W,W_c, U,V,option, globalLL=TRUE,decomp = TRUE)}
   #Start tracking stats
   tracking.data <- UpdateTrackingParams(NULL, X,W,W_c,U,V,option)
   #If U is already empty, than we know that the matrix is too sparse, and we should just end there.
   if(CheckUEmpty(U)) {message("U is empty; ending");return(tracking.data)}
   #If we are doing a measure of per-trait variance over time...
   trait.var <- matrix(NA, option[['iter']], ncol(X))
+  i.c <- 1
   for (iii in seq(1, option[['iter']])){ #start the iterations (although technically, we have done 1 already.)
     message(paste0("Currently on iteration ", iii))
     iteration.ll.total <- 0
@@ -583,12 +587,16 @@ Update_FL <- function(X, W, W_c, option, preV = NULL, preU = NULL, burn.in = FAL
       option <- UpdateSparsityMAPAutofit(iii, U,V, option)
     }
 
-
-
     V.new = fit_V(X, W, U, option, V); #by iter 3 really slows down, due to the L1 requirements. Yea this won't do....
     iteration.ll.total <- V.new$total.log.lik
+    #More crap to follow the objective
     if(option$debug)
-    {es.objective <- c(es.objective, GetStepWiseObjective(X,W,W_c,V,V.new$V, U,"U",option))}
+    {
+      message("here")
+      es.objective <- c(es.objective, GetStepWiseObjective(X,W,W_c,V,V.new$V, U,"U",option));
+      em.objective[[(i.c)]] <- compute_obj(X,W,W_c, U,V.new$V,option, globalLL=TRUE, decomp = TRUE)
+      i.c <- i.c + 1
+    }
     V = V.new$V #Just get the matrix out.
     #get the factor specific variance....
     if(option$traitSpecificVar)
@@ -605,10 +613,17 @@ Update_FL <- function(X, W, W_c, option, preV = NULL, preU = NULL, burn.in = FAL
 
     ## update L
     U.new <- FitUWrapper(X,W,W_c,V, option,r.v = trait.var[iii,])
+
     if(option$debug)
     {
       #ES stands for each step.
       es.objective <- c(es.objective, GetStepWiseObjective(X,W,W_c,U,U.new$U, V,"V",option))
+      print(i.c)
+      print(em.objective)
+      em.objective[[(i.c)]] <- compute_obj(X,W,W_c, U.new$U,V,option, globalLL=TRUE, decomp = TRUE)
+      print(i.c)
+      iter.objective[[(i.c/2)]] <- compute_obj(X,W,W_c, U.new$U,V,option, globalLL=TRUE, decomp = TRUE)
+      i.c <- i.c + 1
     }
 
     iteration.ll.total <- iteration.ll.total + U.new$total.log.lik
@@ -648,7 +663,11 @@ Update_FL <- function(X, W, W_c, option, preV = NULL, preU = NULL, burn.in = FAL
         ret <- UpdateTrackingParams(tracking.data, X,W,W_c,U,V,
                                     option, loglik = iteration.ll.total)
       }
-      if(option$debug){ret$globalfit <- es.objective}
+      if(option$debug){
+        ret$each.step.obj <- es.objective;
+        ret$each.matrix.obj <- em.objective;
+        ret$full.iter.obj <- iter.objective
+        }
      return(ret)
     }else{
       tracking.data <- UpdateTrackingParams(tracking.data, X,W,W_c,U,V,
