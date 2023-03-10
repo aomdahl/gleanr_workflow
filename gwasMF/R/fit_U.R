@@ -161,24 +161,76 @@
 #how can I test and compare this?
   FitUGlobal <- function(X, W,W_c, V, option, formerU, r.v = NULL)
   {
+    message("VERIFIED GLOBAL FIT")
     #it_U(X, W, W_c, initV, option)
-    max.sparsity <- NA; penalty = NA; ll = NA; l = NA;
-    long.x <- c(W_c %*% t(X*W))
+    max.sparsity <- NA; penalty = NA; ll = NA; l = NA; penalty = NA
+    long.x <- c(W_c %*% t(X*W)) #stacks by SNP1, SNP2...
     weighted.copies <- lapply(1:nrow(X), function(i) W_c %*% diag(W[i,]) %*% V)
     long.v <- Matrix::bdiag(weighted.copies) #weight this ish too you silly man.
-    if( option$regression_method != "None")
-    {    fit = penalized::penalized(response = long.x, penalized = as.matrix(long.v), lambda1 = option[['alpha1']],lambda2=0, unpenalized = ~0,
-                                      positive = FALSE, standardize = option$std_coef, trace = FALSE)
+    s = 1
+    test.method = ""
+    if(test.method == "preWeight")
+    {
+      s <- apply(V, 2, function(x) norm(x, "2"))
+      s[s==0] <- 1 #so we don't divide by 0 on empty columns....
+      scaled.v <- sweep(V,2,s,FUN="/")
+      #stopifnot(norm(scaled.v[,1], "2") == 1)
+      weighted.copies <- lapply(1:nrow(X), function(i) W_c %*% diag(W[i,]) %*% scaled.v)
+      long.v <- Matrix::bdiag(weighted.copies) #weight this ish too you silly man.
+    }
+    if(test.method == "postWeight")
+    {
+      s = apply(long.v, 2, function(x) norm(x, "2"))
+      s[s==0] <- 1 #so we don't divide by 0 on empty columns....
+      long.v <- sweep(long.v,2,s,FUN="/")
+      #long.v <- long.v / s
+      #stopifnot(norm(long.v[,1], "2") == 1)
+    }
+
+    if(!is.null(formerU))
+    {
+      #CONCLLUSION: this does nothing to help the objective
+      message("using old U")
+      #formerU.scaled <- apply(formerU, 2, function(x) x/ norm(x, "2")) + 1e-15
+      formerU.scaled <- formerU + 1e-15
+      old.long.u <- c(t(formerU.scaled))
+    }
+    #formerU = NULL
+    if(option$regression_method == "OLS")
+    {
+      fit <- RcppArmadillo::fastLmPure(as.matrix(long.v), long.x)
+      l = as.vector(coef(fit)) #check this, but I think its correct
+      #ll = logLik(fit)
+      ll = penLL(length(long.x), long.x - as.matrix(long.v) %*% fit$coefficients) # hack for now
+      l = matrix(l, nrow = nrow(X), ncol = ncol(V),byrow = TRUE)
+    }else if( option$regression_method == "penalized")
+    {
+      if(is.null(formerU))
+      {
+        fit = penalized::penalized(response = long.x, penalized = as.matrix(long.v), lambda1 = option[['alpha1']],lambda2=0, unpenalized = ~0,
+                                   positive = FALSE, standardize = option$std_coef, trace = FALSE)
+      }else
+      {
+        fit = penalized::penalized(response = long.x, penalized = as.matrix(long.v), lambda1 = option[['alpha1']],lambda2=0, unpenalized = ~0,
+                                   positive = FALSE, standardize = option$std_coef, trace = FALSE, startbeta = old.long.u)
+      }
+
       l = penalized::coef(fit, 'all')
       ll = fit@loglik
-      penalty = fit@penalty
+      penalty = fit@penalty[1]
       l = matrix(l, nrow = nrow(X), ncol = ncol(V),byrow = TRUE)
+
+      print(head(l))
+    }
+    else
+    {
+      mesage("Nothing implemented.")
     }
 
       #convert back to a U:
 
       if(option$actively_calibrating_sparsity) { max.sparsity <- rowiseMaxSparsity(as.matrix(long.x), as.matrix(long.v))}
-      return(list("U" = l, "sparsity_space"=max.sparsity, "total.log.lik" = ll, "penalty" = penalty))
+      return(list("U" = l, "sparsity_space"=max.sparsity, "total.log.lik" = ll, "penalty" = penalty, "s"=s))
   }
 
 

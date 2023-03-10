@@ -532,11 +532,17 @@ MatrixChange <- function(new, old)
 #1.26 changes- drop the burn in.
 Update_FL <- function(X, W, W_c, option, preV = NULL, preU = NULL, burn.in = FALSE){
   # number of features - to avoid using T in R
+  #Tracking data for debugging things...
+  ll.tracker <- c()
+  mse.tracker <- c()
+  penalty.tracker <- c()
+  iter.tracker <- c()
   D = ncol(X)
   tStart0 = Sys.time()
   es.objective <- c()
   em.objective <- list()
   iter.objective <- list()
+  s.weight.tracker <- list()
   V = NULL
   #Random initialization of F
   if(!is.null(preV))
@@ -587,14 +593,20 @@ Update_FL <- function(X, W, W_c, option, preV = NULL, preU = NULL, burn.in = FAL
       option <- UpdateSparsityMAPAutofit(iii, U,V, option)
     }
 
-    V.new = fit_V(X, W, U, option, V); #by iter 3 really slows down, due to the L1 requirements. Yea this won't do....
+    V.new = FitVWrapper(X, W, U, option)#, formerV = V);
     iteration.ll.total <- V.new$total.log.lik
+    ll.tracker <- c(ll.tracker, V.new$total.log.lik)
+    penalty.tracker <- c(penalty.tracker, V.new$penalty)
+    mse.tracker <- c(mse.tracker, norm(W*X-W*(U%*%t(V.new$V)), type = "F")/(nrow(X) * ncol(X)))
+    message("V penalty, ", V.new$penalty)
+    iter.tracker <- c(iter.tracker, "V")
     #More crap to follow the objective
     if(option$debug)
     {
       message("here")
       es.objective <- c(es.objective, GetStepWiseObjective(X,W,W_c,V,V.new$V, U,"U",option));
       em.objective[[(i.c)]] <- compute_obj(X,W,W_c, U,V.new$V,option, globalLL=TRUE, decomp = TRUE)
+      s.weight.tracker[[i.c]] <- V.new$s
       i.c <- i.c + 1
     }
     V = V.new$V #Just get the matrix out.
@@ -612,17 +624,19 @@ Update_FL <- function(X, W, W_c, option, preV = NULL, preU = NULL, burn.in = FAL
 
 
     ## update L
-    U.new <- FitUWrapper(X,W,W_c,V, option,r.v = trait.var[iii,])
+    U.new <- FitUWrapper(X,W,W_c,V, option,r.v = trait.var[iii,])#, prevU = U)
 
+    ll.tracker <- c(ll.tracker, U.new$total.log.lik)
+    penalty.tracker <- c(penalty.tracker, U.new$penalty)
+    mse.tracker <- c(mse.tracker, norm(W*X-W*(U.new$U %*%t(V)), type = "F")/(nrow(X) * ncol(X)))
+    iter.tracker <- c(iter.tracker, "U")
     if(option$debug)
     {
       #ES stands for each step.
       es.objective <- c(es.objective, GetStepWiseObjective(X,W,W_c,U,U.new$U, V,"V",option))
-      print(i.c)
-      print(em.objective)
       em.objective[[(i.c)]] <- compute_obj(X,W,W_c, U.new$U,V,option, globalLL=TRUE, decomp = TRUE)
-      print(i.c)
       iter.objective[[(i.c/2)]] <- compute_obj(X,W,W_c, U.new$U,V,option, globalLL=TRUE, decomp = TRUE)
+      s.weight.tracker[[i.c]] <- U.new$s
       i.c <- i.c + 1
     }
 
@@ -667,6 +681,10 @@ Update_FL <- function(X, W, W_c, option, preV = NULL, preU = NULL, burn.in = FAL
         ret$each.step.obj <- es.objective;
         ret$each.matrix.obj <- em.objective;
         ret$full.iter.obj <- iter.objective
+        ret$penalized_ll <- ll.tracker
+        ret$penalties <- penalty.tracker
+        ret$iter_mat <- iter.tracker
+        ret$global.mse <- mse.tracker
         }
      return(ret)
     }else{

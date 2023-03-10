@@ -42,7 +42,10 @@ penalizedLogLik <- function(X,W,W_c, U,V,...)
   penalizedLogLikV(X,W, U,V,...) + penalizedLogLikU(X,W,W_c,U,V,...)
 }
 
-
+stdNormalFit <- function(residuals)
+{
+  0.5 * sum(residuals^2)
+}
 penalizedLogLikV <- function(X,W,U,V, use.resid = NULL,...)
 {
   #simple way
@@ -74,6 +77,15 @@ penLL <- function(n, resids)
 {
   ss <- sum(resids^2)
   (-n/2) * (log(2*pi/n) + 1 + log(ss + .Machine$double.xmin))
+}
+
+penLLSimp <- function(N, M, residuals)
+{
+  -M * N / 2 * log(sum(residuals^2))
+}
+penYuan <-function(residuals)
+{
+  -sum(sum(residuals^2))
 }
 
 penalizedLogLikU <- function(X,W,W_c, U,V, use.resid = NULL, fixed_first = FALSE)
@@ -111,6 +123,8 @@ compute_obj <- function(X, W, W_c, L, FactorM, option, decomp = FALSE, loglik = 
   }
   M = ncol(X)
   N = nrow(X)
+  #message("Scaling out L, in DEVELOPMENT")
+  #L <- apply(L,2, function(x) x/norm(x, "2"))
   residuals = calcGlobalResiduals(X,W,L, FactorM, W_cov =W_c, fixed_first = FALSE);
 	#Residual_penalty = sum(sum(residual^2));
 #	Residual_penalty = sum(residual^2) / (2 * nrow(L));
@@ -124,16 +138,18 @@ compute_obj <- function(X, W, W_c, L, FactorM, option, decomp = FALSE, loglik = 
     FactorM_penalty = option[['lambda1']] * sum(abs(FactorM[,-1])) + 0 * sqrt(sum(FactorM[,-1] ^ 2));
 
   }
-
-
   if(!is.null(loglik))
   {
     #Residual_penalty = -loglik #passed
     #message("Replacing with my calculated log lik")
     if(globalLL)
     {
-      message("Doing global ll instead...")
-      mine = penLL(nrow(X) * ncol(X),residuals )
+      #message("Doing global modified ll instead...")
+      #mine = penLL(nrow(X) * ncol(X),residuals )
+      #mine = penLLSimp(nrow(X), ncol(X),residuals )
+      mine = -stdNormalFit(residuals)
+      #message("yuan style")
+      #mine = penYuan(residuals)
     }else
     {
       mine = penalizedLogLik(X,W,W_c,L,FactorM, fixed_first = FALSE)
@@ -200,16 +216,20 @@ calcMSE <- function(X,W,Fa, L,...)
 
 #Beta test function- can we pick out the best factors by how they contribute (or don't) to the objective?
 #This will balance in sparsity better than PVE does.
-DropFactorsByObjective <- function(X,W,W_c,U,V, minK, option, maxK = NULL,drop.min.change = TRUE)
+DropFactorsByObjective <- function(X,W,W_c,U,V, maxK, option, minK = 0)
 {
 
-	if(is.null(maxK) | length(maxK) == 0 | maxK == 0)
+	if(is.null(maxK) | length(maxK) == 0)
 	{
 		maxK = ncol(X) - 1
 	  message("Warning case- beware.. max k is off.")
 	}
-  print(maxK)
-  print("Did this work???")
+  if(maxK == 0)
+  {
+    message("Pruning in case where no specified limit on K.")
+    maxK = ncol(V)
+  }
+
   #1) End if only 1 column left doing fixed ubiq version
   if(ncol(as.matrix(V)) == 1 && option$fixed_ubiq)
   {
@@ -240,9 +260,6 @@ DropFactorsByObjective <- function(X,W,W_c,U,V, minK, option, maxK = NULL,drop.m
   min.index <- -1
   #Try dropping each one
   #if removing one reduces the objective, drop that one that results in biggest reduction.
-  print("new recursive level...")
-  print("init.obj.")
-  print(init.obj)
   #A greedy approach to remove factors- drop the one that minimizes the objective overall
   for(i in drop.set) #we don't drop ubiq one
   {
@@ -254,31 +271,11 @@ DropFactorsByObjective <- function(X,W,W_c,U,V, minK, option, maxK = NULL,drop.m
     }
   }
 
-  #Special case- continue to remove until reached a number.∂f
-  if(drop.min.change & min.index == -1 & ncol(V) < maxK)
-  {
-    message("Continuing to remove factors, even though removing more hurts the objective")
-    #Iterate through and get the one with the lowest drop
-    min.increase = Inf
-    for(i in drop.set) #we don't drop ubiq one
-    {
-      new.obj <- compute_obj(X,W,W_c, U[,-i], V[,-i], option)
-      diff = new.obj - init.obj
-      if(diff < min.increase)
-      {
-        min.index <- i
-        min.increase <- diff
-      }
-    }
-    return(DropFactorsByObjective(X,W,W_c,U[,-min.index],V[,-min.index], minK, option, maxK = maxK, drop.min.change = TRUE))
-  }
-
-
   #Removing any objective increases (or stays the same) rather than decreases.
   if((min.obj == init.obj | min.index == -1) & (ncol(U) > maxK))
   {
-    #Now we need to call the funciton again, except this time specify the condition of choosing the one which increases the objective the smallest amount.
-    return(DropFactorsByObjective(X,W,W_c,U[,-min.index],V[,-min.index], minK, option, maxK = maxK, drop.min.change = TRUE))
+    message("No factor reduces objective; none dropped.")
+    return(list("U"=U, "V" = V, "K" = ncol(V)))
   }
   #3) End if dropping any more factors increases the objective and we have reached the max number of K
   else if((min.obj == init.obj | min.index == -1) & (ncol(U) <= maxK))
@@ -286,14 +283,8 @@ DropFactorsByObjective <- function(X,W,W_c,U,V, minK, option, maxK = NULL,drop.m
     return(list("U"=U, "V" = V, "K" = ncol(V)))
   }else
   {
-    return(DropFactorsByObjective(X,W,W_c,U[,-min.index],V[,-min.index], minK, option, maxK=maxK))
+    return(DropFactorsByObjective(X,W,W_c,U[,-min.index],V[,-min.index], maxK, option, minK=minK))
   }
-}
-
-PruneFactorsByObjective <- function(X,W,U,V, minK, option)
-{
-  keep.dat <- DropFactorsByObjective(X,W,W_c,U,V, minK, option)
-  return(list("U"))
 }
 
 #' Calculate the change in objective with each individual matrix update

@@ -175,35 +175,91 @@ fit_V <- function(X, W, U, option, formerV = NULL){
     return(list("V" = FactorM, "sparsity_space"=sparsity.est, "total.log.lik" = running.loglik))
 }
 
-FitVGlobal <- function(X, W, U, option)
+FitVGlobal <- function(X, W, U, option, formerV = NULL)
 {
-  sparsity.est <- NA; penalty = NA; ll = NA; l = NA; FactorM = c()
+  message("VERIFIED GLOBAL FIT")
+  sparsity.est <- NA; penalty = NA; ll = NA; l = NA; FactorM = c(); penalty = NA
   #long.x <- c(t(W_c %*% t(X*W))) #Stacked by column
   long.x <- c(X*W)
   weighted.copies <- lapply(1:ncol(X), function(i) diag(W[,i]) %*% U)
   long.u <- Matrix::bdiag(weighted.copies) #weight this ish too you silly man.
   K <- ncol(U)
+  M = ncol(X)
+
+
+  s = 1
+  test.method = ""
+  if(test.method == "preWeight")
+  {
+    s <- apply(U, 2, function(x) norm(x, "2"))
+    s[s==0] <- 1 #so we don't divide by 0 on empty columns....
+    scaled.u <- sweep(U,2,s,FUN="/")
+    #stopifnot(norm(scaled.u[,1], "2") == 1)
+    weighted.copies <- lapply(1:ncol(X), function(i)  diag(W[,i]) %*% scaled.u)
+    long.u <- Matrix::bdiag(weighted.copies) #weight this ish too you silly man.
+  }
+  if(test.method == "postWeight")
+  {
+    s = apply(long.u, 2, function(x) norm(x, "2"))
+    s[s==0] <- 1 #so we don't divide by 0 on empty columns....
+    long.u <- sweep(long.u,2,s,FUN="/")
+    #long.v <- long.v / s
+    #stopifnot(norm(long.u[,1], "2") == 1)
+  }
+  #Separate into penalized and unpenalized
   dat_i = (as.matrix(long.u))
   choose.cols <- sapply(1:ncol(dat_i), function(x) x %% K)
   unpen <- dat_i[,choose.cols == 1]
-  pen <- dat_i[,choose.cols != 1]
+  pen <- dat_i #include everythign if all penalized
+  if(option$fixed_ubiq)
+  {
+    #only penalize the correct columns.
+    pen <- dat_i[,choose.cols != 1]
+  }
+
  if(option$fixed_ubiq & option$regression_method == "penalized")
 {
-      fit <- penalized::penalized(response = long.x, penalized =pen,
-                                  unpenalized = ~unpen + 0, lambda1 =option[['lambda1']], lambda2=0,
-                                  positive = option$posF, standardize = option$std_coef, trace = FALSE) #, epsilon = option$epsilon, maxiter= 50)
+
+   if(!is.null(formerV))
+   {
+    #old.long.v <- c(t(formerV))
+     fixed.starts <- formerV[,1]
+     message("doing it this way..")
+     penalized.starts <-  c(t(formerV[,-1]))
+     fit <- penalized::penalized(response = long.x, penalized =pen,
+                                 unpenalized = ~unpen + 0, lambda1 =option[['lambda1']], lambda2=0,
+                                 positive = option$posF, standardize = option$std_coef, trace = FALSE,startbeta = penalized.starts, startgamma = fixed.starts ) #, epsilon = option$epsilon, maxiter= 50)
+
+   }else
+   {
+     fit <- penalized::penalized(response = long.x, penalized =pen,
+                                 unpenalized = ~unpen + 0, lambda1 =option[['lambda1']], lambda2=0,
+                                 positive = option$posF, standardize = option$std_coef, trace = FALSE) #, epsilon = option$epsilon, maxiter= 50)
+   }
+
 
 
       f = penalized::coef(fit, 'all')
       ll = fit@loglik
       #F 1-M are the 1st factor
-      M = ncol(X)
-      FactorM = cbind(f[1:M],matrix(f[(M+1):(M*K)], nrow = M,byrow = TRUE) )
-}
-  #here we don't even pass in the 1st factor, so not an issue.
+      FactorM = cbind(f[1:M],matrix(f[(M+1):(M*K)], nrow = M,byrow = TRUE))
+      message("Penalty should be here......")
+      penalty = fit@penalty[1]
+} else if(option$regression_method == "OLS")
+  {
+    fit <- RcppArmadillo::fastLmPure(as.matrix(long.u), long.x)
+    f = as.vector(coef(fit)) #check this, but I think its correct
+    FactorM = matrix(f, nrow = M,byrow = TRUE)
+    ll = penLL(length(long.x), long.x - as.matrix(long.u) %*% fit$coefficients) # hack for now)
+    #here we don't even pass in the 1st factor, so not an issue.
+  }
+    else
+    {
+      message("Not implemented. Crash and burn.")
+    }
   if(option$actively_calibrating_sparsity) { sparsity.est <- rowiseMaxSparsity(long.x, pen, fixed_first = FALSE)}
 
-  return(list("V" = FactorM, "sparsity_space"=sparsity.est, "total.log.lik" = ll))
+  return(list("V" = FactorM, "sparsity_space"=sparsity.est, "total.log.lik" = ll, "penalty" = penalty, "s"=s))
 
 }
 #' Wrapper for the V function, not serving a purpose at the moment.
@@ -222,5 +278,5 @@ FitVWrapper <- function(X, W, U, option, formerV = NULL)
 {
   #HERE?
   #fit_V(X, W, as.matrix(U), option, formerV = formerV)
-  FitVGlobal(X, W, as.matrix(U), option)
+  FitVGlobal(X, W, as.matrix(U), option, formerV = formerV)
 }
