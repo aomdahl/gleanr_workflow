@@ -29,6 +29,12 @@ calcGlobalResiduals <- function(X,W,U,V, W_cov = NULL, fixed_first = FALSE)
   }
   if(!is.null(W_cov))
   {
+
+    if(ncol(W_cov) != ncol(X))
+    {
+      message("Dimensions mismatch. Bug detected")
+      return(NA)
+    }
     return((W * X - W * (U %*% t(V))) %*% t(W_cov)) #Why at the end? This is how the matrix math shakes out
   }
   return((W * X - W * (U %*% t(V))))
@@ -42,9 +48,9 @@ penalizedLogLik <- function(X,W,W_c, U,V,...)
   penalizedLogLikV(X,W, U,V,...) + penalizedLogLikU(X,W,W_c,U,V,...)
 }
 
-stdNormalFit <- function(residuals)
+stdLogNormalFit <- function(residuals, resdidual.variance = 1)
 {
-  0.5 * sum(residuals^2)
+  -(resdidual.variance/2) * sum(residuals^2)-0.5*log(2*pi*resdidual.variance)
 }
 penalizedLogLikV <- function(X,W,U,V, use.resid = NULL,...)
 {
@@ -79,6 +85,20 @@ penLL <- function(n, resids)
   (-n/2) * (log(2*pi/n) + 1 + log(ss + .Machine$double.xmin))
 }
 
+
+#' Calculate the log-liklihood of the data fit as actually optimized by penalized
+#' This is the log-normal distribution, where we assume variance =1
+#' @param n the number of samples involved
+#' @param resids the residuals involved, in a list
+#'
+#' @return the log-liklihood
+#' @export
+penLLEmpirical <- function(n, resids)
+{
+  (-1/2)*sum(resids^2) - 0.5*log(2*pi)
+}
+
+
 penLLSimp <- function(N, M, residuals)
 {
   -M * N / 2 * log(sum(residuals^2))
@@ -109,7 +129,8 @@ penalizedLogLikU <- function(X,W,W_c, U,V, use.resid = NULL, fixed_first = FALSE
   total.log.lik
 }
 
-compute_obj <- function(X, W, W_c, L, FactorM, option, decomp = FALSE, loglik = TRUE, globalLL=FALSE){
+#modified to global LL!
+compute_obj <- function(X, W, W_c, L, FactorM, option, decomp = FALSE, loglik = TRUE, globalLL=TRUE){
 
 	if(is.null(FactorM) | is.null(L))
 	{
@@ -147,7 +168,7 @@ compute_obj <- function(X, W, W_c, L, FactorM, option, decomp = FALSE, loglik = 
       #message("Doing global modified ll instead...")
       #mine = penLL(nrow(X) * ncol(X),residuals )
       #mine = penLLSimp(nrow(X), ncol(X),residuals )
-      mine = -stdNormalFit(residuals)
+      mine = stdLogNormalFit(residuals)
       #message("yuan style")
       #mine = penYuan(residuals)
     }else

@@ -47,16 +47,21 @@ MatrixDFU <- function(mat_in,fixed_first = FALSE)
 
 #CalcMatrixBIC(X,W,U,V,df=df,fixed_first = fixed_first,...)
 #Note- we assume input to already be in the correct direction, so no transfofmration eeded on the covariance term...
-CalcMatrixBIC <- function(X,W,U,V, W_cov = NULL, ev="std", weighted = FALSE, df = NULL, fixed_first = FALSE)
+CalcMatrixBIC <- function(X,W,U,V, W_cov = NULL, ev="std", weighted = FALSE, df = NULL, fixed_first = FALSE, learning = "V")
 {
   `%>%` <- magrittr::`%>%`
   #Calculated based on my understanding of what is given by equations 12 and 7 in Lee et al 2010
   #We assume U (First term) is known/fixed, V is our predictor we evaluate here
   #11/17 UPDATE: df is calculated for U and V!
-
+  if(!weighted)
+  {
+    message("unweighted, alert.")
+  }
   n=nrow(X)
   d = ncol(X)
   #if(fixed_first) FF$
+  #This shouldn't make a difference, resiudals will be unchanged.
+  #TODO: remove this.
   if(fixed_first)  #if(FALSE) FF$
   {
 	  #message("Removing first factor because its fixed")
@@ -83,10 +88,11 @@ CalcMatrixBIC <- function(X,W,U,V, W_cov = NULL, ev="std", weighted = FALSE, df 
     errvar <- WeightedAltVar(X,W,U, var.method = bic.var, W_cov = W_cov)
   }
   else # anuumber gets passed in.
-  { #message("in correct place...")
+  {
+    message("in correct place...")
     #print(ev)
     errvar = ev
-    }
+  }
 
   if(is.null(df))
   {
@@ -98,7 +104,23 @@ CalcMatrixBIC <- function(X,W,U,V, W_cov = NULL, ev="std", weighted = FALSE, df 
   {
     W_cov <- diag(nrow(X))
   }
-  ret <- norm(W_cov %*% (X*W - (U %*% t(V))*W), type = "F")^2/(n*d * errvar) + (log(n*d)/(n*d))*df
+
+  #I was doing this wrong previously.
+  #If we reotated things, we need to rotate them back....
+  if(learning == "U")
+  {
+    u.old <- U;
+    U <- V ; V <- u.old
+    X <- t(X); W <- t(W);
+  }
+  if(learning == "V")
+  {
+    message("Currently no covariance on U")
+    W_cov = NULL
+  }
+  resid.matrix <- calcGlobalResiduals(X,W,U,V, W_cov = W_cov, fixed_first = fixed_first)
+  stopifnot(any(!is.null(resid.matrix)))
+  ret <- norm(resid.matrix, type = "F")^2/(n*d * errvar) + (log(n*d)/(n*d))*df
   #message("Total ", ret)
  #message(". ")
 
@@ -178,10 +200,17 @@ CalcMatrixBIC.loglikGLOBALversion <- function(X,W,U,V, which.learning, W_cov = N
     resids = calcGlobalResiduals(X,W,U,V,W_cov=W_cov,...)
   }else
   {
+    #why is this condition here? might just make thigns complex.
     resids = calcGlobalResiduals(X,W,U,V, W_cov = NULL,...)
   }
 
-  model.ll = penLL(n*d, resids)
+  #model.ll = penLL(n*d, resids)
+  model.ll = penLLSimp(n,d,resids)
+  #The following was tested on 3/17. It doesn't work, my derivation is wrong. I am missing something in the log.
+  #message("Compare this to...")
+  #print(penLLEmpirical(n*d, resids))
+  #message("Trying to look at things differently")
+  #model.ll=penLLEmpirical(n*d, resids)
   if(is.null(df))
   {
     df <- MatrixDFU(V)
@@ -207,7 +236,68 @@ CalcMatrixBIC.loglikGLOBALversion <- function(X,W,U,V, which.learning, W_cov = N
   return(ret)
 }
 
-#Are you accounting for the weighting? That is important...
+
+
+#' BIC using global fit calculation and the optimizing log-liklihood (a normal form)
+#' Note that this doesn't require any fancy counting on the residuals, since all are just lumped into one regression
+#' @param X original data matrix (SNPs x studies)
+#' @param W uncertainty associated with X (SNPs x studies)
+#' @param U SNPs x K matrix
+#' @param V Studies x K matrix
+#' @param W_cov Covariance matrix to correct for. For now just implemented in U.
+#' @param which.learning if we are learning "V" or "U"
+#' @param df degrees of freedom associated with matrix currently learning
+#' @param lm.fit.residuals Specify these to scale the log-liklihood by the optimal OLS fit. Not recommended.
+#'
+#' @return
+#' @export
+CalcMatrixBIC.NormalLoglikGLOBALversion <- function(X,W,U,V, which.learning, W_cov = NULL, df = NULL, calc.residual.variance = FALSE, decomp = FALSE,...)
+{
+  `%>%` <- magrittr::`%>%`
+  n=nrow(X)
+  d = ncol(X)
+  k = ncol(U)
+  #Residuals are the same regardless of
+  if(which.learning == "U")
+  {
+    resids = calcGlobalResiduals(X,W,U,V,W_cov=W_cov,...)
+  }else
+  {
+    resids = calcGlobalResiduals(X,W,U,V, W_cov = NULL,...)
+  }
+  residual.variance =1
+  if(calc.residual.variance)
+  {
+    residual.variance = CalcVariance(n*d, resids)
+  }
+
+  model.ll = stdLogNormalFit(resids, residual.variance=residual.variance)
+  if(is.null(df))
+  {
+    df <- MatrixDFU(V)
+  }
+
+  if(decomp)
+  {
+    message("log fit: ", -2*model.ll)
+    message("df term: ", log(n*d)*df)
+  }
+  if(which.learning == "U" & df == 0)
+  {
+    message("Red alert: we have zeroed out everything")
+    message("This means our model thinks there is no signal whatsoever. Also possible.")
+  }
+  ret <- -2*model.ll + log(n*d)*df
+  if(!is.null(lm.fit.residuals))
+  {
+    lm.ll = penLL(n*d, lm.fit.residuals)
+    ret <- lm.ll/(model.ll) + (log(n*d)/(n*d))*df
+  }
+  return(ret)
+}
+
+
+
 
 #Determine the variance using OLS. Basically, this is the "best" residual variance we can get.
 AltVar <- function(X,U)
@@ -327,8 +417,8 @@ CalcVBIC <- function(X,W,U,V,fixed_first=FALSE,lm.resid = NULL,...)
   #message("Harding coding fixed_first = FALSE on all BIC calculations")
   #fixed_first = FALSE
   df.dat=MatrixDFU(V,fixed_first=fixed_first)
-  var.based.bic <- CalcMatrixBIC(X,W,U,V,df=df.dat,fixed_first = fixed_first,...)
-
+  #var.based.bic <- CalcMatrixBIC(X,W,U,V,df=df.dat,fixed_first = fixed_first,learning = "V",...)
+  var.based.bic <- NA
   ll.based.bic <- CalcMatrixBIC.loglikversion(X,W,U,V, which.learning = "V", df = df.dat, fixed_first=fixed_first)
 
   ll.based.bic.ratio <- CalcMatrixBIC.loglikversion(X,W,U,V, which.learning = "V", df = df.dat, lm.fit.residuals = lm.resid,fixed_first=fixed_first)
@@ -341,7 +431,7 @@ CalcVBIC <- function(X,W,U,V,fixed_first=FALSE,lm.resid = NULL,...)
 CalcUBIC <- function(X,W,W_c, U,V,lm.resid = NULL,...)
 {
   df.dat <-  MatrixDFU(U)
-  var.based.bic <- CalcMatrixBIC(t(X),t(W),V,U,df=df.dat,W_cov = W_c,...)
+  var.based.bic <- CalcMatrixBIC(t(X),t(W),V,U,df=df.dat,W_cov = W_c, learning = "U",...)
   #And now, the alternative versions:
   ll.based.bic <- CalcMatrixBIC.loglikversion(X,W,U,V, which.learning = "U", df = df.dat, W_cov = W_c)
   ll.based.bic.ratio <- CalcMatrixBIC.loglikversion(X,W,U,V, which.learning = "U", df = df.dat, lm.fit.residuals = lm.resid, W_cov = W_c)#OMIT THIS
@@ -363,7 +453,8 @@ FitVs <- function(X, W, initU, lambdas,option, weighted = FALSE)
   {
     l <- lambdas[[i]]
     option$lambda1 <- l
-    f.fits[[i]] <- fit_V(X, W, initU, option, formerV = NULL)
+    # f.fits[[i]] <- fit_V(X, W, initU, option, formerV = NULL) #I forgot to change this: need to re-run objective tests now >_<
+    f.fits[[i]] <- FitVWrapper(X, W, initU, option, formerV = NULL)
   }
 
   if(weighted) {
@@ -391,7 +482,8 @@ FitVs <- function(X, W, initU, lambdas,option, weighted = FALSE)
     {
       av <- WeightedAltVar(X,W,initU, var.method = bic.var, fit.resids  = TRUE)
     }
-    bics <- do.call("rbind", lapply(f.fits, function(x) CalcVBIC(X,W,initU,x$V, ev=av[[1]], lm.resid = av[[2]], weighted = TRUE, fixed_first = option$fixed_ubiqs)))
+    #bics <- do.call("rbind", lapply(f.fits, function(x) CalcVBIC(X,W,initU,x$V, ev=av[[1]], lm.resid = av[[2]], weighted = TRUE, fixed_first = option$fixed_ubiqs)))
+    bics <- do.call("rbind", lapply(f.fits, function(x) CalcVBIC(X,W,initU,x$V, ev=1, lm.resid = av[[2]], weighted = TRUE, fixed_first = option$fixed_ubiqs)))
   }else{ #unweighted
     av <- AltVar(X,initU)
     bics <- do.call("rbind", lapply(f.fits, function(x) CalcVBIC(X,W,initU, x$V, ev=av[[1]],lm.resid = av[[2]], fixed_first = option$fixed_ubiqs)))
@@ -440,13 +532,16 @@ FitUs <- function(X, W, W_c, initV, alphas,option, weighted = FALSE)
     a <- alphas[[i]]
     message(i)
     option$alpha1 <- a
-    l.fits[[i]] <- fit_U(X, W, W_c, initV, option)
+    #l.fits[[i]] <- fit_U(X, W, W_c, initV, option)
+    #change made here...3/8
+    l.fits[[i]] <- FitUWrapper(X, W, W_c, initV, option)
 
   }
   #TODO: recode this, so don't need the logic statement. Downstream should be able to handle it
   if(weighted) {
     av <- WeightedAltVar(t(X),t(W),initV, var.method = bic.var, fit.resids  = TRUE, W_cov = W_c)
-    bics <- do.call('rbind', lapply(l.fits, function(x) CalcUBIC(X,W,W_c,as.matrix(x$U),initV, ev=av[[1]], weighted = TRUE, lm.resid=av[[2]])))
+    #bics <- do.call('rbind', lapply(l.fits, function(x) CalcUBIC(X,W,W_c,as.matrix(x$U),initV, ev=av[[1]], weighted = TRUE, lm.resid=av[[2]])))
+    bics <- do.call('rbind', lapply(l.fits, function(x) CalcUBIC(X,W,W_c,as.matrix(x$U),initV, ev=1, weighted = TRUE, lm.resid=av[[2]])))
   }else{
     av <- AltVar(t(X),initV, fit.resids = TRUE) #This step is quite slow.... need to speed this up somehow.
     bics <-  do.call('rbind', lapply(l.fits, function(x) CalcUBIC(X,W,W_c,as.matrix(x$U),initV,ev=av[[1]], lm.resid = av[[2]] )))
@@ -699,6 +794,7 @@ ProposeNewSparsityParams <- function(bic.list,sparsity.params, curr.dist, curr.i
 getBICMatrices <- function(opath,option,X,W,W_c, all_ids, names, min.iter = 2, max.iter = 30, burn.in.iter = 0, bic.type = 4, use.optim = TRUE)
 {
   message("using BIC type:  ", bic.type)
+  W_ld = NULL
 #If we get columns with NA at this stage, we want to reset and drop those columns at the beginning.
   #Currently, just using NULL for W_ld
   burn.in.sparsity <- DefineSparsitySpaceInit(X, W, W_c, NULL, option, burn.in = burn.in.iter) #If this finds one with NA, cut them out here, and reset K; we want to check pve here too.
@@ -725,7 +821,7 @@ getBICMatrices <- function(opath,option,X,W,W_c, all_ids, names, min.iter = 2, m
   #kick things off
   lambdas <- consider.params$lambdas
   alphas <- consider.params$alphas
-
+  INCR.LIMIT=3
   NOT.CONVERGED <- TRUE; i = 1
   #If initializing with U, start there...
   if(option$u_init != "")
@@ -768,12 +864,20 @@ getBICMatrices <- function(opath,option,X,W,W_c, all_ids, names, min.iter = 2, m
       {
         init.alpha = rec.dat$alpha.s[length(rec.dat$alpha.s)] #the most recent previous guess
       }
-
+      upper.lim=max(alphas)
+      if(i > 1)
+      {
+        #Don't allow the parameter to more than triple in a given iteration
+        upper.lim = min(init.alpha*INCR.LIMIT, max(alphas))
+      }
       #scoretest <- GetUBICOptim(init.alpha, X,W,optimal.v, option )
       #Trying this as SANN instead ob rent- meant to be bette ron rough surfaces.
       #message('here.')
-      test <- optim(par = init.alpha, fn =  GetUBICOptim, method = "Brent", lower = min(alphas)*0.1, upper = max(alphas),
+      test <- optim(par = init.alpha, fn =  GetUBICOptim, method = "Brent", lower = min(alphas)*0.1, upper = upper.lim,
                     X=X, W=W, initV = optimal.v, option = option, W_c = W_c, control= list('trace'=1))
+      #test <- optim(par = init.alpha, fn =  GetUBICOptim, method = "Brent", lower = min(alphas)*0.1, upper = upper.lim,
+      #              X=X, W=W, initV = optimal.v, option = option, bic.method = 1, ev = 1, W_c = W_c, control= list('trace'=1))
+
       u.fits <- FitUs(X, W, W_c, optimal.v, c(test$par),option, weighted = TRUE)
       bic.list.u <- c(test$value)
       alphas <- c(test$par)
@@ -817,11 +921,19 @@ getBICMatrices <- function(opath,option,X,W,W_c, all_ids, names, min.iter = 2, m
       {
         init.lambda = rec.dat$lambda.s[length(rec.dat$lambda.s)]
       }
-
+      upper.lim=max(alphas)
+      if(i > 1)
+      {
+        #Don't allow the parameter to more than triple in a given iteration
+        upper.lim = min(init.lambda*INCR.LIMIT, max(lambdas))
+      }
         #scoretest <- GetVBICOptim(init.lambda, X,W,optimal.u, option )
+      #v.fits <- FitVs(X,W, optimal.u,min(lambdas),option, weighted = TRUE)
         #test <- GetVBICOptim(par, X,W,optimal.u, option, weighted = TRUE, bic.method = 4)
         test <- optim(par = init.lambda, fn =  GetVBICOptim, method = "Brent", lower = min(lambdas)*0.1, upper = max(lambdas),
                       X=X, W=W, initU = optimal.u, option = option, control= list('trace'=1))
+        #test <- optim(par = init.lambda, fn =  GetVBICOptim, method = "Brent", lower = min(lambdas)*0.1, upper = max(lambdas),
+        #              X=X, W=W, initU = optimal.u, option = option,bic.method = 1, ev = 1, control= list('trace'=1))
         v.fits <- FitVs(X,W, optimal.u,c(test$par),option, weighted = TRUE)
         bic.list.v <- c(test$value)
         lambdas <- c(test$par)
@@ -854,6 +966,7 @@ getBICMatrices <- function(opath,option,X,W,W_c, all_ids, names, min.iter = 2, m
 
     #update the parameters for U based on the new V
     u.sparsity <- DefineSparsitySpace(X,W,W_c, optimal.v, "U", option) #Here in case we hit the max.
+
     if(use.optim)
     {
       alphas <- SelectCoarseSparsityParamsGlobal(u.sparsity, n.points = 15)
@@ -942,10 +1055,8 @@ gwasML_ALS_Routine <- function(option, X, W,W_c, optimal.init, maxK=0, opath = "
 #{
 #  reg.run <- Update_FL(X, W, option, preU = optimal.init)
 #}
+option$debug <- TRUE
 reg.run <- Update_FL(X, W, W_c, option, preV = optimal.init)
-print(maxK)
-print(reg.run$V)
-message("DID IT PASS???")
 if(maxK != 0)
 {
   if(ncol(reg.run$V)> maxK)
@@ -960,43 +1071,13 @@ if(maxK != 0)
     message("Resulted in fewer than desired columns. Sorry.")
     maxK <- ncol(reg.run$V)
   }
+}else
+{
+  maxK <- ncol(reg.run$V)
 }
-  #alternative option: drop until objective no longer shrinks (?)
-  objective.drop <- TRUE
-  if(objective.drop  & ncol(reg.run$V) > maxK)
-  {
-    #function(X,W,U,V, minK, option
-    #unction(X,W,U,V, minK, option, maxK = NULL,drop.min.change = TRUE)
-    r <- DropFactorsByObjective(X,W,W_c,reg.run$U,reg.run$V, minK=maxK, option, maxK = maxK) #want it to be famed at 5?
-    reg.run$V <- r$V
-    reg.run$U <- r$U
-    reg.run$K <- r$K
-  }
-  pve_drop = FALSE
-  if(pve_drop)
-  {
-    print("Dropping by PVE tooo...")
-    drops <- CheckLowPVE(X,W,reg.run$V, thresh = 0.01)
-    r <- DropSpecificColumns(drops, reg.run$U, reg.run$V)
-    reg.run$V <- r$V
-    reg.run$U <- r$U
-    reg.run$K <- ncol(r$U)
-  }
-  #if((ncol(reg.run$V) > maxK) & (maxK != 0)) #Still not fixed
-  #{
-  #  message("Dropping by PVE sad face.")
-  #  keep.cols <- or$ix[1:maxK]
-  #  reg.run$V <- as.matrix(reg.run$V[,keep.cols])
-  #  reg.run$U <- as.matrix(reg.run$U[,keep.cols])
-  #  reg.run$PVE <- reg.run$PVE[keep.cols]
-  #}
-    #print("Top PVEs:")
-  #print(reg.run$PVE[keep.cols])
-  #print("All PVEs")
-  #print(reg.run$PVE)
-
-  save(reg.run, file = paste0(option$out,opath, "_gwasMF_iter.Rdata" ))
-print(reg.run$V)
+reg.run <- PruneNumberOfFactors(X,W,W_c,reg.run,option$Kmin, maxK, option)
+save(reg.run, file = paste0(option$out,opath, "_gwasMF_iter.Rdata" ))
+print(paste0(option$out,opath, "_gwasMF_iter.Rdata" ))
 
 if(option$plots)
 {
@@ -1058,6 +1139,7 @@ runFullPipeClean <- function(args, gwasmfiter =5, save.pipe = FALSE,rep.run = FA
   option$K <- bic.dat$K
   option$alpha1 <- bic.dat$alpha
   option$lambda1 <- bic.dat$lambda
+
   ret <- gwasML_ALS_Routine(option, X, W, W_c, bic.dat$optimal.v, maxK=bic.dat$K) #I like this better
   ret[["snp.ids"]] <- all_ids
   ret[["trait.names"]] <- names
@@ -1117,6 +1199,7 @@ runStdPipeClean <- function(args,alpha,lambda, opath = "", initV = NULL)
 #'
 #' @return
 #' @export
+#' #res <- gwasMFBIC(true.betas,1/true.ses, snps, colnames(true.ses), K=5,C=NULL)
 gwasMFBIC <- function(X,W, snp.ids, trait.names, C = NULL, K=0, gwasmfiter =5, rep.run = FALSE, bic.var= "mle", use.init.k = FALSE, init.mat = "V", is.sim = FALSE, save.path = "")
 {
   opath = ""
@@ -1126,6 +1209,10 @@ gwasMFBIC <- function(X,W, snp.ids, trait.names, C = NULL, K=0, gwasmfiter =5, r
   }
   d <- initializeGwasMF(X,W,C, snp.ids, trait.names, K=ifelse(use.init.k, K, 0), init.mat=init.mat) #Either use specified, or prune down as we
   option <- d$options; args <- d$args; hp <- d$hp; all_ids <- d$all_ids; names <- d$namesl; W_c <- d$W_c
+  if(is.sim)
+  {
+    option$Kmin <- K
+  }
   option$svd_init <- TRUE; args$svd_init <- TRUE
   K.cap <- K
   option$bic.var <- bic.var
@@ -1187,10 +1274,13 @@ gwasMFBIC <- function(X,W, snp.ids, trait.names, C = NULL, K=0, gwasmfiter =5, r
     ret <- all.runs[[best]][[1]]
   } else
   {
+    #test 1: 6 in, drops 1 CHECK
+    #test 2: 2 in, drops none CHECK
+    #test3: 8 in, drops 3
     ret <- gwasML_ALS_Routine(option, X, W, W_c, bic.dat$optimal.v, maxK=K.cap)
     if(is.sim)
     {
-      save(ret, file = paste0(save.path, "als.RData"))
+      save(ret, file = paste0(save.path, "global.fit.als.RData"))
     }
 
   }
