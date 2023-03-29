@@ -71,7 +71,7 @@ pveBySVD <-function(V,U,X,K,D = NULL)
     p.svd <- svd(projection)
     ve <- c(ve, sum(p.svd$d^2))
   }
-  r <- ve / sum((full.svd$d)^2) 
+  r <- ve / sum((full.svd$d)^2)
   return(c(r[1], sapply(2:K, function(i) r[i] - r[i-1])))
 }
 
@@ -139,11 +139,11 @@ PMA_PVE <- function(x,v, K=NULL, center= FALSE)
   xfill[is.na(x)] <- mean.na(xfill)
   for(k in 1:K){
     vk <- matrix(v[,1:k], ncol=k)
-    
+
 
     ve <- c(ve, getVE(xfill,vk))
 
-    
+
   }
   pve <- ve/sum(svd(xfill)$d^2) # proportion of variance explained
   if(K > 1)
@@ -173,7 +173,7 @@ PMA_PVE <- function(x,v, K=NULL, center= FALSE)
   }
   #pve
 pve
-  
+
 }
 
 
@@ -222,14 +222,14 @@ approxPVE <- function(V,U,X,K,D = NULL)
 }
 
 
-#FlashR method 
+#FlashR method
 #why the 2 different ones? ppooh
 approxPVE_init <- function(X, F, L)
 {
   d = scaledMats(F,L)$d
   r2 <- (X - L %*% t(F))^2 #this could be better done if we had 2nd moments.
   N = nrow(X)
-  #tau_hat <- N/colSums(r2) #assumes column-specific variance, 
+  #tau_hat <- N/colSums(r2) #assumes column-specific variance,
   #tau_hatm <- t(replicate(nrow(X), tau_hat))
   tau_hat <- 1/r2
   d^2/sum(d^2 + sum(1/tau_hat))

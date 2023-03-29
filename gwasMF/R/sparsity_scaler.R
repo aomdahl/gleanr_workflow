@@ -209,10 +209,15 @@ SelectCoarseSparsityParamsGlobal <- function(param.space,n.points = 3, logs = TR
     }
   }else
   {
+    min.factor <- 0.1
+    if(length(param.space) == 1)
+    {
+      min.factor <- 0.001
+    }
     #Issue- if they are small, we are increasing, not decreasing
     #Update to log 10
     #s <- seq(log10(1e-5), log10(dm), length.out = (n.points + 1))
-    s <- 10^(seq(log10(min(param.space)* 0.1), log10(dm), length.out = n.points))
+    s <- 10^(seq(log10(min(param.space)* min.factor), log10(dm), length.out = n.points))
     s
   }
 

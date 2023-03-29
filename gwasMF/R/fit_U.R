@@ -161,7 +161,6 @@
 #how can I test and compare this?
   FitUGlobal <- function(X, W,W_c, V, option, formerU, r.v = NULL)
   {
-    message("VERIFIED GLOBAL FIT")
     #it_U(X, W, W_c, initV, option)
     max.sparsity <- NA; penalty = NA; ll = NA; l = NA; penalty = NA
     long.x <- c(W_c %*% t(X*W)) #stacks by SNP1, SNP2...
@@ -219,12 +218,11 @@
       ll = fit@loglik
       penalty = fit@penalty[1]
       l = matrix(l, nrow = nrow(X), ncol = ncol(V),byrow = TRUE)
-
-      print(head(l))
-    }
-    else
+    }else if(option$regression_method == "None"){
+     l = c()
+    }  else
     {
-      mesage("Nothing implemented.")
+      message("Nothing implemented.")
     }
 
       #convert back to a U:

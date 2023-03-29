@@ -351,6 +351,14 @@ readInSettings <- function(args)
   option[["covar"]] <- args$covar_matrix
   option$auto_grid_search <- args$auto_grid_search
   option$sorted_vars <- args$sort
+  if(args$simulation)
+  {
+    message("specifying minimum K with simulation.")
+    option$Kmin <- args$nfactors
+  }else
+  {
+    option$Kmin <- 0
+  }
   #Experimental
   option$burn.in <- 0
   option$fix.alt.setting <- NA
@@ -364,7 +372,7 @@ readInSettings <- function(args)
   #You should just have this be a proper R object with all the attributes and data you need....
 
 
-  if(args$regression_method == "penalized" | args$regression_method == "glmnet")
+  if(args$regression_method %in% c("penalized", "glmnet", "OLS"))
   {
 	 option[["regression_method"]] = args$regression_method #push this through all initializations.
   }else{
@@ -397,6 +405,7 @@ readInSettings <- function(args)
 defaultSettings <- function(K=0, init.mat = "V")
 {
   args <- UdlerArgs()
+  args$niter <- 200
   args$uncertainty <- ""
   args$gwas_effects <- ""
   args$nfactors <- K
@@ -463,7 +472,8 @@ YuanSimEasy <- function()
   args$nfactors <- 5
   args$calibrate_k <- FALSE
   args$trait_names = ""
-  args$niter <- 50
+  args$niter <- 100
+  args$simulation <- TRUE
   args$alphas <- ""
   args$lambdas <- ""
   args$autofit <- -1
@@ -504,7 +514,7 @@ UdlerArgs <- function()
   args$nfactors <- 57
   args$calibrate_k <- FALSE
   args$trait_names = ""
-  args$niter <- 50
+  args$niter <- 150
   args$alphas <- ""
   args$lambdas <- ""
   args$autofit <- -1

@@ -201,6 +201,17 @@ gwasMFGrid <- function(X,W, snp_ids, trait_names, C=NULL, K=0, Kmax = -1, subsam
   }
 
   ret <- GetNextParams(alphas, lambdas,init.k, grid.solutions)
+
+  while(all(is.na(ret)))
+  {
+	  message("ERROR Error Got an NA case- this means the space we are searching is probably not valid?")
+	  mesage("Trying step again, with less stringent parameters:")
+	  alphas <- alphas * 0.1
+	  lambdas <- lambdas * 0.1
+	  grid.solutions <- getGridMatrices(X, W,W_c, args, option, alphas, lambdas, nrep.first)
+	  ret <- GetNextParams(alphas, lambdas,init.k, grid.solutions)
+
+  }
   option$conv0 <- 0.001
   grid.solutions.round.final <- getGridMatrices(X,W,W_c,args, option, ret$alphas, ret$lambdas, nrep.second)
   #Above is good.
@@ -212,13 +223,16 @@ gwasMFGrid <- function(X,W, snp_ids, trait_names, C=NULL, K=0, Kmax = -1, subsam
     message("Unable to find final parameters.")
     return(NULL)
   }
-  reg.run <- singleRunFromScratch(X,W,W_c, best.params$alpha, best.params$lambda, option, niter = 100)
+  reg.run <- singleRunFromScratch(X,W,W_c, best.params$alpha, best.params$lambda, option, niter = 200)
   #function(X,W,W_c,U,V, minK, option, maxK = NULL,drop.min.change = TRUE)
-  d <- DropFactorsByObjective(X,W,W_c,reg.run$U,reg.run$V, minK=Kmax, option, maxK = Kmax)
+  #d <- DropFactorsByObjective(X,W,W_c,reg.run$U,reg.run$V, minK=Kmax, option, maxK = Kmax)
+  reg.run <- PruneNumberOfFactors(X,W,W_c,reg.run,Kmax, option$Kmin, option)
+
   #Question to answer- is it best to choose according to number of params and then parse it down, or how?
   #For now- pick the one that corresponds to your target number of factors
   #Above
-  return(list(d, reg.run))
+  #return(list(d, reg.run))
+  return(reg.run)
   }
 
 
@@ -300,35 +314,39 @@ SelectTopRun <- function(perf.df, runs.by.name, maxK=-1)
 GetNextParams <- function(alphas, lambdas,init.k, all.solutions)
 {
   perf.df <- GetGridPerformanceMetrics(alphas, lambdas,all.solutions, init.k)
+  #print(perf.df)
+  #save(perf.df, file = "debuggingGrid.RData")
+  stopifnot(nrow(perf.df) > 0)
+  #begin with most stringent selection criteria
   tops <- perf.df %>% tidyr::drop_na() %>% filter(Coph > 0.9) %>% filter(V_sparsity_global > 0.05, V_sparsity_raw > 0.05) %>%
              arrange(Med_Average_R2) %>% filter(!is.na(Coph_med), Coph_med > 0.9, Avg_pve > 0.5, U_sparsity_raw > 0.05)
 
   #how do we narrow this down to a small number of points to search?
   if(nrow(tops) >= 1)
   {
-  best.a <- unique(as.numeric(gsub(tops$Alpha, pattern = "A", replacement = "")))
-  best.l <- unique(as.numeric(gsub(tops$Lambda, pattern = "L", replacement = "")))
-  if(length(best.a) > 2 & length(best.l) > 2)
-  {
-	  message("Selection criteria not strict enough, parsing down further")
-	tops <- (tops %>% filter( V_sparsity_raw > 0.1) %>% arrange(Med_Average_R2))[1:2,] #Just choosing the top
-  	best.a <- unique(as.numeric(gsub(tops$Alpha, pattern = "A", replacement = "")))
-  	best.l <- unique(as.numeric(gsub(tops$Lambda, pattern = "L", replacement = "")))
-
-
-  }
-  new.a <- ProposeSparsityParamsFromGrid(best.a,alphas, 4)
+    best.a <- unique(as.numeric(gsub(tops$Alpha, pattern = "A", replacement = "")))
+    best.l <- unique(as.numeric(gsub(tops$Lambda, pattern = "L", replacement = "")))
+    if(length(best.a) > 2 & length(best.l) > 2)
+    {
+  	  message("Selection criteria not strict enough, parsing down further")
+  	  tops <- (tops %>% filter( V_sparsity_raw > 0.1) %>% arrange(Med_Average_R2))[1:2,] #Just choosing the top, most sparse
+    	best.a <- unique(as.numeric(gsub(tops$Alpha, pattern = "A", replacement = "")))
+    	best.l <- unique(as.numeric(gsub(tops$Lambda, pattern = "L", replacement = "")))
+    }
+    new.a <- ProposeSparsityParamsFromGrid(best.a,alphas, 4)
     new.l <- ProposeSparsityParamsFromGrid(c(best.l),lambdas,4)
-    print("Alpha:")
-    print(paste0((new.a),collapse = ","))
-    print("Lambda:")
-    print(paste0((new.l),collapse = ","))
   }else #(nrow(tops) == 0)
   {
     message("Parameters too strict. Choosing the most stable solution with any sparsity and K > 1.")
     #Just choosing the most stable one with some sparsity
     tops <- data.frame(perf.df) %>% tidyr::drop_na() %>%
       filter(Group_nonempty_average > 1, V_sparsity_raw > 0) %>% arrange(-Coph,Med_Average_R2) %>% slice(1)
+    if(nrow(tops) < 1) #still too strict
+    {
+	    print('things arent loooking good...')
+	    print(perf.df)
+	    tops <- data.frame(perf.df) %>% arrange(-Coph,Med_Average_R2) %>% slice(1)
+    }
     best.a <- unique(as.numeric(gsub(tops$Alpha, pattern = "A", replacement = "")))
     best.l <- unique(as.numeric(gsub(tops$Lambda, pattern = "L", replacement = "")))
     new.a <- ProposeSparsityParamsFromGrid(best.a,alphas, 4)
@@ -340,9 +358,10 @@ GetNextParams <- function(alphas, lambdas,init.k, all.solutions)
   if(length(new.a) < 1 | length(new.l) < 1)
   {
     message("Error in parameter selection. Need to debug urgently.")
-    message("Likkely had NAs in int.")
+    message("Likely had NAs in int.")
     print(alphas)
     print(lambdas)
+    return(NA)
   }
   return(list("alphas" = new.a, "lambdas" = new.l))
 

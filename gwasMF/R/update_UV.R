@@ -598,17 +598,15 @@ Update_FL <- function(X, W, W_c, option, preV = NULL, preU = NULL, burn.in = FAL
     ll.tracker <- c(ll.tracker, V.new$total.log.lik)
     penalty.tracker <- c(penalty.tracker, V.new$penalty)
     mse.tracker <- c(mse.tracker, norm(W*X-W*(U%*%t(V.new$V)), type = "F")/(nrow(X) * ncol(X)))
-    message("V penalty, ", V.new$penalty)
     iter.tracker <- c(iter.tracker, "V")
     #More crap to follow the objective
-    if(option$debug)
-    {
-      message("here")
+    #if(option$debug)
+    #{
       es.objective <- c(es.objective, GetStepWiseObjective(X,W,W_c,V,V.new$V, U,"U",option));
       em.objective[[(i.c)]] <- compute_obj(X,W,W_c, U,V.new$V,option, globalLL=TRUE, decomp = TRUE)
       s.weight.tracker[[i.c]] <- V.new$s
       i.c <- i.c + 1
-    }
+    #}
     V = V.new$V #Just get the matrix out.
     #get the factor specific variance....
     if(option$traitSpecificVar)
@@ -630,15 +628,15 @@ Update_FL <- function(X, W, W_c, option, preV = NULL, preU = NULL, burn.in = FAL
     penalty.tracker <- c(penalty.tracker, U.new$penalty)
     mse.tracker <- c(mse.tracker, norm(W*X-W*(U.new$U %*%t(V)), type = "F")/(nrow(X) * ncol(X)))
     iter.tracker <- c(iter.tracker, "U")
-    if(option$debug)
-    {
+    #if(option$debug)
+    #{
       #ES stands for each step.
       es.objective <- c(es.objective, GetStepWiseObjective(X,W,W_c,U,U.new$U, V,"V",option))
       em.objective[[(i.c)]] <- compute_obj(X,W,W_c, U.new$U,V,option, globalLL=TRUE, decomp = TRUE)
       iter.objective[[(i.c/2)]] <- compute_obj(X,W,W_c, U.new$U,V,option, globalLL=TRUE, decomp = TRUE)
       s.weight.tracker[[i.c]] <- U.new$s
       i.c <- i.c + 1
-    }
+    #}
 
     iteration.ll.total <- iteration.ll.total + U.new$total.log.lik
     if(length(U.new$redundant_cols) > 0)
@@ -677,7 +675,7 @@ Update_FL <- function(X, W, W_c, option, preV = NULL, preU = NULL, burn.in = FAL
         ret <- UpdateTrackingParams(tracking.data, X,W,W_c,U,V,
                                     option, loglik = iteration.ll.total)
       }
-      if(option$debug){
+      #if(option$debug){
         ret$each.step.obj <- es.objective;
         ret$each.matrix.obj <- em.objective;
         ret$full.iter.obj <- iter.objective
@@ -685,7 +683,7 @@ Update_FL <- function(X, W, W_c, option, preV = NULL, preU = NULL, burn.in = FAL
         ret$penalties <- penalty.tracker
         ret$iter_mat <- iter.tracker
         ret$global.mse <- mse.tracker
-        }
+       # }
      return(ret)
     }else{
       tracking.data <- UpdateTrackingParams(tracking.data, X,W,W_c,U,V,

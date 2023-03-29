@@ -114,3 +114,26 @@ ProposeNewSparsityParamsFromScore <- function(bic.list,sparsity.params, n.points
   singlePointGridExpansion(sparsity.params[order(sparsity.params)], optimal.sparsity.param, n.points)
 }
 
+#not implemented, too early
+ScaleInput <- function(mod.mat, test.method = "preWeight")
+{
+  s = 1
+  test.method = "preWeight"
+  if(test.method == "preWeight")
+  {
+    message("not implemented")
+    s <- apply(mod.mat, 2, function(x) norm(x, "2"))
+    scaled.m <- sweep(mod.mat,2,s,FUN="/")
+    stopifnot(norm(scaled.m[,2], "2") == 1)
+    weighted.copies <- lapply(1:nrow(X), function(i) W_c %*% diag(W[i,]) %*% scaled.v)
+    long.v <- Matrix::bdiag(weighted.copies) #weight this ish too you silly man.
+  }
+  if(test.method == "postWeight")
+  {
+    s = apply(long.v, 2, function(x) norm(x, "2"))
+    long.v <- sweep(long.v,2,s,FUN="/")
+    #long.v <- long.v / s
+    stopifnot(norm(long.v[,3], "2") == 1)
+  }
+  return(list("s" = s, "updated.mat" = long.mat))
+}

@@ -177,7 +177,6 @@ fit_V <- function(X, W, U, option, formerV = NULL){
 
 FitVGlobal <- function(X, W, U, option, formerV = NULL)
 {
-  message("VERIFIED GLOBAL FIT")
   sparsity.est <- NA; penalty = NA; ll = NA; l = NA; FactorM = c(); penalty = NA
   #long.x <- c(t(W_c %*% t(X*W))) #Stacked by column
   long.x <- c(X*W)
@@ -208,13 +207,23 @@ FitVGlobal <- function(X, W, U, option, formerV = NULL)
   }
   #Separate into penalized and unpenalized
   dat_i = (as.matrix(long.u))
+
   choose.cols <- sapply(1:ncol(dat_i), function(x) x %% K)
   unpen <- dat_i[,choose.cols == 1]
   pen <- dat_i #include everythign if all penalized
+
   if(option$fixed_ubiq)
   {
     #only penalize the correct columns.
     pen <- dat_i[,choose.cols != 1]
+  }
+
+  #special case this logic failes on
+  if(K == 1 & option$fixed_ubiq)
+  {
+    #we are just down to the last column
+    option$regression_method = "OLS"
+    #Just bypass this.
   }
 
  if(option$fixed_ubiq & option$regression_method == "penalized")
@@ -243,7 +252,6 @@ FitVGlobal <- function(X, W, U, option, formerV = NULL)
       ll = fit@loglik
       #F 1-M are the 1st factor
       FactorM = cbind(f[1:M],matrix(f[(M+1):(M*K)], nrow = M,byrow = TRUE))
-      message("Penalty should be here......")
       penalty = fit@penalty[1]
 } else if(option$regression_method == "OLS")
   {
@@ -252,8 +260,9 @@ FitVGlobal <- function(X, W, U, option, formerV = NULL)
     FactorM = matrix(f, nrow = M,byrow = TRUE)
     ll = penLL(length(long.x), long.x - as.matrix(long.u) %*% fit$coefficients) # hack for now)
     #here we don't even pass in the 1st factor, so not an issue.
-  }
-    else
+}	else if(option$regression_method == "None"){
+  FactorM = c()
+  }  else
     {
       message("Not implemented. Crash and burn.")
     }

@@ -16,20 +16,20 @@
 #' @export
 PruneNumberOfFactors <- function(X,W,W_c,reg.run, minK, maxK, option)
 {
-  
+
   if(maxK == 0)
   {
     #this means you need to detect the number of factors)
     maxK = ncol(reg.run$V)
   }
-  
+
   if(minK > maxK)
   {
     message("Invalid case encountered- minK > maxK")
     return(reg.run)
     #quit()
   }
-  
+
   ret.dat <- reg.run
   r <- DropFactorsByObjective(X,W,W_c,ret.dat$U,ret.dat$V, maxK, option, minK = minK) #want it to be framed at 5, for now.
   ret.dat$V <- r$V
@@ -63,13 +63,13 @@ PruneNumberOfFactors <- function(X,W,W_c,reg.run, minK, maxK, option)
 #' @export
 DropFactorsByFit <- function(X,W,W_c,U,V, maxK, option)
 {
-  
+
   if(is.null(maxK) | length(maxK) == 0 | maxK == 0)
   {
     maxK = ncol(X) - 1
     message("Warning case- beware.. max k is off.")
   }
-  
+
   if(ncol(as.matrix(V)) == 1 && option$fixed_ubiq)
   {
     return(list("U"=U, "V" = V, "K" = ncol(V)))
@@ -80,7 +80,7 @@ DropFactorsByFit <- function(X,W,W_c,U,V, maxK, option)
     message("All factors removed; none contribute to objective")
     return(list("U"=U, "V" = V, "K" = NA))
   }
-  
+
   remaining.set <- 1:ncol(V)
   #Repeat the process until conditions:
   #we reach our minimum k size threshold
@@ -119,12 +119,12 @@ DropFactorsByFit <- function(X,W,W_c,U,V, maxK, option)
     {
       return(list("U"=U, "V" = V, "K" = ncol(V)))
     }
-    
+
   }
 }
 #Beta test function- can we pick out the best factors by how they contribute (or don't) to the objective?
 #This will balance in sparsity better than PVE does.
-#' Title
+#' A recursive function to drop factors that by so doing improve (that is, reduce) the overall objective
 #'
 #' @param X full data matrix
 #' @param W standard errors
@@ -139,7 +139,7 @@ DropFactorsByFit <- function(X,W,W_c,U,V, maxK, option)
 #' @export
 DropFactorsByObjective <- function(X,W,W_c,U,V, maxK, option, minK = 0)
 {
-  
+
   if(is.null(maxK) | length(maxK) == 0)
   {
     maxK = ncol(X) - 1
@@ -150,7 +150,7 @@ DropFactorsByObjective <- function(X,W,W_c,U,V, maxK, option, minK = 0)
     message("Pruning in case where no specified limit on K.")
     maxK = ncol(V)
   }
-  
+
   #1) End if only 1 column left doing fixed ubiq version
   if(ncol(as.matrix(V)) == 1 && option$fixed_ubiq)
   {
@@ -162,7 +162,7 @@ DropFactorsByObjective <- function(X,W,W_c,U,V, maxK, option, minK = 0)
     message("All factors removed; none contribute to objective")
     return(list("U"=U, "V" = V, "K" = NA))
   }
-  
+
   remaining.set <- 1:ncol(V)
   #Repeat the process until conditions:
   #we reach our minimum k size threshold
@@ -191,7 +191,7 @@ DropFactorsByObjective <- function(X,W,W_c,U,V, maxK, option, minK = 0)
       min.obj <- new.obj
     }
   }
-  
+
   #Removing any objective increases (or stays the same) rather than decreases.
   if((min.obj == init.obj | min.index == -1) & (ncol(U) > maxK))
   {
