@@ -201,8 +201,7 @@ initV <- function(X,W,option, preV = NULL)
       if(option$svd_init)
       {
         message("initializing with SVD")
-        #message("BEWARE- not including the first factor, just the 2nd and on. May be omitting important signal as a result.")
-        V <- svd$u[,1:(option$K-1)]
+        V <- svd(X)$v[,1:(option$K-1)]
         #V <- svd$u[,2:(option$K)]
       } #otherwise its random.
 

@@ -177,13 +177,19 @@ fit_V <- function(X, W, U, option, formerV = NULL){
 
 FitVGlobal <- function(X, W, U, option, formerV = NULL)
 {
-  sparsity.est <- NA; penalty = NA; ll = NA; l = NA; FactorM = c(); penalty = NA
+  K <- ncol(U)
+  M = ncol(X)
+  N=nrow(X)
+   sparsity.est <- NA; penalty = NA; ll = NA; l = NA; FactorM = c(); penalty = NA
   #long.x <- c(t(W_c %*% t(X*W))) #Stacked by column
   long.x <- c(X*W)
   weighted.copies <- lapply(1:ncol(X), function(i) diag(W[,i]) %*% U)
   long.u <- Matrix::bdiag(weighted.copies) #weight this ish too you silly man.
-  K <- ncol(U)
-  M = ncol(X)
+  #Extend_the_weighting
+  #long.x.ordered.by.snp <- c(t(X*W))
+  #long.u.ordered.by.snp <- do.call("rbind", lapply(1:N, function(i) {t(W_c) %*% Matrix::bdiag(lapply(1:M, function(j) t(U[i,])))}))
+  #long.x <- long.x.ordered.by.snp
+  #long.u <- long.u.ordered.by.snp
 
 
   s = 1

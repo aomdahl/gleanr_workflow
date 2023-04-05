@@ -195,6 +195,9 @@ CalcMatrixBIC.loglikGLOBALversion <- function(X,W,U,V, which.learning, W_cov = N
   d = ncol(X)
   k = ncol(U)
   #Residuals are the same regardless of
+  #extend_the_weighting
+  #remove conditions below
+  # resids = calcGlobalResiduals(X,W,U,V,W_cov=W_cov,...)
   if(which.learning == "U")
   {
     resids = calcGlobalResiduals(X,W,U,V,W_cov=W_cov,...)
@@ -822,6 +825,7 @@ getBICMatrices <- function(opath,option,X,W,W_c, all_ids, names, min.iter = 2, m
   lambdas <- consider.params$lambdas
   alphas <- consider.params$alphas
   INCR.LIMIT=3
+  #DECR.LIMIT=4 Think about ths some more...
   NOT.CONVERGED <- TRUE; i = 1
   #If initializing with U, start there...
   if(option$u_init != "")
@@ -1077,7 +1081,7 @@ if(maxK != 0)
 }
 reg.run <- PruneNumberOfFactors(X,W,W_c,reg.run,option$Kmin, maxK, option)
 save(reg.run, file = paste0(option$out,opath, "_gwasMF_iter.Rdata" ))
-print(paste0(option$out,opath, "_gwasMF_iter.Rdata" ))
+#print(paste0(option$out,opath, "_gwasMF_iter.Rdata" ))
 
 if(option$plots)
 {

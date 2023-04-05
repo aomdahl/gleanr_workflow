@@ -37,7 +37,7 @@ PruneNumberOfFactors <- function(X,W,W_c,reg.run, minK, maxK, option)
   ret.dat$K <- r$K
   if(ncol(reg.run$V) > maxK)
   {
-    print("in this case...")
+    #print("in this case...")
     r <- DropFactorsByFit(X,W,W_c,ret.dat$U,ret.dat$V,maxK, option) #want it to be famed at 5?
     ret.dat$V <- r$V
     ret.dat$U <- r$U
@@ -102,7 +102,6 @@ DropFactorsByFit <- function(X,W,W_c,U,V, maxK, option)
     for(i in drop.set) #we don't drop ubiq one
     {
       new.obj.fit <- compute_obj(X,W,W_c, U[,-i], V[,-i], option, decomp = TRUE)$Fit.p
-      print(new.obj.fit)
       diff = new.obj.fit - init.obj.fit
       if(diff < min.increase)
       {

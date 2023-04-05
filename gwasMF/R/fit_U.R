@@ -163,8 +163,9 @@
   {
     #it_U(X, W, W_c, initV, option)
     max.sparsity <- NA; penalty = NA; ll = NA; l = NA; penalty = NA
-    long.x <- c(W_c %*% t(X*W)) #stacks by SNP1, SNP2...
-    weighted.copies <- lapply(1:nrow(X), function(i) W_c %*% diag(W[i,]) %*% V)
+    long.x <- c(t(W_c) %*% t(X*W)) #stacks by SNP1, SNP2...
+    #This multiplies each SNP row by the correction matrix
+    weighted.copies <- lapply(1:nrow(X), function(i) t(W_c) %*% diag(W[i,]) %*% V)
     long.v <- Matrix::bdiag(weighted.copies) #weight this ish too you silly man.
     s = 1
     test.method = ""

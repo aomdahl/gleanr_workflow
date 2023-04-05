@@ -35,7 +35,7 @@ calcGlobalResiduals <- function(X,W,U,V, W_cov = NULL, fixed_first = FALSE)
       message("Dimensions mismatch. Bug detected")
       return(NA)
     }
-    return((W * X - W * (U %*% t(V))) %*% t(W_cov)) #Why at the end? This is how the matrix math shakes out
+    return(t(t(W_cov) %*% t(W * X - W * (U %*% t(V)))))
   }
   return((W * X - W * (U %*% t(V))))
 }
