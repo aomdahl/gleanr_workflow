@@ -446,7 +446,7 @@ CalcUBIC <- function(X,W,W_c, U,V,lm.resid = NULL,...)
 
 #Fit the V with the scheme:
 #Iniital estimates from burn.in.sparsity and consider.parsm
-FitVs <- function(X, W, initU, lambdas,option, weighted = FALSE)
+FitVs <- function(X, W,W_c, initU, lambdas,option, weighted = FALSE)
 {
   bic.var = option$bic.var
   f.fits <- list()
@@ -457,7 +457,7 @@ FitVs <- function(X, W, initU, lambdas,option, weighted = FALSE)
     l <- lambdas[[i]]
     option$lambda1 <- l
     # f.fits[[i]] <- fit_V(X, W, initU, option, formerV = NULL) #I forgot to change this: need to re-run objective tests now >_<
-    f.fits[[i]] <- FitVWrapper(X, W, initU, option, formerV = NULL)
+    f.fits[[i]] <- FitVWrapper(X, W,W_c, initU, option, formerV = NULL)
   }
 
   if(weighted) {
@@ -831,7 +831,7 @@ getBICMatrices <- function(opath,option,X,W,W_c, all_ids, names, min.iter = 2, m
   if(option$u_init != "")
   {
     rec.dat$lambdas <- c(rec.dat$lambdas, lambdas); #save current alphas.
-    v.fits <- FitVs(X,W, optimal.u,lambdas,option, weighted = TRUE)
+    v.fits <- FitVs(X,W,W_c, optimal.u,lambdas,option, weighted = TRUE)
     #Which versin of BIC do we want to use this time?
     optimal.iter.dat <- selectOptimalInstance(v.fits, unlist(v.fits$BIC[,bic.type]), lambdas)
     optimal.v <- optimal.iter.dat$m
@@ -903,7 +903,7 @@ getBICMatrices <- function(opath,option,X,W,W_c, all_ids, names, min.iter = 2, m
 
     #now get the new lambdas for V:
     #Is this what we want?
-    v.sparsity <- DefineSparsitySpace(X,W,W_ld, as.matrix(optimal.u),"V", option)
+    v.sparsity <- DefineSparsitySpace(X,W,W_c, as.matrix(optimal.u),"V", option)
     if((i == 1 & option$u_init == "") | use.optim)
     {
       lambdas <- SelectCoarseSparsityParamsGlobal(v.sparsity, n.points = 15)
@@ -935,15 +935,15 @@ getBICMatrices <- function(opath,option,X,W,W_c, all_ids, names, min.iter = 2, m
       #v.fits <- FitVs(X,W, optimal.u,min(lambdas),option, weighted = TRUE)
         #test <- GetVBICOptim(par, X,W,optimal.u, option, weighted = TRUE, bic.method = 4)
         test <- optim(par = init.lambda, fn =  GetVBICOptim, method = "Brent", lower = min(lambdas)*0.1, upper = max(lambdas),
-                      X=X, W=W, initU = optimal.u, option = option, control= list('trace'=1))
+                      X=X, W=W,W_c = W_c, initU = optimal.u, option = option, control= list('trace'=1))
         #test <- optim(par = init.lambda, fn =  GetVBICOptim, method = "Brent", lower = min(lambdas)*0.1, upper = max(lambdas),
         #              X=X, W=W, initU = optimal.u, option = option,bic.method = 1, ev = 1, control= list('trace'=1))
-        v.fits <- FitVs(X,W, optimal.u,c(test$par),option, weighted = TRUE)
+        v.fits <- FitVs(X,W,W_c, optimal.u,c(test$par),option, weighted = TRUE)
         bic.list.v <- c(test$value)
         lambdas <- c(test$par)
     }else
     {
-      v.fits <- FitVs(X,W, optimal.u,lambdas,option, weighted = TRUE)
+      v.fits <- FitVs(X,W,W_c, optimal.u,lambdas,option, weighted = TRUE)
       bic.list.v <- unlist(v.fits$BIC[,bic.type])
       #Pick the best choice from here, using threshold.
     }

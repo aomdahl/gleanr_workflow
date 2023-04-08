@@ -1,12 +1,12 @@
 #BIC optimization function
 
-GetVBICOptim <- function(par, X,W,initU, option, weighted = TRUE, bic.method = 4,...)
+GetVBICOptim <- function(par, X,W,W_c,initU, option, weighted = TRUE, bic.method = 4,...)
 {
   lambda <- par
   option$lambda1 <- lambda
   #fit V according to the given lambda
   #curr.v <- fit_V(X, W, initU, option, formerV = NULL)
-  curr.v <- FitVWrapper(X, W, initU, option)
+  curr.v <- FitVWrapper(X, W,W_c, initU, option)
   V <- curr.v$V
   fixed_first = option$fixed_ubiq
   df.dat=MatrixDFU(curr.v$V,fixed_first=fixed_first)
