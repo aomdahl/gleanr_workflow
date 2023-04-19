@@ -1,3 +1,37 @@
+
+#Experimental functions
+##Examining possible convergence settings
+trackAlternativeConvergences <- function(X,W,W_c, U,V, index, record.data, u.alphamax, v.lambdamax)
+{
+  message(dim(U))
+  message(dim(V))
+  track.modes <- list()
+  #simple sum mode
+  EPSILON = 1e-4
+  track.modes[["simple.sum"]] = record.data$alpha.s[[index]] + record.data$lambda.s[[index]]
+
+  #scaled sum mode
+  track.modes[["lambda.max"]] <-  v.lambdamax
+  track.modes[["alpha.max"]] <- u.alphamax
+  track.modes[["alpha.scaled"]] <- record.data$alpha.s[[index]]/u.alphamax
+  track.modes[["lambda.scaled"]] <- record.data$lambda.s[[index]]/v.lambdamax
+  track.modes[["scaled.sum"]] = record.data$alpha.s[[index]]/u.alphamax + record.data$lambda.s[[index]]/v.lambdamax
+            track.modes[["bic.alpha"]] = record.data$bic.a[[index]]
+              track.modes[["bic.lambda"]] = record.data$bic.l[[index]]
+
+             option <- list()
+              option$fixed_ubiq <- TRUE
+              option$alpha1 <- record.data$alpha.s[[index]]
+              option$lambda1 <-  record.data$lambda.s[[index]]
+              track.modes[["decomp.obj"]] <- compute_obj(X, W, W_c, U, V, option, decomp = TRUE)
+              track.modes
+}
+
+
+
+
+
+
 UpdateAndCheckSparsityParam <-  function(prev.list, new, errorReport = FALSE)
 {
  if(!is.null(prev.list))
@@ -197,15 +231,16 @@ CalcMatrixBIC.loglikGLOBALversion <- function(X,W,U,V, which.learning, W_cov = N
   #Residuals are the same regardless of
   #extend_the_weighting
   #remove conditions below
-  # resids = calcGlobalResiduals(X,W,U,V,W_cov=W_cov,...)
-  if(which.learning == "U")
-  {
-    resids = calcGlobalResiduals(X,W,U,V,W_cov=W_cov,...)
-  }else
-  {
+  resids = calcGlobalResiduals(X,W,U,V,W_cov=W_cov,...)
+
+  #if(which.learning == "U")
+  #{
+  #  resids = calcGlobalResiduals(X,W,U,V,W_cov=W_cov,...)
+  #}else
+  #{
     #why is this condition here? might just make thigns complex.
-    resids = calcGlobalResiduals(X,W,U,V, W_cov = NULL,...)
-  }
+  #  resids = calcGlobalResiduals(X,W,U,V, W_cov = NULL,...)
+  #}
 
   #model.ll = penLL(n*d, resids)
   model.ll = penLLSimp(n,d,resids)
@@ -422,24 +457,32 @@ CalcVBIC <- function(X,W,U,V,fixed_first=FALSE,lm.resid = NULL,...)
   df.dat=MatrixDFU(V,fixed_first=fixed_first)
   #var.based.bic <- CalcMatrixBIC(X,W,U,V,df=df.dat,fixed_first = fixed_first,learning = "V",...)
   var.based.bic <- NA
-  ll.based.bic <- CalcMatrixBIC.loglikversion(X,W,U,V, which.learning = "V", df = df.dat, fixed_first=fixed_first)
+  #ll.based.bic <- CalcMatrixBIC.loglikversion(X,W,U,V, which.learning = "V", df = df.dat, fixed_first=fixed_first)
 
-  ll.based.bic.ratio <- CalcMatrixBIC.loglikversion(X,W,U,V, which.learning = "V", df = df.dat, lm.fit.residuals = lm.resid,fixed_first=fixed_first)
+  ll.based.bic <- NA
+  #ll.based.bic.ratio <- CalcMatrixBIC.loglikversion(X,W,U,V, which.learning = "V", df = df.dat, lm.fit.residuals = lm.resid,fixed_first=fixed_first)
+  ll.based.bic.ratio <- NA
   ll.global.bic <- CalcMatrixBIC.loglikGLOBALversion(X,W,U,V, which.learning = "V", df = df.dat,fixed_first=fixed_first)
-  ll.global.ratio.bic <- CalcMatrixBIC.loglikGLOBALversion(X,W,U,V, which.learning = "V", df = df.dat,
-                                                           lm.fit.residuals = lm.resid,fixed_first=fixed_first) #OMIT THIS.
+  #ll.global.ratio.bic <- CalcMatrixBIC.loglikGLOBALversion(X,W,U,V, which.learning = "V", df = df.dat,
+                                                           #lm.fit.residuals = lm.resid,fixed_first=fixed_first) #OMIT THIS.
+ll.global.ratio.bic <- NA
   return(list(var.based.bic,ll.based.bic,ll.based.bic.ratio,ll.global.bic,ll.global.ratio.bic)) #WE LIKE options 1,2,4
 }
 
 CalcUBIC <- function(X,W,W_c, U,V,lm.resid = NULL,...)
 {
   df.dat <-  MatrixDFU(U)
-  var.based.bic <- CalcMatrixBIC(t(X),t(W),V,U,df=df.dat,W_cov = W_c, learning = "U",...)
+  #var.based.bic <- CalcMatrixBIC(t(X),t(W),V,U,df=df.dat,W_cov = W_c, learning = "U",...)
   #And now, the alternative versions:
-  ll.based.bic <- CalcMatrixBIC.loglikversion(X,W,U,V, which.learning = "U", df = df.dat, W_cov = W_c)
-  ll.based.bic.ratio <- CalcMatrixBIC.loglikversion(X,W,U,V, which.learning = "U", df = df.dat, lm.fit.residuals = lm.resid, W_cov = W_c)#OMIT THIS
+  #ll.based.bic <- CalcMatrixBIC.loglikversion(X,W,U,V, which.learning = "U", df = df.dat, W_cov = W_c)
+  #ll.based.bic.ratio <- CalcMatrixBIC.loglikversion(X,W,U,V, which.learning = "U", df = df.dat, lm.fit.residuals = lm.resid, W_cov = W_c)#OMIT THIS
   ll.global.bic <- CalcMatrixBIC.loglikGLOBALversion(X,W,U,V, which.learning = "U", df = df.dat, W_cov = W_c)
-  ll.global.ratio.bic <- CalcMatrixBIC.loglikGLOBALversion(X,W,U,V, which.learning = "U", df = df.dat,lm.fit.residuals = lm.resid, W_cov = W_c) #OMIT THIS.
+  #ll.global.ratio.bic <- CalcMatrixBIC.loglikGLOBALversion(X,W,U,V, which.learning = "U", df = df.dat,lm.fit.residuals = lm.resid, W_cov = W_c) #OMIT THIS.
+
+  var.based.bic <- NA
+  ll.based.bic <- NA
+  ll.based.bic.ratio <- NA
+  ll.global.ratio.bic <- NA
   return(list(var.based.bic,ll.based.bic,ll.based.bic.ratio,ll.global.bic,ll.global.ratio.bic)) #WE LIKE options 1,2,4
 }
 
@@ -798,6 +841,7 @@ getBICMatrices <- function(opath,option,X,W,W_c, all_ids, names, min.iter = 2, m
 {
   message("using BIC type:  ", bic.type)
   W_ld = NULL
+  conv.options <- list()
 #If we get columns with NA at this stage, we want to reset and drop those columns at the beginning.
   #Currently, just using NULL for W_ld
   burn.in.sparsity <- DefineSparsitySpaceInit(X, W, W_c, NULL, option, burn.in = burn.in.iter) #If this finds one with NA, cut them out here, and reset K; we want to check pve here too.
@@ -825,6 +869,9 @@ getBICMatrices <- function(opath,option,X,W,W_c, all_ids, names, min.iter = 2, m
   lambdas <- consider.params$lambdas
   alphas <- consider.params$alphas
   INCR.LIMIT=3
+  #OPTIMIZER="Brent"
+  #OPTIMIZER="L-BFGS-B"
+  OPTIMIZER="BFGS"
   #DECR.LIMIT=4 Think about ths some more...
   NOT.CONVERGED <- TRUE; i = 1
   #If initializing with U, start there...
@@ -852,6 +899,10 @@ getBICMatrices <- function(opath,option,X,W,W_c, all_ids, names, min.iter = 2, m
   while(i < max.iter & NOT.CONVERGED){
     print("iter on now...")
     print(i)
+    if(i == 22)
+    {
+      message('getting down to it....')
+    }
     #now fit U:
     rec.dat$Vs[[i]] <- optimal.v
 
@@ -864,9 +915,12 @@ getBICMatrices <- function(opath,option,X,W,W_c, all_ids, names, min.iter = 2, m
       if(i == 1)
       {
         init.alpha = alphas[floor(length(alphas)/2)]
+        OPTIMIZER="SANN"
+        #init.alpha = min(alphas)
       }else
       {
         init.alpha = rec.dat$alpha.s[length(rec.dat$alpha.s)] #the most recent previous guess
+        OPTIMIZER="Brent"
       }
       upper.lim=max(alphas)
       if(i > 1)
@@ -877,11 +931,17 @@ getBICMatrices <- function(opath,option,X,W,W_c, all_ids, names, min.iter = 2, m
       #scoretest <- GetUBICOptim(init.alpha, X,W,optimal.v, option )
       #Trying this as SANN instead ob rent- meant to be bette ron rough surfaces.
       #message('here.')
-      test <- optim(par = init.alpha, fn =  GetUBICOptim, method = "Brent", lower = min(alphas)*0.1, upper = upper.lim,
+      test <- optim(par = init.alpha, fn =  GetUBICOptim, method = OPTIMIZER, lower = min(alphas)*0.1, upper = upper.lim,
                     X=X, W=W, initV = optimal.v, option = option, W_c = W_c, control= list('trace'=1))
+      #test.brent <- optim(par = init.alpha, fn =  GetUBICOptim, method = OPTIMIZER, lower = min(alphas)*0.1, upper = upper.lim,
+                    #X=X, W=W, initV = optimal.v, option = option, W_c = W_c, control= list('trace'=1))
+      #test.min <- optim(par = min(alphas), fn =  GetUBICOptim, method = OPTIMIZER, lower = min(alphas)*0.1, upper = upper.lim,
+                    #X=X, W=W, initV = optimal.v, option = option, W_c = W_c, control= list('trace'=1))
+      #test.brent.min <- optim(par = min(alphas), fn =  GetUBICOptim, method = "Brent", lower = min(alphas)*0.1, upper = upper.lim,
+                    #X=X, W=W, initV = optimal.v, option = option, W_c = W_c, control= list('trace'=1))
       #test <- optim(par = init.alpha, fn =  GetUBICOptim, method = "Brent", lower = min(alphas)*0.1, upper = upper.lim,
       #              X=X, W=W, initV = optimal.v, option = option, bic.method = 1, ev = 1, W_c = W_c, control= list('trace'=1))
-
+      message("Optimizer is ", OPTIMIZER)
       u.fits <- FitUs(X, W, W_c, optimal.v, c(test$par),option, weighted = TRUE)
       bic.list.u <- c(test$value)
       alphas <- c(test$par)
@@ -921,8 +981,11 @@ getBICMatrices <- function(opath,option,X,W,W_c, all_ids, names, min.iter = 2, m
       if(i == 1)
       {
         init.lambda = lambdas[floor(length(lambdas)/2)]
+        OPTIMIZER="SANN"
+        #init.lambda = min(lambdas)
       }else
       {
+        OPTIMIZER="Brent"
         init.lambda = rec.dat$lambda.s[length(rec.dat$lambda.s)]
       }
       upper.lim=max(alphas)
@@ -931,12 +994,13 @@ getBICMatrices <- function(opath,option,X,W,W_c, all_ids, names, min.iter = 2, m
         #Don't allow the parameter to more than triple in a given iteration
         upper.lim = min(init.lambda*INCR.LIMIT, max(lambdas))
       }
+      message("Optimizer is ", OPTIMIZER)
         #scoretest <- GetVBICOptim(init.lambda, X,W,optimal.u, option )
       #v.fits <- FitVs(X,W, optimal.u,min(lambdas),option, weighted = TRUE)
         #test <- GetVBICOptim(par, X,W,optimal.u, option, weighted = TRUE, bic.method = 4)
-        test <- optim(par = init.lambda, fn =  GetVBICOptim, method = "Brent", lower = min(lambdas)*0.1, upper = max(lambdas),
+        test <- optim(par = init.lambda, fn =  GetVBICOptim, method = OPTIMIZER, lower = min(lambdas)*0.1, upper = max(lambdas),
                       X=X, W=W,W_c = W_c, initU = optimal.u, option = option, control= list('trace'=1))
-        #test <- optim(par = init.lambda, fn =  GetVBICOptim, method = "Brent", lower = min(lambdas)*0.1, upper = max(lambdas),
+        #test.brent <- optim(par = init.lambda, fn =  GetVBICOptim, method = "Brent", lower = min(lambdas)*0.1, upper = max(lambdas),
         #              X=X, W=W, initU = optimal.u, option = option,bic.method = 1, ev = 1, control= list('trace'=1))
         v.fits <- FitVs(X,W,W_c, optimal.u,c(test$par),option, weighted = TRUE)
         bic.list.v <- c(test$value)
@@ -978,10 +1042,11 @@ getBICMatrices <- function(opath,option,X,W,W_c, all_ids, names, min.iter = 2, m
     {
       alphas <- ProposeNewSparsityParams(bic.list.u, alphas, (u.sparsity), i, n.points = 7, no.drop = no.drop.live)
     }
-    #Check convergence
+
     if(i > min.iter){
 
       NOT.CONVERGED <- !checkConvergenceBICSearch(i, rec.dat, conv.mode = "SEPARATE") #returns true if convergence is reached
+
       #Want to try a different objective- the sum of the terms stabilizes... not each one independently
       message("ongoing objective")
 
@@ -1005,6 +1070,11 @@ getBICMatrices <- function(opath,option,X,W,W_c, all_ids, names, min.iter = 2, m
       }
       NOT.CONVERGED <- FALSE
     }
+    #align
+    aligned <- AlignFactorMatrices(X,W,optimal.u,optimal.v); optimal.u <- aligned$U; optimal.v<- aligned$V
+    #Check convergence
+    conv.options[[i]] <- trackAlternativeConvergences(X,W,W_c, optimal.u,optimal.v, i, rec.dat, u.sparsity, v.sparsity)
+    #Will this break something?
     i = i+1
   }
   final.index <- i-1
@@ -1014,13 +1084,13 @@ getBICMatrices <- function(opath,option,X,W,W_c, all_ids, names, min.iter = 2, m
   #TODO: clean this up. This is very confusing.
   return(list("optimal.v" = optimal.v,"resid.var" = u.fits$resid_var,
               "rec.dat" = rec.dat, "lambda"=rec.dat$lambda.s[final.index], "alpha"=rec.dat$alpha.s[final.index], "options" = option,
-              "K"= ncol(optimal.v), "alpha.path" = rec.dat$alpha.s, "lambda.path" = rec.dat$lambda.s, "optimal.u" = optimal.u))
+              "K"= ncol(optimal.v), "alpha.path" = rec.dat$alpha.s, "lambda.path" = rec.dat$lambda.s, "optimal.u" = optimal.u, "convergence.options" = conv.options))
 }
 
 #Convergence criteria for the BIC ssearch
 #Converges when K is unchanging from one run to the next, and the percentage size change in the alpha/lambda paramters is less than 5%
 #Might consider making this more generous- if it stays on the same log scale, then that is probably good enough....
-checkConvergenceBICSearch <- function(index, record.data, conv.perc.thresh = 0.1, hard_stop = 20, conv.mode = "SEPARATE")
+checkConvergenceBICSearch <- function(index, record.data, conv.perc.thresh = 0.1, conv.mode = "SEPARATE")
 {
   if(index > 10)
   {
