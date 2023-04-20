@@ -175,23 +175,24 @@ fit_V <- function(X, W, U, option, formerV = NULL){
     return(list("V" = FactorM, "sparsity_space"=sparsity.est, "total.log.lik" = running.loglik))
 }
 
-FitVGlobal <- function(X, W, U, option, formerV = NULL)
+FitVGlobal <- function(X, W, W_c, U, option, formerV = NULL)
 {
   K <- ncol(U)
   M = ncol(X)
   N=nrow(X)
    sparsity.est <- NA; penalty = NA; ll = NA; l = NA; FactorM = c(); penalty = NA
-  #long.x <- c(t(W_c %*% t(X*W))) #Stacked by column
-  long.x <- c(X*W)
-  weighted.copies <- lapply(1:ncol(X), function(i) diag(W[,i]) %*% U)
-  long.u <- Matrix::bdiag(weighted.copies) #weight this ish too you silly man.
-  #Extend_the_weighting
-  #long.x.ordered.by.snp <- c(t(X*W))
-  #long.u.ordered.by.snp <- do.call("rbind", lapply(1:N, function(i) {t(W_c) %*% Matrix::bdiag(lapply(1:M, function(j) t(U[i,])))}))
-  #long.x <- long.x.ordered.by.snp
-  #long.u <- long.u.ordered.by.snp
-
-
+  long.x <- c(t(W_c) %*% t(X*W)) #Stacked by SNP
+  #long.x <- c(X*W)
+  #weighted.copies <- lapply(1:ncol(X), function(i) diag(W[,i]) %*% U)
+  #long.u <- Matrix::bdiag(weighted.copies) #weight this ish too you silly man.
+  #REORDER approach- may be less expensive?
+  long.u <- NULL
+  for(i in 1:nrow(U))
+  {
+    #MAKE THE LONG MATRIX VERSION of it
+    expanded.list <- t(W_c) %*% (diag(W[i,])%*% Matrix::bdiag(lapply(1:M, function(j) t(U[i,]))))
+    long.u <- rbind(long.u, expanded.list)
+  }
   s = 1
   test.method = ""
   if(test.method == "preWeight")
@@ -289,9 +290,9 @@ FitVGlobal <- function(X, W, U, option, formerV = NULL)
 #' @return List containing the new V ("V") and the sparsity upper limits for each regression steps ("sparsity_space")
 #' @export
 #'
-FitVWrapper <- function(X, W, U, option, formerV = NULL)
+FitVWrapper <- function(X, W,W_c, U, option, formerV = NULL)
 {
   #HERE?
   #fit_V(X, W, as.matrix(U), option, formerV = formerV)
-  FitVGlobal(X, W, as.matrix(U), option, formerV = formerV)
+  FitVGlobal(X, W, W_c, as.matrix(U), option, formerV = formerV)
 }

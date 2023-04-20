@@ -35,8 +35,9 @@ calcGlobalResiduals <- function(X,W,U,V, W_cov = NULL, fixed_first = FALSE)
       message("Dimensions mismatch. Bug detected")
       return(NA)
     }
-    return(t(t(W_cov) %*% t(W * X - W * (U %*% t(V)))))
+    return(t(W_cov) %*% t(W * X - W * (U %*% t(V))) %>% t()) #Final transpose at end to switch the dimensions correctly. Verified this matches expected objective on 4/10
   }
+  message("This case should not occur")
   return((W * X - W * (U %*% t(V))))
 }
 

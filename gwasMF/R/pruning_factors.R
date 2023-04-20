@@ -26,6 +26,7 @@ PruneNumberOfFactors <- function(X,W,W_c,reg.run, minK, maxK, option)
   if(minK > maxK)
   {
     message("Invalid case encountered- minK > maxK")
+    #If this is encountered, it means we've already cut out more factors than we wanted to.
     return(reg.run)
     #quit()
   }
@@ -47,7 +48,7 @@ PruneNumberOfFactors <- function(X,W,W_c,reg.run, minK, maxK, option)
 }
 
 
-#This will cut out factors by their fit until the minimum threshold is reached.
+#This will cut out factors by some specified parameter (either "fit" term or "objective") until the minimum threshold is reached.
 
 #' Drop factors until a specified MaxK is reached
 #'
@@ -58,10 +59,11 @@ PruneNumberOfFactors <- function(X,W,W_c,reg.run, minK, maxK, option)
 #' @param V Predicted V
 #' @param maxK K to parse down to
 #' @param option std options
+#' @param calc.param which parameter to use as metric, either "fit" or "obj" (which includes sparsity terms)
 #'
 #' @return list containing, U, V and K
 #' @export
-DropFactorsByFit <- function(X,W,W_c,U,V, maxK, option)
+DropFactorsByFit <- function(X,W,W_c,U,V, maxK, option, calc.param="obj")
 {
 
   if(is.null(maxK) | length(maxK) == 0 | maxK == 0)
@@ -88,7 +90,10 @@ DropFactorsByFit <- function(X,W,W_c,U,V, maxK, option)
   {
     return(list("U"=U, "V" = V, "K" = ncol(V)))
   }
-  init.obj.fit <- compute_obj(X,W,W_c, U, V, option, decomp = TRUE)$Fit.p
+  init.obj.fit <-
+  init.obj.fit <- switch(calc.param,
+         "fit" = compute_obj(X,W,W_c, U, V, option, decomp = TRUE)$Fit.p,
+         "obj" = compute_obj(X,W,W_c, U, V, option))
   drop.set <- remaining.set
   if(option$fixed_ubiq)
   {
@@ -101,7 +106,10 @@ DropFactorsByFit <- function(X,W,W_c,U,V, maxK, option)
     min.increase = Inf
     for(i in drop.set) #we don't drop ubiq one
     {
-      new.obj.fit <- compute_obj(X,W,W_c, U[,-i], V[,-i], option, decomp = TRUE)$Fit.p
+      new.obj.fit <- switch(calc.param,
+                            "fit" = compute_obj(X,W,W_c, U[,-i], V[,-i], option, decomp = TRUE)$Fit.p,
+                            "obj" =  compute_obj(X,W,W_c, U[,-i], V[,-i], option))
+
       diff = new.obj.fit - init.obj.fit
       if(diff < min.increase)
       {

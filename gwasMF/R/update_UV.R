@@ -57,7 +57,7 @@ DefineSparsitySpaceInit <- function(X, W,W_c, W_ld, option, burn.in = 5)
     {
       message("initializing with U")
       U <- initU(Xint, Wint, new.options)
-      V.dat <- DefineSparsitySpace(Xint, Wint, W_ld, U, "V", new.options, fit = "None")
+      V.dat <- DefineSparsitySpace(Xint, Wint, W_c, U, "V", new.options, fit = "None")
       new.options$K = ncol(U)
       param.space[[1]] <- list("alpha" = NULL, "lambda"= V.dat)
       return(list("V_burn" =NULL , "U_burn"=U, "max_sparsity_params"=param.space, "new.k" =new.options$K))
@@ -93,7 +93,7 @@ DefineSparsitySpaceInit <- function(X, W,W_c, W_ld, option, burn.in = 5)
     #If we have ones with NA, they need to get dropped
     #if we have columns with NAs here, we want them gone now so it doesn't jank up downstream stuff.
     #V.dat <- FitVWrapper(Xint, Wint, U.dat$U, new.options, V);
-    V.dat <- DefineSparsitySpace(Xint, Wint,W_ld,U.dat$U, "V", new.options, fit = "OLS")
+    V.dat <- DefineSparsitySpace(Xint, Wint,W_c,U.dat$U, "V", new.options, fit = "OLS")
     if(i > 3)
     {
       #this might be high but oh well...
@@ -105,7 +105,7 @@ DefineSparsitySpaceInit <- function(X, W,W_c, W_ld, option, burn.in = 5)
         n <- DropSpecificColumns(drops, U.dat$U, V.dat$V)
         U.dat$U <- n$U
         new.options$K <- ncol(U.dat$U)
-        V.dat <- DefineSparsitySpace(Xint, Wint,W_ld,U.dat$U, "V", new.options, fit = "OLS")
+        V.dat <- DefineSparsitySpace(Xint, Wint,W_c,U.dat$U, "V", new.options, fit = "OLS")
       }
 
     }
@@ -145,7 +145,7 @@ DefineSparsitySpace <- function(X,W,W_cov,fixed,learning, option, fit = "None")
   if(learning == "V")
   {
     #Not implemented W_cov adjustment for V at this time...
-    free.dat <- FitVWrapper(X, W, fixed, new.options);
+    free.dat <- FitVWrapper(X, W, W_cov, fixed, new.options);
     #HERE
   }else #learning U
   {
@@ -592,7 +592,7 @@ Update_FL <- function(X, W, W_c, option, preV = NULL, preU = NULL, burn.in = FAL
       option <- UpdateSparsityMAPAutofit(iii, U,V, option)
     }
 
-    V.new = FitVWrapper(X, W, U, option)#, formerV = V);
+    V.new = FitVWrapper(X, W,W_c, U, option)#, formerV = V);
     iteration.ll.total <- V.new$total.log.lik
     ll.tracker <- c(ll.tracker, V.new$total.log.lik)
     penalty.tracker <- c(penalty.tracker, V.new$penalty)

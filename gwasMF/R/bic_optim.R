@@ -15,7 +15,7 @@ GetVBICOptim <- function(par, X,W,W_c,initU, option, weighted = TRUE, bic.method
       "1" = CalcMatrixBIC(X,W,initU,V,df=df.dat,fixed_first = fixed_first, weighted = weighted,learning = "V",...),
       '2' =  CalcMatrixBIC.loglikversion(X,W,initU,V, which.learning = "V", df = df.dat, fixed_first=fixed_first),
       '3' = NA,
-      "4" = CalcMatrixBIC.loglikGLOBALversion(X,W,initU,V, which.learning = "V", df = df.dat,fixed_first=fixed_first)
+      "4" = CalcMatrixBIC.loglikGLOBALversion(X,W,initU,V, W_cov = W_c, which.learning = "V", df = df.dat,fixed_first=fixed_first)
     )
   return(bic)
 }
