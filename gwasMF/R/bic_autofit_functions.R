@@ -915,7 +915,8 @@ getBICMatrices <- function(opath,option,X,W,W_c, all_ids, names, min.iter = 2, m
       if(i == 1)
       {
         init.alpha = alphas[floor(length(alphas)/2)]
-        OPTIMIZER="SANN"
+        #OPTIMIZER="SANN"
+        OPTIMIZER="Brent"
         #init.alpha = min(alphas)
       }else
       {
@@ -981,7 +982,8 @@ getBICMatrices <- function(opath,option,X,W,W_c, all_ids, names, min.iter = 2, m
       if(i == 1)
       {
         init.lambda = lambdas[floor(length(lambdas)/2)]
-        OPTIMIZER="SANN"
+        #OPTIMIZER="SANN"
+        OPTIMIZER="Brent"
         #init.lambda = min(lambdas)
       }else
       {
@@ -998,7 +1000,7 @@ getBICMatrices <- function(opath,option,X,W,W_c, all_ids, names, min.iter = 2, m
         #scoretest <- GetVBICOptim(init.lambda, X,W,optimal.u, option )
       #v.fits <- FitVs(X,W, optimal.u,min(lambdas),option, weighted = TRUE)
         #test <- GetVBICOptim(par, X,W,optimal.u, option, weighted = TRUE, bic.method = 4)
-        test <- optim(par = init.lambda, fn =  GetVBICOptim, method = OPTIMIZER, lower = min(lambdas)*0.1, upper = max(lambdas),
+        test <- optim(par = init.lambda, fn =  GetVBICOptim, method = OPTIMIZER, lower = min(lambdas)*0.1, upper = upper.lim,
                       X=X, W=W,W_c = W_c, initU = optimal.u, option = option, control= list('trace'=1))
         #test.brent <- optim(par = init.lambda, fn =  GetVBICOptim, method = "Brent", lower = min(lambdas)*0.1, upper = max(lambdas),
         #              X=X, W=W, initU = optimal.u, option = option,bic.method = 1, ev = 1, control= list('trace'=1))
