@@ -484,7 +484,7 @@ ConvergenceConditionsMet <- function(iter,X,W,W_c, U,V,tracker,option, initV = F
   if(objective_change < 0 & initV & length(tracker$obj) == 1)
   {
     message("Previous iterations converged already. Ending now.")
-    print(tracker$obj)
+    print(c(tracker$obj, obj_updated))
     updateLog(paste0("Objective change going in the wrong direction (negative), ending now."), option)
     return(conv.opts[[2]])
   }
@@ -552,7 +552,8 @@ Update_FL <- function(X, W, W_c, option, preV = NULL, preU = NULL, burn.in = FAL
   {
     U <- initU(X,W,option,preU=preU)
     message("initializing with U")
-    V =  fit_V(X, W, L, option)$V
+    V.dat =  fit_V(X, W, L, option)
+    V <- V.dat$V/V.dat$s
 
   } else if(burn.in)
   {
@@ -571,8 +572,8 @@ Update_FL <- function(X, W, W_c, option, preV = NULL, preU = NULL, burn.in = FAL
   og_option <- option[['carry_coeffs']]
   option[['carry_coeffs']] <- FALSE
 
-  U = FitUWrapper(X,W,W_c,V, option)
-  U <- U$U
+  U.dat = FitUWrapper(X,W,W_c,V, option)
+  U <- U.dat$U / U.dat$s
   option[['carry_coeffs']] <- og_option
   #if(option$debug)
   #{em.objective[[0]] <- compute_obj(X,W,W_c, U,V,option, globalLL=TRUE,decomp = TRUE)}
@@ -596,22 +597,23 @@ Update_FL <- function(X, W, W_c, option, preV = NULL, preU = NULL, burn.in = FAL
     iteration.ll.total <- V.new$total.log.lik
     ll.tracker <- c(ll.tracker, V.new$total.log.lik)
     penalty.tracker <- c(penalty.tracker, V.new$penalty)
-    mse.tracker <- c(mse.tracker, norm(W*X-W*(U%*%t(V.new$V)), type = "F")/(nrow(X) * ncol(X)))
+    V.prev <- V
+    V = V.new$V/V.new$s 
+    mse.tracker <- c(mse.tracker, norm(W*X-W*(U%*%t(V)), type = "F")/(nrow(X) * ncol(X)))
     iter.tracker <- c(iter.tracker, "V")
     #More crap to follow the objective
     #if(option$debug)
     #{
-      es.objective <- c(es.objective, GetStepWiseObjective(X,W,W_c,V,V.new$V, U,"U",option));
-      em.objective[[(i.c)]] <- compute_obj(X,W,W_c, U,V.new$V,option, globalLL=TRUE, decomp = TRUE)
+      es.objective <- c(es.objective, GetStepWiseObjective(X,W,W_c,V.prev,V, U,"U",option));
+      em.objective[[(i.c)]] <- compute_obj(X,W,W_c, U,V,option, globalLL=TRUE, decomp = TRUE)
       s.weight.tracker[[i.c]] <- V.new$s
       i.c <- i.c + 1
     #}
-    V = V.new$V #Just get the matrix out.
+    #Just get the matrix out.
     #get the factor specific variance....
     if(option$traitSpecificVar)
     {
       trait.var[iii,] <- V.new$r.v
-      V <- V.new$V
     }
     # if number of factors decrease because of empty factor, the change in ||F||_F = 100
 
@@ -622,17 +624,18 @@ Update_FL <- function(X, W, W_c, option, preV = NULL, preU = NULL, burn.in = FAL
 
     ## update L
     U.new <- FitUWrapper(X,W,W_c,V, option,r.v = trait.var[iii,])#, prevU = U)
-
+    U.prev <- U
+    U = U.new$U/U.new$s 
     ll.tracker <- c(ll.tracker, U.new$total.log.lik)
     penalty.tracker <- c(penalty.tracker, U.new$penalty)
-    mse.tracker <- c(mse.tracker, norm(W*X-W*(U.new$U %*%t(V)), type = "F")/(nrow(X) * ncol(X)))
+    mse.tracker <- c(mse.tracker, norm(W*X-W*(U %*%t(V)), type = "F")/(nrow(X) * ncol(X)))
     iter.tracker <- c(iter.tracker, "U")
     #if(option$debug)
     #{
       #ES stands for each step.
-      es.objective <- c(es.objective, GetStepWiseObjective(X,W,W_c,U,U.new$U, V,"V",option))
-      em.objective[[(i.c)]] <- compute_obj(X,W,W_c, U.new$U,V,option, globalLL=TRUE, decomp = TRUE)
-      iter.objective[[(i.c/2)]] <- compute_obj(X,W,W_c, U.new$U,V,option, globalLL=TRUE, decomp = TRUE)
+      es.objective <- c(es.objective, GetStepWiseObjective(X,W,W_c,U.prev,U, V,"V",option))
+      em.objective[[(i.c)]] <- compute_obj(X,W,W_c, U,V,option, globalLL=TRUE, decomp = TRUE)
+      iter.objective[[(i.c/2)]] <- compute_obj(X,W,W_c, U,V,option, globalLL=TRUE, decomp = TRUE)
       s.weight.tracker[[i.c]] <- U.new$s
       i.c <- i.c + 1
     #}
@@ -642,13 +645,9 @@ Update_FL <- function(X, W, W_c, option, preV = NULL, preU = NULL, burn.in = FAL
     {
       message("Dropping some cols...")
       print(U.new$redundant_cols)
-      r <- DropSpecificColumns(U.new$redundant_cols, U.new$U, V)
+      r <- DropSpecificColumns(U.new$redundant_cols, U, V)
       U <- r$U; V <- r$V
     }
-      else{
-        U <- U.new$U
-      }
-
     # if L is empty, stop
     if(CheckUEmpty(U)) {message("U is empty; ending"); return(UpdateTrackingParams(tracking.data, X,W,W_c,U,V,option, loglik = iteration.ll.total))} #Update and end.
     colnames(U) = seq(1, ncol(U)) ;

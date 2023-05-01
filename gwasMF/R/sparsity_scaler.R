@@ -121,7 +121,7 @@ MAPfitAlpha <- function(matin, dim, option)
     }
 
 
-library(coop)
+
 cor2 <- function(x) {
 1/(NROW(x)-1) * crossprod(scale(x, TRUE, TRUE))
 }
@@ -637,4 +637,22 @@ matrixSparsityAvg <- function(m,initK,...)
   #m is a list of matrices
   b = sapply(m, function(x) matrixSparsity(x,initK,...))
   mean(b)
+}
+
+
+##Helping with scaling:
+getColScales <- function(matin)
+{
+  apply(matin,2,function(x) norm(x, "2"))
+}
+unitScaleColumns <- function(matin, colnorms = NA)
+{
+  #see https://stats.stackexchange.com/questions/8605/column-wise-matrix-normalization-in-r for speed options.
+  #wordspace::normalize.cols(matin)
+  if(any(is.na(colnorms)))
+  {
+    colnorms <- getColScales(matin)
+  }
+  
+  matin %*% diag(1/colnorms)
 }

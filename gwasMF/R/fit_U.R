@@ -168,6 +168,13 @@
     weighted.copies <- lapply(1:nrow(X), function(i) t(W_c) %*% diag(W[i,]) %*% V)
     long.v <- Matrix::bdiag(weighted.copies) #weight this ish too you silly man.
     s = 1
+    if(option$scale)
+    {
+      s <- getColScales(long.v)
+      long.v <- unitScaleColumns(long.v, colnorms = s)
+      #make into matrix for convenience:
+      s = matrix(s, nrow = nrow(X), ncol = ncol(V),byrow = TRUE)
+    }
     test.method = ""
     if(test.method == "preWeight")
     {

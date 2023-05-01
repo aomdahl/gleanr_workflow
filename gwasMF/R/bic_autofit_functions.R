@@ -529,10 +529,10 @@ FitVs <- function(X, W,W_c, initU, lambdas,option, weighted = FALSE)
       av <- WeightedAltVar(X,W,initU, var.method = bic.var, fit.resids  = TRUE)
     }
     #bics <- do.call("rbind", lapply(f.fits, function(x) CalcVBIC(X,W,initU,x$V, ev=av[[1]], lm.resid = av[[2]], weighted = TRUE, fixed_first = option$fixed_ubiqs)))
-    bics <- do.call("rbind", lapply(f.fits, function(x) CalcVBIC(X,W,initU,x$V, ev=1, lm.resid = av[[2]], weighted = TRUE, fixed_first = option$fixed_ubiqs)))
+    bics <- do.call("rbind", lapply(f.fits, function(x) CalcVBIC(X,W,initU,x$V/x$s, ev=1, lm.resid = av[[2]], weighted = TRUE, fixed_first = option$fixed_ubiqs)))
   }else{ #unweighted
     av <- AltVar(X,initU)
-    bics <- do.call("rbind", lapply(f.fits, function(x) CalcVBIC(X,W,initU, x$V, ev=av[[1]],lm.resid = av[[2]], fixed_first = option$fixed_ubiqs)))
+    bics <- do.call("rbind", lapply(f.fits, function(x) CalcVBIC(X,W,initU, x$V/x$s, ev=av[[1]],lm.resid = av[[2]], fixed_first = option$fixed_ubiqs)))
   }
   if(Inf %in% bics)
   {
@@ -569,6 +569,7 @@ DropEmptyColumnsPipe <- function(lin)
 }
 
 #Recalculate the sparsity params for U
+#U returned is res-caled up
 FitUs <- function(X, W, W_c, initV, alphas,option, weighted = FALSE)
 {
   bic.var = option$bic.var
@@ -587,10 +588,10 @@ FitUs <- function(X, W, W_c, initV, alphas,option, weighted = FALSE)
   if(weighted) {
     av <- WeightedAltVar(t(X),t(W),initV, var.method = bic.var, fit.resids  = TRUE, W_cov = W_c)
     #bics <- do.call('rbind', lapply(l.fits, function(x) CalcUBIC(X,W,W_c,as.matrix(x$U),initV, ev=av[[1]], weighted = TRUE, lm.resid=av[[2]])))
-    bics <- do.call('rbind', lapply(l.fits, function(x) CalcUBIC(X,W,W_c,as.matrix(x$U),initV, ev=1, weighted = TRUE, lm.resid=av[[2]])))
+    bics <- do.call('rbind', lapply(l.fits, function(x) CalcUBIC(X,W,W_c,as.matrix(x$U / x$s),initV, ev=1, weighted = TRUE, lm.resid=av[[2]])))
   }else{
     av <- AltVar(t(X),initV, fit.resids = TRUE) #This step is quite slow.... need to speed this up somehow.
-    bics <-  do.call('rbind', lapply(l.fits, function(x) CalcUBIC(X,W,W_c,as.matrix(x$U),initV,ev=av[[1]], lm.resid = av[[2]] )))
+    bics <-  do.call('rbind', lapply(l.fits, function(x) CalcUBIC(X,W,W_c,as.matrix(x$U/ x$s),initV,ev=av[[1]], lm.resid = av[[2]] )))
   }
 
   return(list("fits" = l.fits, "BIC"=bics, "resid_var" =av))
@@ -824,7 +825,7 @@ ProposeNewSparsityParams <- function(bic.list,sparsity.params, curr.dist, curr.i
   {
 
     optimal.index <- selectOptimalScoreIndex(bic, params, oneSD)
-    optimal.matrix <- DropEmptyColumns(fit.data$fits[[optimal.index]][[1]])
+    optimal.matrix <- DropEmptyColumns(fit.data$fits[[optimal.index]][[1]]) / DropEmptyColumns(fit.data$fits[[optimal.index]]$s)
     if(ncol(optimal.matrix) == 0)
     {
       optimal.matrix <- matrix(0, nrow = nrow(fit.data$fits[[optimal.index]][[1]]), ncol = 1 )
@@ -1092,7 +1093,7 @@ getBICMatrices <- function(opath,option,X,W,W_c, all_ids, names, min.iter = 2, m
 #Convergence criteria for the BIC ssearch
 #Converges when K is unchanging from one run to the next, and the percentage size change in the alpha/lambda paramters is less than 5%
 #Might consider making this more generous- if it stays on the same log scale, then that is probably good enough....
-checkConvergenceBICSearch <- function(index, record.data, conv.perc.thresh = 0.1, conv.mode = "SEPARATE")
+checkConvergenceBICSearch <- function(index, record.data, conv.perc.thresh = 0.05, conv.mode = "SEPARATE")
 {
   if(index > 10)
   {
