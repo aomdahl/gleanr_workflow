@@ -915,8 +915,8 @@ getBICMatrices <- function(opath,option,X,W,W_c, all_ids, names, min.iter = 2, m
       if(i == 1)
       {
         init.alpha = alphas[floor(length(alphas)/2)]
-        #OPTIMIZER="SANN"
-        OPTIMIZER="Brent"
+        OPTIMIZER="SANN"
+        #OPTIMIZER="Brent"
         #init.alpha = min(alphas)
       }else
       {
@@ -982,8 +982,8 @@ getBICMatrices <- function(opath,option,X,W,W_c, all_ids, names, min.iter = 2, m
       if(i == 1)
       {
         init.lambda = lambdas[floor(length(lambdas)/2)]
-        #OPTIMIZER="SANN"
-        OPTIMIZER="Brent"
+        OPTIMIZER="SANN"
+        #OPTIMIZER="Brent"
         #init.lambda = min(lambdas)
       }else
       {
