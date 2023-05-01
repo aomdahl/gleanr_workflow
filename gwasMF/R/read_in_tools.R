@@ -360,6 +360,8 @@ readInSettings <- function(args)
     option$Kmin <- 0
   }
   #Experimental
+  message("Scaling is on")
+  option$scale <- TRUE
   option$burn.in <- 0
   option$fix.alt.setting <- NA
   option$swap <- FALSE

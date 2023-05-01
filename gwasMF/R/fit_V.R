@@ -194,6 +194,16 @@ FitVGlobal <- function(X, W, W_c, U, option, formerV = NULL)
     long.u <- rbind(long.u, expanded.list)
   }
   s = 1
+  if(option$scale)
+  {
+    #Put it in matrix form for convenience
+    s <- getColScales(long.u)
+    long.u <- unitScaleColumns(long.u, colnorms = s)
+    #Put it in matrix form for convenience
+    s <- matrix(s, nrow = M,byrow = TRUE)
+  }
+  
+  
   test.method = ""
   if(test.method == "preWeight")
   {
