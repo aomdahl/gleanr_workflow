@@ -598,7 +598,7 @@ Update_FL <- function(X, W, W_c, option, preV = NULL, preU = NULL, burn.in = FAL
     ll.tracker <- c(ll.tracker, V.new$total.log.lik)
     penalty.tracker <- c(penalty.tracker, V.new$penalty)
     V.prev <- V
-    V = V.new$V/V.new$s 
+    V = V.new$V/V.new$s
     mse.tracker <- c(mse.tracker, norm(W*X-W*(U%*%t(V)), type = "F")/(nrow(X) * ncol(X)))
     iter.tracker <- c(iter.tracker, "V")
     #More crap to follow the objective
@@ -625,7 +625,7 @@ Update_FL <- function(X, W, W_c, option, preV = NULL, preU = NULL, burn.in = FAL
     ## update L
     U.new <- FitUWrapper(X,W,W_c,V, option,r.v = trait.var[iii,])#, prevU = U)
     U.prev <- U
-    U = U.new$U/U.new$s 
+    U = U.new$U/U.new$s
     ll.tracker <- c(ll.tracker, U.new$total.log.lik)
     penalty.tracker <- c(penalty.tracker, U.new$penalty)
     mse.tracker <- c(mse.tracker, norm(W*X-W*(U %*%t(V)), type = "F")/(nrow(X) * ncol(X)))

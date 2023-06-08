@@ -125,7 +125,7 @@ matrixGWASQC <- function(X, W, id.list, na_thres = 0.5, is.sim = FALSE)
 # Scale by sqrt(LDSC_int) if specified
 #@param args- argument object in R
 #@return a list containing the values, their corresponding weights, and the SNPS in the matching order
-
+#readInBetas(args$gwas_effects, args)
 readInBetas <- function(fpath, option)
 {
   `%>%` <- magrittr::`%>%`
@@ -134,6 +134,7 @@ readInBetas <- function(fpath, option)
 
 #Function to read in a covariance matrix.
 #This code was copied from "projection_regression_helper.R", but belongs here
+# readInCovariance(args$covar_matrix, names)
 readInCovariance <- function(p, name_order)
 {
   if(p == "" | is.null(p)) {return(NULL)}
@@ -268,11 +269,20 @@ readInData <- function(args)
   }
 
   weighted.dat <- SpecifyWeightingScheme(effects, all_ids, args)
+  X <- weighted.dat$X; W <- as.matrix(weighted.dat$W);
+  if(args$drop_phenos != "")
+  {
+    message("Dropping data corresponding to names: ", args$drop_phenos)
+    drops <- unlist(strsplit(args$drop_phenos, split = ",")[[1]])
+    drop.indices <- which(names %in% drops)
+    X <- X[,-drop.indices]; W <- W[,-drop.indices]
+    names <- names[-drop.indices]
+  }
 
   #remove NAs, extreme values.
-  r <- matrixGWASQC(weighted.dat$X,weighted.dat$W,all_ids, is.sim = args$simulation)
+  r <- matrixGWASQC(X,W,all_ids, is.sim = args$simulation)
   X <- r$clean_X;  W <- r$clean_W; all_ids <- r$snp.list
-    if(length(r$dropped_cols) > 1 || r$dropped_cols != 0)
+  if(length(r$dropped_cols) > 1 || r$dropped_cols != 0)
   {
     names <- names[-(r$dropped_cols)]
   }
@@ -281,6 +291,7 @@ readInData <- function(args)
   if(args$scale_n != "")
   {
     N <- data.table::fread(args$scale_n) %>% dplyr::filter(!row_number() %in% r$drops) %>% dplyr::filter(unlist(.[,1]) %in% all_ids) %>% quickSort(.,args)
+    if(args$drop_phenos != "") {N <- N[,-drop.indices] } #Drop }
     if(!all(all_ids == N[,1]))
     {
       #This would occur if we are missing variants.
@@ -302,18 +313,18 @@ readInData <- function(args)
    }
     print(dim(N))
     print(dim(W))
-    W <- W * (1/sqrt(N))
+    W <- W * (sqrt(N)) #I have been doing this wrong the whole time....
   }
   if(args$genomic_correction != "")
   {
     message("Including genomic correction in factorization...")
-    GC <- readInLambdaGC(args$genomic_correction,X, names)
+    GC <- readInLambdaGC(args$genomic_correction,X, names) #Check this
     X <- X * (1/sqrt(GC)) # we don't weight by this, we actually adjust the effect sizes by this.
   }
 
    message("Reading in covariance structure from sample overlap...")
    C <- readInCovariance(args$covar_matrix, names)
-   W_c <- buildWhiteningMatrix(C, ncol(X), blockfiy = TRUE)
+   W_c <- buildWhiteningMatrix(C, ncol(X))
   return(list("X" = X, "W" = W, "ids" = all_ids, "trait_names" = names, "C" = C, "W_c" = W_c))
 
 }
@@ -360,13 +371,14 @@ readInSettings <- function(args)
     option$Kmin <- 0
   }
   #Experimental
-  message("Scaling is on")
-  option$scale <- TRUE
+  message("Scaling is off by default")
+  option$scale <- FALSE
   option$burn.in <- 0
   option$fix.alt.setting <- NA
   option$swap <- FALSE
   option$bic.var <- args$bic_var
   option$svd_init <- args$svd_init
+  option$std_y <- args$std_y
 
   #Internal use only:
   option$actively_calibrating_sparsity <- FALSE
@@ -418,6 +430,7 @@ defaultSettings <- function(K=0, init.mat = "V")
   args$sort <- FALSE #b/c default for sims.
   args$converged_obj_change <- 0.001
   args$std_coef <- FALSE
+  args$std_y <- FALSE
   if(init.mat == "U")
   {
     args$init_L <- "std"

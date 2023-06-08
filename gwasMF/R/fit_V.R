@@ -182,69 +182,70 @@ FitVGlobal <- function(X, W, W_c, U, option, formerV = NULL)
   N=nrow(X)
    sparsity.est <- NA; penalty = NA; ll = NA; l = NA; FactorM = c(); penalty = NA
   long.x <- c(t(W_c) %*% t(X*W)) #Stacked by SNP
+  if(option$std_y) { long.x <- mleStdVector(long.x)}
   #long.x <- c(X*W)
-  #weighted.copies <- lapply(1:ncol(X), function(i) diag(W[,i]) %*% U)
+  #\weighted.copies <- lapply(1:ncol(X), function(i) diag(W[,i]) %*% U)
+  joined.weights <- lapply(1:nrow(X), function(i) t(W_c) %*% (diag(W[i,]))) #this is very fast
   #long.u <- Matrix::bdiag(weighted.copies) #weight this ish too you silly man.
   #REORDER approach- may be less expensive?
-  long.u <- NULL
-  for(i in 1:nrow(U))
+
+  #old way- very slow
+  if(FALSE)
   {
-    #MAKE THE LONG MATRIX VERSION of it
-    expanded.list <- t(W_c) %*% (diag(W[i,])%*% Matrix::bdiag(lapply(1:M, function(j) t(U[i,]))))
-    long.u <- rbind(long.u, expanded.list)
+    long.u <- NULL
+    long.u <- Matrix::Matrix(0, nrow = M*N, ncol= M*K,sparse = TRUE)
+    for(i in 1:nrow(U))
+    {
+      #MAKE THE LONG MATRIX VERSION of it
+      expanded.list <- t(W_c) %*% (diag(W[i,])%*% Matrix::bdiag(lapply(1:M, function(j) t(U[i,]))))
+      start.index <- ((i-1)*M)+1
+      long.u[start.index:(i*M),] <- expanded.list
+    }
   }
+  #New way- much faster:
+  nsnps = min(1000, nrow(U))
+  interval <- floor(nrow(X)/nsnps)
+  extra.count <- nrow(X) - interval * nsnps
+  blocks <- lapply(1:interval, function(i) ((i-1)*nsnps + 1):(i*nsnps))
+  if(extra.count != 0)
+  {
+    blocks[[length(blocks) + 1]] <- (interval * nsnps + 1) : (interval * nsnps + extra.count)
+  }
+
+  all.pieces <- lapply(blocks, function(x) stackVs(x, M,K, joined.weights, U))
+  long.u <- do.call("rbind", all.pieces)
+
   s = 1
   if(option$scale)
   {
     #Put it in matrix form for convenience
     s <- getColScales(long.u)
+    s[is.na(s)] <- 1 #replace the NAs with 1s.
     long.u <- unitScaleColumns(long.u, colnorms = s)
     #Put it in matrix form for convenience
     s <- matrix(s, nrow = M,byrow = TRUE)
   }
-  
-  
-  test.method = ""
-  if(test.method == "preWeight")
-  {
-    s <- apply(U, 2, function(x) norm(x, "2"))
-    s[s==0] <- 1 #so we don't divide by 0 on empty columns....
-    scaled.u <- sweep(U,2,s,FUN="/")
-    #stopifnot(norm(scaled.u[,1], "2") == 1)
-    weighted.copies <- lapply(1:ncol(X), function(i)  diag(W[,i]) %*% scaled.u)
-    long.u <- Matrix::bdiag(weighted.copies) #weight this ish too you silly man.
-  }
-  if(test.method == "postWeight")
-  {
-    s = apply(long.u, 2, function(x) norm(x, "2"))
-    s[s==0] <- 1 #so we don't divide by 0 on empty columns....
-    long.u <- sweep(long.u,2,s,FUN="/")
-    #long.v <- long.v / s
-    #stopifnot(norm(long.u[,1], "2") == 1)
-  }
-  #Separate into penalized and unpenalized
-  dat_i = (as.matrix(long.u))
 
-  choose.cols <- sapply(1:ncol(dat_i), function(x) x %% K)
-  unpen <- dat_i[,choose.cols == 1]
-  pen <- dat_i #include everythign if all penalized
-
-  if(option$fixed_ubiq)
-  {
-    #only penalize the correct columns.
-    pen <- dat_i[,choose.cols != 1]
-  }
+  nopen.cols <- sapply(1:ncol(long.u), function(x) x %% K)
 
   #special case this logic failes on
-  if(K == 1 & option$fixed_ubiq)
+  if(K == 1 & option$fixed_ubiq & option$regression_method == "penalized")
   {
     #we are just down to the last column
     option$regression_method = "OLS"
     #Just bypass this.
   }
 
+  dat_i = long.u
+  unpen <- dat_i[,nopen.cols == 1]
+  pen <- dat_i #include everythign if all penalized
  if(option$fixed_ubiq & option$regression_method == "penalized")
 {
+   if(option$fixed_ubiq)
+   {
+     #only penalize the correct columns.
+     pen <- dat_i[,nopen.cols != 1]
+   }
 
    if(!is.null(formerV))
    {
@@ -252,24 +253,77 @@ FitVGlobal <- function(X, W, W_c, U, option, formerV = NULL)
      fixed.starts <- formerV[,1]
      message("doing it this way..")
      penalized.starts <-  c(t(formerV[,-1]))
-     fit <- penalized::penalized(response = long.x, penalized =pen,
-                                 unpenalized = ~unpen + 0, lambda1 =option[['lambda1']], lambda2=0,
+     fit <- penalized::penalized(response = as.matrix(long.x), penalized =as.matrix(pen),
+                                 unpenalized = ~as.matrix(unpen) + 0, lambda1 =option[['lambda1']], lambda2=0,
                                  positive = option$posF, standardize = option$std_coef, trace = FALSE,startbeta = penalized.starts, startgamma = fixed.starts ) #, epsilon = option$epsilon, maxiter= 50)
 
    }else
    {
-     fit <- penalized::penalized(response = long.x, penalized =pen,
-                                 unpenalized = ~unpen + 0, lambda1 =option[['lambda1']], lambda2=0,
+     fit <- penalized::penalized(response = as.matrix(long.x), penalized =as.matrix(pen),
+                                 unpenalized = ~as.matrix(unpen) + 0, lambda1 =option[['lambda1']], lambda2=0,
                                  positive = option$posF, standardize = option$std_coef, trace = FALSE) #, epsilon = option$epsilon, maxiter= 50)
    }
-
-
-
-      f = penalized::coef(fit, 'all')
+   f = penalized::coef(fit, 'all')
       ll = fit@loglik
       #F 1-M are the 1st factor
       FactorM = cbind(f[1:M],matrix(f[(M+1):(M*K)], nrow = M,byrow = TRUE))
       penalty = fit@penalty[1]
+} else if( option$regression_method == "glmnet")
+{
+  lasso.active.set <- rep(1, ncol(long.u))
+  if( option$fixed_ubiq) {lasso.active.set[nopen.cols == 1] <- 0 }
+
+  #every first entry is 0
+  fit = glmnet::glmnet(x = long.u, y = long.x, family = "gaussian", alpha = 1,
+                       intercept = FALSE, standardize = option$std_coef, penalty.factor = lasso.active.set) #lambda = option[['alpha1']],
+
+ lambda.list <- fit$lambda
+ if(is.na(option$lambda1)) #we are still parameter searching
+ {
+   message("Using BIC to select out the best one...")
+   if(FALSE)
+   {   bic.list <- c()
+     for(i in 1:length(lambda.list))
+     {
+       #convert u into a matrix we can work with
+       #have to remove the intercept term.
+       v.curr = matrix(coef(fit, s = lambda.list[i])[-1], nrow = ncol(X), ncol = ncol(U),byrow = TRUE)
+       #calculate a BIC for each setting
+       bic.list <- c(bic.list, CalcMatrixBIC.loglikGLOBALversion(X,W,U,v.curr, W_cov = W_c, which.learning = "V", df = fit$df[i],fixed_first=option$fixed_ubiq))
+
+     }
+   }
+   #bic.list <- BICglm(fit, option$bic.var)
+   bic.list <- sklearnBIC(fit,long.u,long.x, bic.mode =  option$bic.var)
+   #bic.list <- ZouBIC(fit, long.u, long.x)
+   #pick the best one
+   min.index <- which.min(bic.list)
+   v.ret = matrix(coef(fit, s = lambda.list[min.index])[-1], nrow = ncol(X), ncol = ncol(U),byrow = TRUE)
+
+   stopifnot(!is.unsorted(-fit$lambda)) #make sure its ordered
+   #grab the previous 25 and the next 25
+   upper.next <- NA; lower.next <- NA
+   if(min.index > 25)
+   {
+     upper.next <- fit$lambda[min.index - 25]
+   }
+   if((min.index + 25) < length(fit$lambda))
+   {
+     lower.next <- fit$lambda[min.index + 25]
+   }
+   return(list("V" = v.ret,"lambda.sel"=fit$lambda[min.index],"bic"= bic.list[min.index], "sparsity_space"=max(fit$lambda),
+               "total.log.lik" = NA, "penalty" = NA, "s"=s, "next.upper" = upper.next, "next.lower" = lower.next))
+
+ }else
+ {
+   v.curr = matrix(coef(fit, s = option$lambda1)[-1], nrow = ncol(X), ncol = ncol(U),byrow = TRUE)
+   return(list("V" = v.curr, "sparsity_space"=max(fit$lambda), "total.log.lik" = NA, "penalty" = NA, "s"=s))
+ }
+
+  #ProposeNewSparsityParams(bic.list, fit$lambda, (fit$lambda), 2, n.points = 20) #need to modify this to allow for conditions.....
+  #Check: is in the realm of those picked by CV?
+
+
 } else if(option$regression_method == "OLS")
   {
     fit <- RcppArmadillo::fastLmPure(as.matrix(long.u), long.x)
@@ -305,4 +359,36 @@ FitVWrapper <- function(X, W,W_c, U, option, formerV = NULL)
   #HERE?
   #fit_V(X, W, as.matrix(U), option, formerV = formerV)
   FitVGlobal(X, W, W_c, as.matrix(U), option, formerV = formerV)
+}
+
+
+
+
+##HELPER FUNCTION for quickly stakcing vs sparsely
+
+#' Stack weighted elements of U too learn v. Could be helpful for paralellizing
+#'
+#' @param nsnps the chunk size to analyze
+#' @param M the number of studies
+#' @param K current K
+#' @param joined.weights a list of the covariance matrix times the diagonal weightings matrix
+#' @param U current u
+#'
+#' @return an nm x mk sparse matrix
+#' @export
+stackVs <- function(nsnps, M, K, joined.weights, U)
+{
+  global.stack <- list()
+  for(i in nsnps)
+  {
+    curr.stack <- matrix(0, nrow = M, ncol = K*M)
+    for(m in 1:M)
+    {
+      prod.blank <- matrix(0, nrow = M, ncol = K)
+      prod.blank[m,] <- U[i,]
+      curr.stack[,(K*(m-1)+1):(m*K)] <- joined.weights[[i]] %*% prod.blank
+    }
+    global.stack[[i]] <-curr.stack
+  }
+  Matrix::Matrix(do.call("rbind", global.stack), sparse = TRUE)
 }

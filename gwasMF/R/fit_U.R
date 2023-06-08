@@ -164,6 +164,7 @@
     #it_U(X, W, W_c, initV, option)
     max.sparsity <- NA; penalty = NA; ll = NA; l = NA; penalty = NA
     long.x <- c(t(W_c) %*% t(X*W)) #stacks by SNP1, SNP2...
+    if(option$std_y) { long.x <- mleStdVector(long.x)}
     #This multiplies each SNP row by the correction matrix
     weighted.copies <- lapply(1:nrow(X), function(i) t(W_c) %*% diag(W[i,]) %*% V)
     long.v <- Matrix::bdiag(weighted.copies) #weight this ish too you silly man.
@@ -171,27 +172,10 @@
     if(option$scale)
     {
       s <- getColScales(long.v)
+      s[is.na(s)] <- 1 #replace the NAs with 1s.
       long.v <- unitScaleColumns(long.v, colnorms = s)
       #make into matrix for convenience:
       s = matrix(s, nrow = nrow(X), ncol = ncol(V),byrow = TRUE)
-    }
-    test.method = ""
-    if(test.method == "preWeight")
-    {
-      s <- apply(V, 2, function(x) norm(x, "2"))
-      s[s==0] <- 1 #so we don't divide by 0 on empty columns....
-      scaled.v <- sweep(V,2,s,FUN="/")
-      #stopifnot(norm(scaled.v[,1], "2") == 1)
-      weighted.copies <- lapply(1:nrow(X), function(i) W_c %*% diag(W[i,]) %*% scaled.v)
-      long.v <- Matrix::bdiag(weighted.copies) #weight this ish too you silly man.
-    }
-    if(test.method == "postWeight")
-    {
-      s = apply(long.v, 2, function(x) norm(x, "2"))
-      s[s==0] <- 1 #so we don't divide by 0 on empty columns....
-      long.v <- sweep(long.v,2,s,FUN="/")
-      #long.v <- long.v / s
-      #stopifnot(norm(long.v[,1], "2") == 1)
     }
 
     if(!is.null(formerU))
@@ -210,15 +194,141 @@
       #ll = logLik(fit)
       ll = penLL(length(long.x), long.x - as.matrix(long.v) %*% fit$coefficients) # hack for now
       l = matrix(l, nrow = nrow(X), ncol = ncol(V),byrow = TRUE)
-    }else if( option$regression_method == "penalized")
+    }else if( option$regression_method == "glmnet")
+    {
+      #The alternative: glmnet:
+      #The developers warn against providing just 1 solution... maybe I should be doing CV here instead of my dumba BIC thing.
+      #arg.
+      fit = glmnet::glmnet(x = long.v, y = long.x, family = "gaussian", alpha = 1,
+                           intercept = FALSE, standardize = option$std_coef,nlambda = 200) #lambda = option[['alpha1']],
+      #coeffficnets always returned on the original scale.
+      #determine how to get teh lambda max
+      #look at the output, and process it
+      #OPTIMIZE THIS CODE, super inefficient.
+      #figure out what to return.
+      #make your life easy
+      alpha.list <- fit$lambda
+      if(is.na(option$alpha1)) #we are searching for params.
+      {
+        message("Using BIC to select out the best one...")
+    if(FALSE)
+    {
+      all.preds <- predict(fit, newx = long.v)
+      #Is all preds closer to the scaled or unscaled version of longx?
+      #stopifnot(sum((all.preds[,100] - long.x)^2) < sum((all.preds[,100] - mleStdVector(long.x))^2))
+
+      #Documentation says: " standardizes y to have unit variance (using 1/n rather than 1/(n-1) formula)
+      #before computing its lambda sequence (and then unstandardizes the resulting coefficients)"
+      #So as we see here, use the UNSTANDARDIZED version.
+
+      #Almost CERTAINLY the unscaled version The distance on the scaled is much bigger
+      bic.list.complete<- list()
+      bic.list.complete[["bic.std"]] <- c();bic.list.complete[["bic.std_prev"]] <- c()
+      bic.list.complete[["bic.std.scaled"]] <- c(); # not doing this b/c same as prev, too much work.bic.list.complete[["bic.std_prev.scaled"]] <- c()
+      bic.list.complete[["aic"]] <- c();bic.list.complete[["aic.scaled"]] <- c();
+      bic.list.complete[["avg"]] <- c(); bic.list.complete[["avg.scaled"]] <- c()
+      bic.list.complete[["zou"]] <- c(); bic.list.complete[["zou.scaled"]] <- c()
+      bic.list.complete[["dev"]] <- c(); bic.list.complete[["zou.unbiased"]] <- c();
+        for(i in 1:length(alpha.list))
+        {
+
+          #May 15 updaed
+          bic.list.complete[["bic.std"]] <- c(bic.list.complete[["bic.std"]], (-2*penLLSimp(nrow(X), ncol(X), long.x - all.preds[,i]) + log(length(long.x)) * fit$df[i]))
+          bic.list.complete[["aic"]] <- c(bic.list.complete[["aic"]], (-2*penLLSimp(nrow(X), ncol(X), long.x - all.preds[,i]) + 2 * fit$df[i]))
+          bic.list.complete[["avg"]] <- c(bic.list.complete[["avg"]], (-2*penLLSimp(nrow(X), ncol(X), long.x - all.preds[,i]) + mean(c(2,log(length(long.x)))) * fit$df[i]))
+          #convert u into a matrix we can work with
+          #have to remove the intercept term.
+          u.curr = matrix(coef(fit, s = alpha.list[i])[-1], nrow = nrow(X), ncol = ncol(V),byrow = TRUE)
+          bic.list.complete[["bic.std_prev"]] <- c( bic.list.complete[["bic.std_prev"]], CalcMatrixBIC.loglikGLOBALversion(X,W,u.curr,V, W_cov = W_c,
+                                                                    which.learning = "U", df = fit$df[i],fixed_first=FALSE, scale.explanatory = FALSE))
+
+          #Now the scaled version of each, which is what I think it really should be......
+          scaled.long.x <-  mleStdVector(long.x)
+          bic.list.complete[["bic.std.scaled"]] <- c(bic.list.complete[["bic.std.scaled"]], (-2*penLLSimp(nrow(X), ncol(X), scaled.long.x - all.preds[,i]) + log(length(scaled.long.x)) * fit$df[i]))
+          bic.list.complete[["aic.scaled"]] <- c( bic.list.complete[["aic.scaled"]], (-2*penLLSimp(nrow(X), ncol(X), scaled.long.x - all.preds[,i]) + 2 * fit$df[i]))
+          bic.list.complete[["avg.scaled"]] <- c(bic.list.complete[["avg.scaled"]], (-2*penLLSimp(nrow(X), ncol(X), scaled.long.x - all.preds[,i]) + mean(c(2,log(length(scaled.long.x)))) * fit$df[i]))
+             #Verified- residuals are the SAME!
+          #resid.new <- long.x - all.preds[,i]
+          #resid.old <- calcGlobalResiduals(X, W, u.curr, V, W_cov = W_c)
+
+        }
+      bic.list.complete[["zou"]] <- ZouBIC(fit, long.v, long.x)
+      bic.list.complete[["zou.unbiased"]] <- ZouBIC(fit, long.v, long.x,  var.meth = "unbiased")
+      bic.list.complete[["dev"]] <- BICglm(fit)
+      bic.list.complete[["dev.e"]] <- BICglm(fit,bic.mode = "ebic")
+    }
+
+        #bic.list <- BICglm(fit, option$bic.var)
+        bic.list <- sklearnBIC(fit,long.v,long.x, bic.mode =  option$bic.var)
+        #save(bic.list.complete, fit, long.x, long.v,file="/scratch16/abattle4/ashton/snp_networks/scratch/testing_gwasMF_code/real_data/udler_bic_evaluation.stdized.CORRECTED.RData" )
+        #bic.list <- ZouBIC(fit, long.v, long.x) #trying this...
+if(FALSE)
+{
+  #Trying generalized hbic for high dimensional case, Wang et al.
+  c = log(log(length(long.x)))
+  n <- length(long.x)
+  gic <- log(deviance(fit)/n) + (fit$df *c * log(ncol(long.v)))/n #this is still too aggressive
+  #pick the best one
+  #I think we want zou + the cleanup thing ?
+
+  #Trying the stabilizing selection- this might be a good choice for the last iterations, once the model has been selected.
+  subs <- list()
+  for(i in 1:50)
+  {
+    is <- sample(1:length(long.x), floor((0.9 * length(long.x))));
+    subs[[i]] <- glmnet::glmnet(x = long.v[is,], y = long.x[is], family = "gaussian", alpha = 1,
+                                intercept = FALSE, standardize = TRUE,nlambda = 100)
+  }
+  z.counts <- lapply(subs, function(x) x$beta !=0)
+  per.setting <- do.call("sum", lapply(subs, function(x) x$beta !=0)) #assuming same lambda each time, dubious
+  prob.entries <- Reduce("+", z.counts)/50
+  highest.prob.by.col <- apply(prob.entries,1, function(x) max(x))
+  pi_thresh = 0.9
+  drop.entries <- which(!(highest.prob.by.col > pi_thresh))
+  coefs.out <- coef(fit, s = alpha.list[min.index])
+  coefs.out[drop.entries] <- 0
+  u.ret = matrix(coefs.out, nrow = nrow(X), ncol = ncol(V),byrow = TRUE)
+}
+
+#look at the probability for a given
+        min.index <- which.min(bic.list)
+        #TODO: check this
+        u.ret = matrix(coef(fit, s = alpha.list[min.index])[-1], nrow = nrow(X), ncol = ncol(V),byrow = TRUE)
+        #return teh best lambda associated with it
+        #give the range for the next run, centered around this find
+        stopifnot(!is.unsorted(-fit$lambda)) #make sure its ordered
+        #grab the previous 25 and the next 25
+        upper.next <- NA; lower.next <- NA
+        if(min.index > 25)
+        {
+          upper.next <- fit$lambda[min.index - 25]
+        }
+        if((min.index + 25) < length(fit$lambda))
+        {
+          lower.next <- fit$lambda[min.index + 25]
+        }
+
+        #ProposeNewSparsityParams(bic.list, fit$lambda, (fit$lambda), 2, n.points = 20) #need to modify this to allow for conditions.....
+        #Check: is in the realm of those picked by CV?
+        return(list("U" = u.ret,"alpha.sel"=fit$lambda[min.index],"bic"= bic.list[min.index], "sparsity_space"=max(fit$lambda), "total.log.lik" = NA, "penalty" = penalty, "s"=s, "next.upper" = upper.next, "next.lower" = lower.next))
+
+
+      }
+      else{
+        u.ret = matrix(coef(fit, s = option$alpha1)[-1], nrow = nrow(X), ncol = ncol(V),byrow = TRUE)
+        return(list("U" = u.ret, "sparsity_space"=u.ret, "total.log.lik" = NA, "penalty" = NA, "s"=s))
+      }
+    } else if( option$regression_method == "penalized")
     {
       if(is.null(formerU))
       {
+
+        #Change penalty factor for V
         fit = penalized::penalized(response = long.x, penalized = as.matrix(long.v), lambda1 = option[['alpha1']],lambda2=0, unpenalized = ~0,
                                    positive = FALSE, standardize = option$std_coef, trace = FALSE)
       }else
       {
-        fit = penalized::penalized(response = long.x, penalized = as.matrix(long.v), lambda1 = option[['alpha1']],lambda2=0, unpenalized = ~0,
+        fit = penalized::penalized(response = long.x, penalized =  as.matrix(long.v), lambda1 = option[['alpha1']],lambda2=0, unpenalized = ~0,
                                    positive = FALSE, standardize = option$std_coef, trace = FALSE, startbeta = old.long.u)
       }
 
@@ -235,7 +345,7 @@
 
       #convert back to a U:
 
-      if(option$actively_calibrating_sparsity) { max.sparsity <- rowiseMaxSparsity(as.matrix(long.x), as.matrix(long.v))}
+      if(option$actively_calibrating_sparsity) { max.sparsity <- rowiseMaxSparsity(Matrix::Matrix(long.x), (long.v))}
       return(list("U" = l, "sparsity_space"=max.sparsity, "total.log.lik" = ll, "penalty" = penalty, "s"=s))
   }
 

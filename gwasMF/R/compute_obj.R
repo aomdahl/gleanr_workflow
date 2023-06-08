@@ -15,18 +15,19 @@
 #'
 #' @return the matrix of residuals, N x M
 #' @export
-calcGlobalResiduals <- function(X,W,U,V, W_cov = NULL, fixed_first = FALSE)
+calcGlobalResiduals <- function(X,W,U,V, W_cov = NULL, fixed_first = FALSE, scale.explanatory = FALSE)
 {
 
-  if(fixed_first)
-  {
-    #pull out the effects of the 1st factor here, since we aren't interested in the fitting benefit of that
-    #Residuals should be exactly the same at the end of the day.
-    X <- X -  (U[,1] %*% t(V[,1]))
-    V <- V[,-1]
-    U <- U[,-1]
+  #if(fixed_first)
+  #{
+  #  #pull out the effects of the 1st factor here, since we aren't interested in the fitting benefit of that
+  #  #Residuals should be exactly the same at the end of the day.
+  #  X <- X -  (U[,1] %*% t(V[,1]))
+  #  V <- V[,-1]
+  #  U <- U[,-1]
     #message("Need to think about how Covariance structure applies here...")
-  }
+  #}
+
   if(!is.null(W_cov))
   {
 
@@ -35,10 +36,51 @@ calcGlobalResiduals <- function(X,W,U,V, W_cov = NULL, fixed_first = FALSE)
       message("Dimensions mismatch. Bug detected")
       return(NA)
     }
-    return(t(W_cov) %*% t(W * X - W * (U %*% t(V))) %>% t()) #Final transpose at end to switch the dimensions correctly. Verified this matches expected objective on 4/10
+    explanatory.var <-t(W_cov) %*% t(W * X)
+    if(scale.explanatory)
+    {
+      explanatory.var <- mleScaleMatrix(explanatory.var)
+    }
+    return((explanatory.var - t(W_cov) %*% t(W * (U %*% t(V)))) %>% t())
+    #return(t(W_cov) %*% t(W * X - W * (U %*% t(V))) %>% t()) #Final transpose at end to switch the dimensions correctly. Verified this matches expected objective on 4/10
   }
   message("This case should not occur")
-  return((W * X - W * (U %*% t(V))))
+  explanatory.var <- (W * X)
+  if(scale.explanatory)
+  {
+    explanatory.var <- mleScaleMatrix(explanatory.var)
+  }
+  return((explanatory.var - W * (U %*% t(V))))
+}
+
+mleScaleMatrix <- function(explanatory.var)
+{
+  mu = mean(explanatory.var)
+  var <- (1/(ncol(explanatory.var) * nrow(explanatory.var))) * sum((explanatory.var-mu)^2)
+  explanatory.var/sqrt(var)
+}
+
+mleScaleVector <- function(x)
+{
+  n <- length(x)
+  mle.var <- unlist(var(x) * (n-1)/n)
+  x /sqrt(mle.var)[1]
+}
+
+mleStdVector <- function(x)
+{
+  x_bar<- mean(x)
+  n <- length(x)
+  mle.x <- sum((x - x_bar)^2)/n
+  (x-x_bar) /sqrt(mle.x)[1]
+}
+
+mleStdMatrix <- function(X)
+{
+  n <- nrow(X)
+  #pulled from https://statisticaloddsandends.wordpress.com/2018/11/15/a-deep-dive-into-glmnet-standardize/
+    X_centered <- apply(X, 2, function(x) x -mean(x))
+    apply(X_centered, 2, function(x) x / sqrt(sum(x^2) / n))
 }
 
 penalizedLogLik <- function(X,W,W_c, U,V,...)
@@ -53,6 +95,12 @@ stdLogNormalFit <- function(residuals, resdidual.variance = 1)
 {
   -(resdidual.variance/2) * sum(residuals^2)-0.5*log(2*pi*resdidual.variance)
 }
+
+fitTermGLMNet <- function(residuals, M,N)
+{
+  (1/(2*M*N)) * sum(residuals^2)
+}
+
 penalizedLogLikV <- function(X,W,U,V, use.resid = NULL,...)
 {
   #simple way
@@ -130,6 +178,31 @@ penalizedLogLikU <- function(X,W,W_c, U,V, use.resid = NULL, fixed_first = FALSE
   total.log.lik
 }
 
+getUPenalty <- function(U, option)
+{
+  if(option$std_coef) {
+    U <- mleStdMatrix(U)
+  }
+  option[['alpha1']]* sum(abs(U)) + 0 * sqrt(sum(U^2));
+
+}
+
+getVPenalty <- function(V, option)
+{
+  if(option$std_coef) {
+    V <- mleStdMatrix(V)
+  }
+  FactorV_penalty = option[['lambda1']] * sum(abs(V)) + 0 * sqrt(sum(V ^ 2));
+  if(option$fixed_ubiq)
+  {
+    FactorV_penalty = 0
+    if(ncol(Matrix::Matrix(V)) > 1) #only non-zero if valid scores
+    {
+      FactorV_penalty = option[['lambda1']] * sum(abs(V[,-1])) + 0 * sqrt(sum(V[,-1] ^ 2));
+
+    }
+  }
+}
 #modified to global LL!
 compute_obj <- function(X, W, W_c, L, FactorM, option, decomp = FALSE, loglik = TRUE, globalLL=TRUE){
 
@@ -153,13 +226,8 @@ compute_obj <- function(X, W, W_c, L, FactorM, option, decomp = FALSE, loglik = 
 #After some quick evaluation, we either scale everything or don't scale at all. For simplicity we scale nothing.
 
 	# the l2 penalty is added in the fitting step to avoid singularity, and is accounted for here
-	L_penalty = option[['alpha1']]* sum(abs(L)) + 0 * sqrt(sum(L^2));
-	FactorM_penalty = option[['lambda1']] * sum(abs(FactorM)) + 0 * sqrt(sum(FactorM ^ 2));
-  if(option$fixed_ubiq)
-  {
-    FactorM_penalty = option[['lambda1']] * sum(abs(FactorM[,-1])) + 0 * sqrt(sum(FactorM[,-1] ^ 2));
-
-  }
+	L_penalty = getUPenalty(L, option)
+	FactorM_penalty = getVPenalty(FactorM, option)
   if(!is.null(loglik))
   {
     #Residual_penalty = -loglik #passed
@@ -169,7 +237,15 @@ compute_obj <- function(X, W, W_c, L, FactorM, option, decomp = FALSE, loglik = 
       #message("Doing global modified ll instead...")
       #mine = penLL(nrow(X) * ncol(X),residuals )
       #mine = penLLSimp(nrow(X), ncol(X),residuals )
-      mine = stdLogNormalFit(residuals)
+      if(option[["regression_method"]] == "glmnet" )
+      {
+        #negative b/c swapped below
+        mine <- -fitTermGLMNet(residuals, ncol(residuals),nrow(residuals))
+      }else
+      {
+        mine = stdLogNormalFit(residuals)
+      }
+
       #message("yuan style")
       #mine = penYuan(residuals)
     }else

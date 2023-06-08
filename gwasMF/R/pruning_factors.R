@@ -178,7 +178,7 @@ DropFactorsByObjective <- function(X,W,W_c,U,V, maxK, option, minK = 0)
     return(list("U"=U, "V" = V, "K" = ncol(V)))
   }
   # function(X, W, L, FactorM, option)
-  init.obj <- compute_obj(X,W,W_c, U, V, option)
+  init.obj <- compute_obj(X,W,W_c, as.matrix(U), as.matrix(V), option)
   drop.set <- remaining.set
   if(option$fixed_ubiq)
   {
@@ -211,6 +211,10 @@ DropFactorsByObjective <- function(X,W,W_c,U,V, maxK, option, minK = 0)
     return(list("U"=U, "V" = V, "K" = ncol(V)))
   }else
   {
+    message("Dropping factor: ", min.index)
+    message("Min.obj:", min.obj)
+    message("original obj:", init.obj)
+
     return(DropFactorsByObjective(X,W,W_c,U[,-min.index],V[,-min.index], maxK, option, minK=minK))
   }
 }

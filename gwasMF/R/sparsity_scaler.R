@@ -34,6 +34,8 @@ find_mode <- function(x) {
   u[tab == max(tab)]
 }
 
+
+
 ##Autofiting scripts
 ### MAP estimation approach
 #4/4 observation- the problem here is that one might start to go up, pusing all the sparsity into the other one.
@@ -311,7 +313,12 @@ rowiseMaxSparsity <- function(z, FactorM, fixed_first = FALSE){
     #z <- z - fitted(fit)
 
   }
-  norm(t(FactorM) %*% z, type = "I")
+  #try.1 <- Matrix::t(FactorM) %*% z
+  try.2 <- Matrix::t(Matrix::crossprod(z, FactorM))
+  #t1norm <- norm(as.matrix(try.1), type = "I")
+  t2norm <- norm(as.matrix(try.2), type = "I")
+  #stopifnot(t1norm == t1norm)
+  t2norm
 }
 
 #Estimate the MAX sparsity paramters for the Factor matrix
@@ -653,6 +660,6 @@ unitScaleColumns <- function(matin, colnorms = NA)
   {
     colnorms <- getColScales(matin)
   }
-  
+
   matin %*% diag(1/colnorms)
 }

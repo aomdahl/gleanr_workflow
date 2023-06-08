@@ -12,9 +12,8 @@
 #' @export
 #'
 #' @examples
-blockifyCovarianceMatrix <- function(covar,...)
+blockifyCovarianceMatrix <- function(blocks, covar)
 {
-  blocks <- create_blocks(covar,...)
   rownames(covar) <- colnames(covar)
   blockify(covar, blocks)
 }
@@ -29,6 +28,23 @@ create_blocks <- function(cormat, cor_thr=0.2){
   block <- lapply(block, function(x) names(htree)[htree==x])
 
   return(block)
+}
+
+#Test each block
+containsBadBlocks <- function(blocks,covar)
+{
+  i=1
+  pd.status <- unlist(lapply(blocks, function(n) matrixcalc::is.positive.definite(covar[n,n])))
+  if(length(pd.status) < 1) {return(FALSE)}
+  for(bad.blocks in which(!pd.status))
+  {
+    message("ERROR: Cohort overlap data indicates the following phenotypes with highly similar overlap effects:")
+   for(pheno in blocks[[bad.blocks]]){message("     -",pheno)}
+    message("Covariance block is not PD and cannot be used in Cholesky decomposition")
+    message("Consider removing one (or multiple) of these redundant phenotypes")
+  }
+  if(!all(pd.status)) {return(TRUE)}
+  FALSE
 }
 
 blockify <- function(cormat, blocks)
@@ -58,31 +74,54 @@ blockify <- function(cormat, blocks)
 
 
 #buildWhiteningMatrix(decorrelate)
-buildWhiteningMatrix<- function(covar, dim, blockify = FALSE,...)
+# W_c <- buildWhiteningMatrix(C, ncol(X), blockfiy = TRUE)
+buildWhiteningMatrix<- function(covar, dim, blockify = TRUE,...)
 {
   if(is.null(covar)){
     message("buildWhiteningMatrix- decorrelating with an identity matrix.")
     return(diag((dim))) #Just return an identity matrix, we aren't going to do anything....
   }
+  blocks <- create_blocks(covar,...)
   if(blockify)
   {
-    covar <- blockifyCovarianceMatrix(covar,...)
+    covar <- blockifyCovarianceMatrix(blocks, covar)
   }
-  if(!isSymmetric(covar, tol=1e-3))
+  if(!isSymmetric(covar))
   {
     covar <- as.matrix(Matrix::forceSymmetric(covar))
   }
-  #make sure covar is symmetric and pd.
-  if(!lqmm::is.positive.definite(covar, tol = 1e-3))
-  {
-    message("C is not PD, adjusting now...")
-    covar <- lqmm::make.positive.definite(covar)
-  }
 
+  if(containsBadBlocks(blocks, covar))
+  {
+    message("Program will now terminate")
+    quit()
+  }
+  #chol.no.diag <- (chol(covar, pivot=TRUE))
+  #make sure covar is symmetric and pd.
+  #if(!lqmm::is.positive.definite(covar))
+  if(!matrixcalc::is.positive.definite(covar))
+  {
+    message("C is not PD, terminating now...")
+    quit()
+    #covar <- lqmm::make.positive.definite(covar)
+    covar <- as.matrix(Matrix::nearPD(covar, corr = TRUE, ensureSymmetry = TRUE)$mat)
+    #TRY Matrix::nearPD
+    #https://www.rdocumentation.org/packages/Matrix/versions/1.5-4/topics/nearPD
+  }
+  #chol.pd <- (chol(covar, pivot=TRUE))
+  #chol.pd.nopivot <- (chol(covar))
+#sometimes this transformation might modify the diagonal- force it to be 1
+  #diag(covar) <- 1
+  #chol.diag <- (chol(covar, pivot=TRUE))
   #I think this was wrong...
   #solve(t(chol(covar)))
   solve((chol(covar)))
 }
+#Non PD covariance matrix.....
+#possible fixes:
+#just force it to be PD and move on
+#use the pivot feature to re-order everything, then it should work.
+
 
 #Account for whitening, if sppecified:
 #Covar- the covariance you want to account for

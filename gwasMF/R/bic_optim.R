@@ -8,15 +8,19 @@ GetVBICOptim <- function(par, X,W,W_c,initU, option, weighted = TRUE, bic.method
   #curr.v <- fit_V(X, W, initU, option, formerV = NULL)
   curr.v <- FitVWrapper(X, W,W_c, initU, option)
   V <- curr.v$V
+  if(option$scale)
+  {
+    V <- as.matrix(curr.v$V/ curr.v$s)
+  }
   fixed_first = option$fixed_ubiq
   df.dat=MatrixDFU(curr.v$V,fixed_first=fixed_first)
-    bic = switch(
-      bic.method,
-      "1" = CalcMatrixBIC(X,W,initU,V,df=df.dat,fixed_first = fixed_first, weighted = weighted,learning = "V",...),
-      '2' =  CalcMatrixBIC.loglikversion(X,W,initU,V, which.learning = "V", df = df.dat, fixed_first=fixed_first),
-      '3' = NA,
-      "4" = CalcMatrixBIC.loglikGLOBALversion(X,W,initU,V, W_cov = W_c, which.learning = "V", df = df.dat,fixed_first=fixed_first)
-    )
+  bic = switch(
+    bic.method,
+    "1" = CalcMatrixBIC(X,W,initU,V,df=df.dat,fixed_first = fixed_first, weighted = weighted,learning = "V",...),
+    '2' =  CalcMatrixBIC.loglikversion(X,W,initU,V, which.learning = "V", df = df.dat, fixed_first=fixed_first),
+    '3' = NA,
+    "4" = CalcMatrixBIC.loglikGLOBALversion(X,W,initU,V, W_cov = W_c, which.learning = "V", df = df.dat,fixed_first=fixed_first)
+  )
   return(bic)
 }
 
@@ -27,6 +31,10 @@ GetUBICOptim <- function(par, X,W,W_c,initV, option, weighted = TRUE, bic.method
   #curr.u <- fit_U(X, W,W_c, initV, option)
   curr.u <- FitUWrapper(X, W,W_c, initV, option)
   U <- curr.u$U
+  if(option$scale)
+  {
+    U  <- curr.u$U /  curr.u$s
+  }
   df.dat=MatrixDFU(U,fixed_first=FALSE) #don't account for with U
   bic = switch(
     bic.method,
