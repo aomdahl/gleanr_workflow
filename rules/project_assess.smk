@@ -30,16 +30,17 @@ rule prepProjectionSpace:
         output:
             "results/{identifier}/munged_paths_traits.txt"
         params:
-            "results/{identifier}/"
+            "results/{identifier}/",
+	    "gwas_extracts/{identifier}/"
         shell:
             """
-		#line bleow should be input 1
-            #readlink -f {input[0]}/*.sumstats.gz | awk -F "." '{{print $0 "\t" $(NF-2)}}' > {params}/ldsc_extract_order.tmp")
-            tail -n +2 {params}/latent.factors.txt | cut -f 1 -d " " > {params}/trait.order.tmp
+   	#line bleow should be input 1
+            readlink -f {params[1]}/*.sumstats.gz | awk -F "." '{{print $0 "\t" $(NF-2)}}' > {params[0]}/ldsc_extract_order.tmp")
+            tail -n +2 {params[0]}/latent.factors.txt | cut -f 1 -d " " > {params[0]}/trait.order.tmp
 
-            awk '(FNR == NR) {{arr[$2]=$1;next}} ($1 in arr) {{print arr[$1]"\t"$1}}' {params}/ldsc_extract_order.tmp {params}/trait.order.tmp > {output}
+            awk '(FNR == NR) {{arr[$2]=$1;next}} ($1 in arr) {{print arr[$1]"\t"$1}}' {params[0]}/ldsc_extract_order.tmp {params[0]}/trait.order.tmp > {output}
 
-            rm {params}/*.tmp
+            rm {params[0]}/*.tmp
             """
 
 rule projectionSpace:
@@ -78,6 +79,17 @@ rule project_LMscaled:
     params:
     run:
         shell("Rscript {src_path}/projectSumStats.R --standardize --output {output} --factors {input.factors} --sumstats {input.variants} --id_type 'RSID' --proj_method std_lm")
+
+rule project_META:
+    input:
+        #factors="factorization_data/{identifier}.factors.txt", #MAJOR CHANGE HERE. MOVING to be in results category
+        factors="results/{identifier}/latent.factors.txt",
+        variants="gwas_extracts/{identifier}/full_hapmap3_snps.Z.tsv" #make a sym link if its in a common dir, so we don't have like a jillion copies of larege files.
+    output:
+        "results/{identifier}/projectedMETA_hapmap3_loadings.txt"
+    params:
+    run:
+        shell("Rscript {src_path}/projectSumStats.R --output {output} --factors {input.factors} --sumstats {input.variants} --id_type 'RSID' --proj_method meta")
 
 rule project_LM:
     input:
@@ -142,7 +154,7 @@ checkpoint prep_enrichment: #format the outputed factors for enrichment analysis
         """
 	    echo "assuming the 1st columns of input data are SNP IDs"
             mkdir -p {output}
-            Rscript {src_path}/buildSumStats.R --projected_loadings {input.projections} --samp_file {input.sample_counts} --hapmap_list {input.hapmap_list} --output {params} --normal_transform --factors {input.factors}
+            Rscript ./src/buildSumStats.R --projected_loadings {input.projections} --samp_file {input.sample_counts} --hapmap_list {input.hapmap_list} --output {params} --normal_transform --factors {input.factors}
         """
 
 rule download_enrichment_refs:
@@ -215,12 +227,12 @@ rule ldsc_visualize:
     shell:
         """
             echo {input}
-            Rscript {src_path}/visualizeLDSC.R --input_dir {params} --plot_type "facet_wrap" --output {output[3]}
-	    Rscript {src_path}/visualizeLDSC.R --input_dir {params} --plot_type "fdr_sig" --output {output[1]} --fdr 0.05
-            Rscript {src_path}/visualizeLDSC.R --input_dir {params} --plot_type "fdr_sig" --output {output[2]} --fdr 0.01
-            Rscript {src_path}/visualizeLDSC.R --input_dir {params} --plot_type "horizontal" --output {output[0]}
-            Rscript {src_path}/visualizeLDSC.R --input_dir {params} --plot_type "factor_tissue_FDR" --output {output[4]}
-            Rscript {src_path}/visualizeLDSC.R --input_dir {params} --plot_type "global_tissue_FDR" --output {output[5]}
+            Rscript src/visualizeLDSC.R --input_dir {params} --plot_type "facet_wrap" --output {output[3]}
+	    Rscript src/visualizeLDSC.R --input_dir {params} --plot_type "fdr_sig" --output {output[1]} --fdr 0.05
+            Rscript src/visualizeLDSC.R --input_dir {params} --plot_type "fdr_sig" --output {output[2]} --fdr 0.01
+            Rscript src/visualizeLDSC.R --input_dir {params} --plot_type "horizontal" --output {output[0]}
+            Rscript src/visualizeLDSC.R --input_dir {params} --plot_type "factor_tissue_FDR" --output {output[4]}
+            Rscript src/visualizeLDSC.R --input_dir {params} --plot_type "global_tissue_FDR" --output {output[5]}
         """
 
 rule factors_assessment:
