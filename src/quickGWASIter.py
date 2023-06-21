@@ -29,7 +29,7 @@ parser.add_argument("--extension", help = "File extension:q to grab")
 args = parser.parse_args()
 
 snps =list()
-if args.type == "ldsc":
+if "ldsc" in args.type:
     IND=1
 else:
     IND=0
@@ -56,7 +56,7 @@ file_names = [x.split("/")[-1].split(".")[0] for x in file_list]
 #TODO: fill the list with NAna, not zeros.
 
 if args.pickle == "" :
-    if args.type != "ldsc":
+    if "ldsc" not in args.type:
         ret_dat = dict()
         for a in ancestries: #specify these
             ret_dat["af_" + a] = dict(zip(file_names, [np.zeros(nsnps)]*nstudies))
@@ -66,8 +66,11 @@ if args.pickle == "" :
         #ret_dat = {"se":dict(zip(file_names, [np.zeros(nsnps)]*nstudies)), "p":dict(zip(file_names, [np.zeros(nsnps)]*nstudies)), "z":dict(zip(file_names, [np.zeros(nsnps)]*nstudies)), "beta":dict(zip(file_names, [np.zeros(nsnps)]*nstudies)), "maf": dict(zip(file_names, [np.zeros(nsnps)]*nstudies))}
 
     else:
+      if args.type == "ldsc":
         print("not implemented here...")
         ret_dat = {"z":dict(zip(file_names, [np.zeros(nsnps)]*nstudies)), "n":dict(zip(file_names,[np.zeros(nsnps)]*nstudies))}
+      if args.type == "ldsc_custom":
+        ret_dat = {"beta":dict(zip(file_names, [np.zeros(nsnps)]*nstudies)), "n":dict(zip(file_names,[np.zeros(nsnps)]*nstudies))}
 else:
     dbfile = open(args.pickle, 'rb')
     ret_dat = pickle.load(dbfile)
