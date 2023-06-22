@@ -259,9 +259,13 @@
     }
 
         #bic.list <- BICglm(fit, option$bic.var)
-        bic.list <- sklearnBIC(fit,long.v,long.x, bic.mode =  option$bic.var)
+        bic.list <- calculateBIC(fit, long.v, long.x, option$bic.var)
+        #bic.list <- sklearnBIC(fit,long.v,long.x, bic.mode =  option$bic.var)
         #save(bic.list.complete, fit, long.x, long.v,file="/scratch16/abattle4/ashton/snp_networks/scratch/testing_gwasMF_code/real_data/udler_bic_evaluation.stdized.CORRECTED.RData" )
         #bic.list <- ZouBIC(fit, long.v, long.x) #trying this...
+
+
+
 if(FALSE)
 {
   #Trying generalized hbic for high dimensional case, Wang et al.

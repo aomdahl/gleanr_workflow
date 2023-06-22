@@ -211,6 +211,47 @@ CalcMatrixBIC.loglikversion <- function(X,W,U,V, which.learning, W_cov = NULL, d
   return(ret)
 }
 
+
+#' Wrapper for all BIC methods under consideration.
+#'
+#' @param fit glmnet object
+#' @param covars long.v or long.u
+#' @param y long.x- the explanatory data (weighted)
+#' @param bic.mode which version to use; options are Zou, dev, sklearn, or the extended variants of them. 
+#' @return BIC score for each call (list)
+#' @export
+calculateBIC <- function(fit, covars,y, bic.mode)
+{
+    switch(  
+    bic.mode,  
+    "sklearn_eBIC"= sklearnBIC(fit,covars,y) + extendedBIC(fit),  
+    "sklearn"= sklearnBIC(fit,covars,y),  
+    "Zou_eBIC"= ZouBIC(fit, covars, y) + extendedBIC(fit, scale = TRUE),  
+    "Zou"= ZouBIC(fit, covars, y),
+    "dev_eBIC"= BICglm(fit)+ extendedBIC(fit),
+    "dev"= BICglm(fit)            
+          ) 
+}
+
+#' Calculate the extended term which accounts for model size, based on work by Chen et al (2008) 
+#'
+#' @param fit glmnet object
+#'
+#' @return extended 
+#' @export
+extendedBIC <- function(fit, scale = FALSE)
+{
+  message("Using ebic")
+    #p is the number of parameters under consideration
+    #n is the
+    p = dim(fit$beta)[1] #all the possible parameters to learn
+    n = nobs(fit)
+    gamma = 1-1/(2 * log(p) / log(n))
+    r <- 2 * gamma * lchoose(p, fit$df)
+    ifelse(scale, r/nobs(fit), r)
+}
+
+
 #' BIc calculation for use with glmnet
 #'
 #' @param fit glmnet object
@@ -223,16 +264,6 @@ BICglm <- function(fit, bic.mode = ""){
   k <- fit$df
   n <- nobs(fit)
   BIC <- log(n)*k - tLL
-  if(bic.mode == "ebic")
-  {
-    message("Usiung ebic")
-    #p is the number of parameters under consideration
-    #n is the
-    p = dim(fit$beta)[1] #all the possible parameters to learn
-    gamma = 1-1/(2 * log(p) / log(n))
-    add.terms <- 2 * gamma * lchoose(p, fit$df)
-    BIC <- BIC + add.terms
-  }
   BIC
 }
 
@@ -254,18 +285,14 @@ sklearnBIC <- function(fit,x,y, bic.mode = "")
 
   self.noise.variance <- sum((y - fit.best.lm)^2)/(n -p)
   scikitlearn.bic <- n*log(2*pi*self.noise.variance) + sse/self.noise.variance + log(n)*fit$df
-  if(bic.mode=="ebic")
-  {
-    gamma = 1-1/(2 * log(p) / log(n))
-    scikitlearn.bic <- scikitlearn.bic + 2 * gamma * lchoose(p, fit$df)
-  }
   scikitlearn.bic
 
 }
 
 ZouBIC <- function(fit, x, y, var.meth = "mle")
 {
-  n <- length(y)
+  n <- nobs(fit)
+  p=ncol(x)
   #lm.fit <- predict(fit, newx = x, s= 0)
   lm.fit <- glmnet::bigGlm(x, y, family = "gaussian", intercept = FALSE)
   all.preds <- predict(fit, newx = x) #pretty slow step, surprisingly.
@@ -963,7 +990,8 @@ getBICMatrices <- function(opath,option,X,W,W_c, all_ids, names, min.iter = 2, m
 
   #DECR.LIMIT=4 Think about ths some more...
   NOT.CONVERGED <- TRUE; i = 1
-  CONV.MODE = "BIC.change"
+  #CONV.MODE = "BIC.change"
+  CONV.MODE <- option$param_conv_criteria
   message("Convergence mode: ", CONV.MODE)
   #If initializing with U, start there...
   if(option$u_init != "")
@@ -1274,7 +1302,7 @@ if(maxK != 0)
 {
   maxK <- ncol(reg.run$V)
 }
-  reg.run <- PruneNumberOfFactors(X,W,W_c,reg.run,option$Kmin, maxK, option)
+  reg.run <- PruneNumberOfFactors(X,W,W_c,reg.run,option$Kmin, maxK, option) %>% OrderEverythingByPVE(.)
 
 
 save(reg.run, file = paste0(option$out,opath, "_gwasMF_iter.Rdata" ))
@@ -1541,7 +1569,8 @@ getBICMatricesGLMNET <- function(opath,option,X,W,W_c, all_ids, names, min.iter 
 
   INCR.LIMIT=3
   NOT.CONVERGED <- TRUE; i = 1
-  CONV.MODE = "any"
+  #CONV.MODE = "any"
+  CONV.MODE <- option$param_conv_criteria
   #CONV.MODE = "BIC.change"
   message("Convergence mode: ", CONV.MODE)
   option$regression_method = "glmnet"

@@ -293,8 +293,9 @@ FitVGlobal <- function(X, W, W_c, U, option, formerV = NULL)
 
      }
    }
+   bic.list <- calculateBIC(fit, long.u, long.x, option$bic.var)
    #bic.list <- BICglm(fit, option$bic.var)
-   bic.list <- sklearnBIC(fit,long.u,long.x, bic.mode =  option$bic.var)
+   #bic.list <- sklearnBIC(fit,long.u,long.x, bic.mode =  option$bic.var)
    #bic.list <- ZouBIC(fit, long.u, long.x)
    #pick the best one
    min.index <- which.min(bic.list)
