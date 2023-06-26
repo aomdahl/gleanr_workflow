@@ -171,11 +171,14 @@
     s = 1
     if(option$scale)
     {
-      s <- getColScales(long.v)
-      s[is.na(s)] <- 1 #replace the NAs with 1s.
-      long.v <- unitScaleColumns(long.v, colnorms = s)
+      #repurposing this, june26, 2023
+      #s <- getColScales(long.v)
+      #s[is.na(s)] <- 1 #replace the NAs with 1s.
+      #long.v <- unitScaleColumns(long.v, colnorms = s)
       #make into matrix for convenience:
-      s = matrix(s, nrow = nrow(X), ncol = ncol(V),byrow = TRUE)
+      #s = matrix(s, nrow = nrow(X), ncol = ncol(V),byrow = TRUE)
+      s <- Matrix::norm(long.v, type = "F")
+      long.v <- long.v / s
     }
 
     if(!is.null(formerU))
@@ -260,6 +263,7 @@
 
         #bic.list <- BICglm(fit, option$bic.var)
         bic.list <- calculateBIC(fit, long.v, long.x, option$bic.var)
+        #sklearn extended was default previously?
         #bic.list <- sklearnBIC(fit,long.v,long.x, bic.mode =  option$bic.var)
         #save(bic.list.complete, fit, long.x, long.v,file="/scratch16/abattle4/ashton/snp_networks/scratch/testing_gwasMF_code/real_data/udler_bic_evaluation.stdized.CORRECTED.RData" )
         #bic.list <- ZouBIC(fit, long.v, long.x) #trying this...

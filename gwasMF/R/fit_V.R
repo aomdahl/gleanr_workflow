@@ -219,11 +219,13 @@ FitVGlobal <- function(X, W, W_c, U, option, formerV = NULL)
   if(option$scale)
   {
     #Put it in matrix form for convenience
-    s <- getColScales(long.u)
-    s[is.na(s)] <- 1 #replace the NAs with 1s.
-    long.u <- unitScaleColumns(long.u, colnorms = s)
+    #s <- getColScales(long.u)
+    #s[is.na(s)] <- 1 #replace the NAs with 1s.
+    #long.u <- unitScaleColumns(long.u, colnorms = s)
     #Put it in matrix form for convenience
-    s <- matrix(s, nrow = M,byrow = TRUE)
+    #s <- matrix(s, nrow = M,byrow = TRUE)
+    s <- Matrix::norm(long.u, type = "F")
+    long.u <- long.u / s
   }
 
   nopen.cols <- sapply(1:ncol(long.u), function(x) x %% K)
