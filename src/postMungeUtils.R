@@ -186,6 +186,7 @@ ldscTableToMatrix <- function(joined_main, col_pick, diag_scores = 1, null_score
     }else{
       print("missing this...")
       print(curr_frick)
+      new_mat[[i-1]] <- rep(NA, ncol(overlap.mat))
     }
   }
   #Make this into a matrix, then add in the missing ones as a new row and nuew column
@@ -237,7 +238,23 @@ quickRead <- function(look_path, pattern)
 {
   #look_path <- "/scratch16/abattle4/ashton/snp_networks/scratch/udler_td2/ldsr_all/ldsr_results"
   ldsc.data <- list.files(look_path,pattern = pattern)
-  inter <- lapply(ldsc.data, function(x) fread(paste0(look_path, x)) %>% mutate("Source" = x))
+  #expanding this for saftey....
+  #inter <- lapply(ldsc.data, function(x) fread(paste0(look_path, x)) %>% mutate("Source" = x))
+  inter <- list()
+  i=1
+  for(x in ldsc.data)
+  {
+    file = fread(paste0(look_path, x))
+    if(nrow(file) > 0)
+    {
+      inter[[i]] <- file %>% mutate("Source" = x)
+      i=i+1
+    }
+    else
+    {
+      message("An empty table passed in for, ", look_path)
+    }
+  }
   do.call("rbind", inter)
 }
 #look_path = args$input_path

@@ -17,7 +17,7 @@
         print(head(dat_i[,paste0('F', seq(1,colcount))]))
         print("Outcomes")
         print(xp)
-	readline()
+	#readline()
         rep(0,colcount)
 
     },

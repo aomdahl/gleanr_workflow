@@ -32,14 +32,14 @@ PruneNumberOfFactors <- function(X,W,W_c,reg.run, minK, maxK, option)
   }
 
   ret.dat <- reg.run
-  r <- DropFactorsByObjective(X,W,W_c,ret.dat$U,ret.dat$V, maxK, option, minK = minK) #want it to be framed at 5, for now.
+  r <- DropFactorsByObjective(X,W,W_c,ret.dat$U,ret.dat$V, maxK, option, minK = minK, scalar = ret.dat$final.scaling) #want it to be framed at 5, for now.
   ret.dat$V <- r$V
   ret.dat$U <- r$U
   ret.dat$K <- r$K
   if(ncol(reg.run$V) > maxK)
   {
     #print("in this case...")
-    r <- DropFactorsByFit(X,W,W_c,ret.dat$U,ret.dat$V,maxK, option) #want it to be famed at 5?
+    r <- DropFactorsByFit(X,W,W_c,ret.dat$U,ret.dat$V,maxK, option, scalar = ret.dat$final.scaling) #want it to be famed at 5?
     ret.dat$V <- r$V
     ret.dat$U <- r$U
     ret.dat$K <- r$K
@@ -92,8 +92,8 @@ DropFactorsByFit <- function(X,W,W_c,U,V, maxK, option, calc.param="obj")
   }
   init.obj.fit <-
   init.obj.fit <- switch(calc.param,
-         "fit" = compute_obj(X,W,W_c, U, V, option, decomp = TRUE)$Fit.p,
-         "obj" = compute_obj(X,W,W_c, U, V, option))
+         "fit" = compute_obj(X,W,W_c, U, V, option, decomp = TRUE, scalar =  scalar)$Fit.p,
+         "obj" = compute_obj(X,W,W_c, U, V, option, scalar =  scalar))
   drop.set <- remaining.set
   if(option$fixed_ubiq)
   {
@@ -107,8 +107,8 @@ DropFactorsByFit <- function(X,W,W_c,U,V, maxK, option, calc.param="obj")
     for(i in drop.set) #we don't drop ubiq one
     {
       new.obj.fit <- switch(calc.param,
-                            "fit" = compute_obj(X,W,W_c, U[,-i], V[,-i], option, decomp = TRUE)$Fit.p,
-                            "obj" =  compute_obj(X,W,W_c, U[,-i], V[,-i], option))
+                            "fit" = compute_obj(X,W,W_c, U[,-i], V[,-i], option, decomp = TRUE, scalar =  scalar)$Fit.p,
+                            "obj" =  compute_obj(X,W,W_c, U[,-i], V[,-i], option, scalar =  scalar))
 
       diff = new.obj.fit - init.obj.fit
       if(diff < min.increase)
@@ -144,7 +144,7 @@ DropFactorsByFit <- function(X,W,W_c,U,V, maxK, option, calc.param="obj")
 #'
 #' @return updated U,V,K
 #' @export
-DropFactorsByObjective <- function(X,W,W_c,U,V, maxK, option, minK = 0)
+DropFactorsByObjective <- function(X,W,W_c,U,V, maxK, option, minK = 0, scalar = 1)
 {
 
   if(is.null(maxK) | length(maxK) == 0)
@@ -178,7 +178,7 @@ DropFactorsByObjective <- function(X,W,W_c,U,V, maxK, option, minK = 0)
     return(list("U"=U, "V" = V, "K" = ncol(V)))
   }
   # function(X, W, L, FactorM, option)
-  init.obj <- compute_obj(X,W,W_c, as.matrix(U), as.matrix(V), option)
+  init.obj <- compute_obj(X,W,W_c, as.matrix(U), as.matrix(V), option, scalar =  scalar)
   drop.set <- remaining.set
   if(option$fixed_ubiq)
   {
@@ -191,7 +191,7 @@ DropFactorsByObjective <- function(X,W,W_c,U,V, maxK, option, minK = 0)
   #A greedy approach to remove factors- drop the one that minimizes the objective overall
   for(i in drop.set) #we don't drop ubiq one
   {
-    new.obj <- compute_obj(X,W,W_c, U[,-i], V[,-i], option, loglik = TRUE)
+    new.obj <- compute_obj(X,W,W_c, U[,-i], V[,-i], option, loglik = TRUE, scalar =  scalar)
     if(new.obj < min.obj)
     {
       min.index <- i
@@ -225,3 +225,24 @@ PruneFactorsByObjective <- function(X,W,U,V, minK, option)
   keep.dat <- DropFactorsByObjective(X,W,W_c,U,V, minK, option)
   return(list("U"))
 }
+
+
+#' Order a return object so factors in order by PVE
+#'
+#' @param ret the object return from ALS, with a V, U and PVE object ($)
+#' @param X,W to calculate the new PVE (its possible V,U have changed..)
+#'
+#' @return return.dat, ret object updated by order of PVE
+#' @export
+#'
+OrderEverythingByPVE <- function(ret,X,W)
+{
+  return.dat <- ret
+  pve=PercentVarEx(as.matrix(X)*as.matrix(W), v = ret$V)
+  pveo <- order(pve)
+  return.dat$V<- return.dat$V[,pveo]
+  return.dat$U <- return.dat$U[,pveo]
+  return.dat$PVE <- pve[pveo]
+  return.dat
+}
+

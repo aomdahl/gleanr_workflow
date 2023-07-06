@@ -50,7 +50,9 @@ DefineSparsitySpaceInit <- function(X, W,W_c, W_ld, option, burn.in = 5)
   #for testing purposes
   Xint <- as.matrix(X)
   Wint <-as.matrix(W)
-  V <- initV(Xint,Wint, new.options)
+  V.dat <- initV(Xint,Wint, new.options)
+  V<-V.dat$V
+
   if(burn.in < 1)
   {
     if(option$u_init != "")
@@ -225,7 +227,13 @@ initV <- function(X,W,option, preV = NULL)
     message("Performing semi-non-negative factorization today....")
     V = abs(V)
   }
-  V
+  s=1
+  if(option$scale)
+  {
+    f <- FrobScale(V)
+    s<-f$s; V <- f$m.scaled
+  }
+  return(list("V"=V, "s"=s))
 }
 
 #Function to inialize U if specified
@@ -264,13 +272,13 @@ initU <- function(X,W,option, prevU = NULL)
 }
 
 #helper code to clean things up, just keep track of those relevant metrics,
-UpdateTrackingParams <- function(sto.obj, X,W,W_c,U,V,option, sparsity.thresh = 1e-5, loglik = NULL)
+UpdateTrackingParams <- function(sto.obj, X,W,W_c,U,V,option, sparsity.thresh = 1e-5, loglik = NULL, scalar=1)
 {
   if(is.null(sto.obj))
   {
     sto.obj <-  list("V" = V, "U" = U, "initK" = option$K, "K" = ncol(U), "obj" = c(NA), "obj_change" = c(),
                      "V_sparsities" = c(), "U_sparsities" = c(), "autofit_lambda" = c(), "autofit_alpha"=c(), "mse" = c(),
-                     "V_change" = c(), "U_change" = c(), "decomp_obj" ="", "model.loglik" = c())
+                     "V_change" = c(), "U_change" = c(), "decomp_obj" ="", "model.loglik" = c(), "Vs"=list(), "Us"=list())
   }
     # collect sparsity in L and F
 
@@ -280,15 +288,15 @@ UpdateTrackingParams <- function(sto.obj, X,W,W_c,U,V,option, sparsity.thresh = 
   #TODO: fix the relative sparsity count thuing...
   sto.obj$V_sparsities = c(sto.obj$V_sparsities,matrixSparsity(V, option$K))
   sto.obj$K = ncol(U);
-  sto.obj$mse <- c(sto.obj$mse, norm(W*X-W*(U%*%t(V)), type = "F")/(nrow(X) * ncol(X)))
+  sto.obj$mse <- c(sto.obj$mse, norm(t(W_c %*% t(W*X))-t(W_c %*% t(W*(U%*%t(V)))), type = "F")/(nrow(X) * ncol(X)))
     # change in the objective -- should always be a decrease
   #Objective and fit and lll
   if(!is.null(loglik))
   {
     sto.obj$model.loglik <- c(sto.obj$model.loglik,loglik)
   }
-    obj_updated = compute_obj(X, W,W_c, U, V, option);
-    sto.obj$decomp_obj = compute_obj(X, W,W_c, U, V, option,decomp = TRUE)
+    obj_updated = compute_obj(X, W,W_c, U, V, option, scalar=scalar)
+    sto.obj$decomp_obj = compute_obj(X, W,W_c, U, V, option,decomp = TRUE, scalar=scalar)
   if(is.na(sto.obj$obj[1]))
   {
     sto.obj$obj[1] <- obj_updated
@@ -306,7 +314,9 @@ UpdateTrackingParams <- function(sto.obj, X,W,W_c,U,V,option, sparsity.thresh = 
 
       #LAST STEP- update the new U and V
       sto.obj$U <- as.matrix(U)
+      sto.obj$Us[[length(sto.obj$Us) + 1]] <-  as.matrix(U)
       sto.obj$V <- as.matrix(V)
+      sto.obj$Vs[[length(sto.obj$Vs) + 1]] <-  as.matrix(V)
       sto.obj$PVE <-PercentVarEx(as.matrix(X)*as.matrix(W), v = V)
   sto.obj
 }
@@ -460,7 +470,7 @@ AlignFactorMatrices <- function(X,W,U, V)
 }
 # converge if: 1). Change of the values in factor matrix is small. ie. The factor matrix is stable. 2). Change in the objective function becomes small; 3). reached maximum number of iterations
 #If the objective goes negative, you want the old one
-ConvergenceConditionsMet <- function(iter,X,W,W_c, U,V,tracker,option, initV = FALSE, loglik = NULL)
+ConvergenceConditionsMet <- function(iter,X,W,W_c, U,V,tracker,option, initV = FALSE, loglik = NULL, scalar = 1)
 {
   #TODO double check tracker$V tracks with the old
   #1 conveged
@@ -476,7 +486,7 @@ ConvergenceConditionsMet <- function(iter,X,W,W_c, U,V,tracker,option, initV = F
   #option 2: objective change is small
   #Objective hasn't been updated yet in tracker. That's the issue
 
-  obj_updated = compute_obj(X, W,W_c, U, V, option);
+  obj_updated = compute_obj(X, W,W_c, U, V, option, scalar=scalar)
   #This isnt right
   objective_change = tracker$obj[length(tracker$obj)]- obj_updated; #newer one should be smaller than previous
   obj.change.percent <- objective_change/abs(tracker$obj[length(tracker$obj)])
@@ -542,6 +552,8 @@ Update_FL <- function(X, W, W_c, option, preV = NULL, preU = NULL, burn.in = FAL
   em.objective <- list()
   iter.objective <- list()
   s.weight.tracker <- list()
+  easy.objective <- c()
+  dev.score<- c()
   V = NULL
   #Random initialization of F
   if(!is.null(preV))
@@ -562,7 +574,8 @@ Update_FL <- function(X, W, W_c, option, preV = NULL, preU = NULL, burn.in = FAL
   }
   else{ #initialize by F as normal.
 
-    V <- initV(X,W,option,preV=preV)
+    V.dat <- initV(X,W,option,preV=preV) #returns scalar and V at unit norm length, #CONFIRM
+    V <- V$V
   }
   message(""); message('Start optimization ...')
   message(paste0('K = ', (option[['K']]), '; alpha1 = ', round(option[['alpha1']], digits =  4),
@@ -572,15 +585,17 @@ Update_FL <- function(X, W, W_c, option, preV = NULL, preU = NULL, burn.in = FAL
   og_option <- option[['carry_coeffs']]
   option[['carry_coeffs']] <- FALSE
 
-  U.dat = FitUWrapper(X,W,W_c,V, option)
-  U <- U.dat$U / U.dat$s
+  U.dat = FitUWrapper(X,W,W_c,V, option) #returns it scaled, with S  #CONFIRM
+  U <- U.dat$U #if scaling is on, is unit scaled.
   option[['carry_coeffs']] <- og_option
   #if(option$debug)
   #{em.objective[[0]] <- compute_obj(X,W,W_c, U,V,option, globalLL=TRUE,decomp = TRUE)}
   #Start tracking stats
-  tracking.data <- UpdateTrackingParams(NULL, X,W,W_c,U,V,option)
+  tracking.data <- UpdateTrackingParams(NULL, X,W,W_c,U,V,option,scalar=U.dat$s) #multiplies everything by the scalar: #CONFIRM
+
   #If U is already empty, than we know that the matrix is too sparse, and we should just end there.
   if(CheckUEmpty(U)) {message("U is empty; ending");return(tracking.data)}
+
   #If we are doing a measure of per-trait variance over time...
   trait.var <- matrix(NA, option[['iter']], ncol(X))
   i.c <- 1
@@ -593,19 +608,22 @@ Update_FL <- function(X, W, W_c, option, preV = NULL, preU = NULL, burn.in = FAL
       option <- UpdateSparsityMAPAutofit(iii, U,V, option)
     }
 
-    V.new = FitVWrapper(X, W,W_c, U, option)#, formerV = V);
+    V.new = FitVWrapper(X, W,W_c, U, option)#, formerV = V);  #returns V scaled, with S  #CONFIRM
     iteration.ll.total <- V.new$total.log.lik
     ll.tracker <- c(ll.tracker, V.new$total.log.lik)
     penalty.tracker <- c(penalty.tracker, V.new$penalty)
     V.prev <- V
-    V = V.new$V/V.new$s
-    mse.tracker <- c(mse.tracker, norm(W*X-W*(U%*%t(V)), type = "F")/(nrow(X) * ncol(X)))
+    V = V.new$V
+    #The scaling term applied to U
+    mse.tracker <- c(mse.tracker, norm(W*X-W*(U%*%t(V))/V.new$s, type = "F")/(nrow(X) * ncol(X)))
     iter.tracker <- c(iter.tracker, "V")
+    easy.objective <- c(easy.objective, getQuickObj(V.new$SSE,nrow(X) * ncol(X), U,V,option))
+    dev.score <- c(dev.score, V.new$SSE)
     #More crap to follow the objective
     #if(option$debug)
     #{
-      es.objective <- c(es.objective, GetStepWiseObjective(X,W,W_c,V.prev,V, U,"U",option));
-      em.objective[[(i.c)]] <- compute_obj(X,W,W_c, U,V,option, globalLL=TRUE, decomp = TRUE)
+      es.objective <- c(es.objective, GetStepWiseObjective(X,W,W_c,V.prev,V*V.new$s, U,"U",option));
+      em.objective[[(i.c)]] <- compute_obj(X,W,W_c, U,V,option, globalLL=TRUE, decomp = TRUE, scalar=V.new$s)
       s.weight.tracker[[i.c]] <- V.new$s
       i.c <- i.c + 1
     #}
@@ -618,24 +636,26 @@ Update_FL <- function(X, W, W_c, option, preV = NULL, preU = NULL, burn.in = FAL
     # if number of factors decrease because of empty factor, the change in ||F||_F = 100
 
     #Tracking change in F....
-    if(CheckVEmpty(V)) {message("V is empty; ending");  return(UpdateTrackingParams(tracking.data, X,W,W_c,U,V,option, loglik = iteration.ll.total))}
+    if(CheckVEmpty(V)) {message("V is empty; ending");  return(UpdateTrackingParams(tracking.data, X,W,W_c,U,V,option, loglik = iteration.ll.total,scalar=V.dat$s))}
     colnames(V) = seq(1, ncol(V));
 
 
     ## update L
-    U.new <- FitUWrapper(X,W,W_c,V, option,r.v = trait.var[iii,])#, prevU = U)
+    U.new <- FitUWrapper(X,W,W_c,V, option,r.v = trait.var[iii,])#, prevU = U) #returns U scaled, with S  #CONFIRM
     U.prev <- U
-    U = U.new$U/U.new$s
+    U = U.new$U #confirm- its unit norm?
     ll.tracker <- c(ll.tracker, U.new$total.log.lik)
     penalty.tracker <- c(penalty.tracker, U.new$penalty)
-    mse.tracker <- c(mse.tracker, norm(W*X-W*(U %*%t(V)), type = "F")/(nrow(X) * ncol(X)))
+    mse.tracker <- c(mse.tracker, norm(W*X-W*(U %*%t(V))/U.new$s, type = "F")/(nrow(X) * ncol(X)))
+    easy.objective <- c(easy.objective, getQuickObj(U.new$SSE,nrow(X) * ncol(X), U,V,option))
+    dev.score <- c(dev.score, U.new$SSE)
     iter.tracker <- c(iter.tracker, "U")
     #if(option$debug)
     #{
       #ES stands for each step.
-      es.objective <- c(es.objective, GetStepWiseObjective(X,W,W_c,U.prev,U, V,"V",option))
-      em.objective[[(i.c)]] <- compute_obj(X,W,W_c, U,V,option, globalLL=TRUE, decomp = TRUE)
-      iter.objective[[(i.c/2)]] <- compute_obj(X,W,W_c, U,V,option, globalLL=TRUE, decomp = TRUE)
+      es.objective <- c(es.objective, GetStepWiseObjective(X,W,W_c,U.prev,U*U.new$s, V,"V",option))
+      em.objective[[(i.c)]] <- compute_obj(X,W,W_c, U,V,option, globalLL=TRUE, decomp = TRUE, scalar= U.new$s)
+      iter.objective[[(i.c/2)]] <- compute_obj(X,W,W_c, U,V,option, globalLL=TRUE, decomp = TRUE, scalar=U.new$s)
       s.weight.tracker[[i.c]] <- U.new$s
       i.c <- i.c + 1
     #}
@@ -649,14 +669,17 @@ Update_FL <- function(X, W, W_c, option, preV = NULL, preU = NULL, burn.in = FAL
       U <- r$U; V <- r$V
     }
     # if L is empty, stop
-    if(CheckUEmpty(U)) {message("U is empty; ending"); return(UpdateTrackingParams(tracking.data, X,W,W_c,U,V,option, loglik = iteration.ll.total))} #Update and end.
+    #rescale V, since we last learned U with a rescaled V
+    if(CheckUEmpty(U)) {message("U is empty; ending"); return(UpdateTrackingParams(tracking.data, X,W,W_c,U,V,option,loglik = iteration.ll.total,scalar=U.dat$s))} #Multiplies by the extra factor.
     colnames(U) = seq(1, ncol(U)) ;
 
     # Drop low PVE and align two matrices
     #V <- DropLowPVE(X,W,V)
     updated.mats <- AlignFactorMatrices(X,W,U, V); U <- updated.mats$U; V <- updated.mats$V
 
-    convergence.status <- ConvergenceConditionsMet(iii,X,W,W_c,U, V, tracking.data, option, initV = is.null(preV), loglik = iteration.ll.total)
+    convergence.status <- ConvergenceConditionsMet(iii,X,W,W_c,U, V,
+                                                   tracking.data, option, initV = is.null(preV),
+                                                   loglik = iteration.ll.total, scalar = U.dat$s)
     if(convergence.status %in% c("converged", "exceeded"))
     {
       message("Convergence criteria met...")
@@ -667,11 +690,11 @@ Update_FL <- function(X, W, W_c, option, preV = NULL, preU = NULL, burn.in = FAL
       {
         #return the previous iteration, not the next
         ret <- UpdateTrackingParams(tracking.data, X,W,W_c,tracking.data$U,tracking.data$V,
-                                    option, loglik = iteration.ll.total)
+                                    option, loglik = iteration.ll.total, scalar = U.dat$s) #CONFIRM
       }else
       {
         ret <- UpdateTrackingParams(tracking.data, X,W,W_c,U,V,
-                                    option, loglik = iteration.ll.total)
+                                    option, loglik = iteration.ll.total,scalar=U.dat$s) #CONFIRM
       }
       #if(option$debug){
         ret$each.step.obj <- es.objective;
@@ -681,11 +704,14 @@ Update_FL <- function(X, W, W_c, option, preV = NULL, preU = NULL, burn.in = FAL
         ret$penalties <- penalty.tracker
         ret$iter_mat <- iter.tracker
         ret$global.mse <- mse.tracker
+        ret$final.scaling <- U.new$s
+        ret$dev.obj <- easy.objective
+        ret$dev.only <- dev.score
        # }
      return(ret)
     }else{
       tracking.data <- UpdateTrackingParams(tracking.data, X,W,W_c,U,V,
-                                            option, loglik = iteration.ll.total)
+                                            option, loglik = iteration.ll.total,scalar=U.dat$s)
 
       if(option$V > 0){
         EndIterStatement(iii, tracking.data, option)
@@ -701,7 +727,8 @@ EndIterStatement <- function(iter, td, option)
   updateLog(paste0('Iter', iter, ':'), option)
   updateLog(paste0('Percent objective change = ', abs(td$obj[length(td$obj)-1]-td$obj[length(td$obj)])/td$obj[length(td$obj)]), option)
   updateLog(paste0('Frobenius norm of (updated factor matrix - previous factor matrix) / number of factors  = ', td$V_change[length(td$V_change)]), option);
-  updateLog(paste0('Loading Sparsity = ', td$U_sparsities[length(td$U_sparsities)], '; Factor sparsity = ', td$V_sparsities[length(td$V_sparsities)], '; ', td$K, ' factors remain'), option);
+  updateLog(paste0('U Sparsity = ', round(td$U_sparsities[length(td$U_sparsities)], digits = 3),
+                   '; V sparsity = ',  round(td$V_sparsities[length(td$V_sparsities)],digits = 3), '; ', td$K, ' factors remain'), option);
   cat('\n')
 }
 

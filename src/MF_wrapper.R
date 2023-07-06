@@ -1,20 +1,22 @@
 #Source everything you need:
 #pacman::p_load(tidyr, plyr, dplyr, ggplot2, stringr, penalized, cowplot, parallel, doParallel, logr, coop, data.table, glmnet, svMisc, nFactors)
+#renv::init("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/renv_f")
+message("Warning: all files will be put into the renv directory.")
 suppressPackageStartupMessages(library("tidyr"))
-suppressPackageStartupMessages(library("plyr")) 
-suppressPackageStartupMessages(library("dplyr")) 
-suppressPackageStartupMessages(library("ggplot2")) 
-suppressPackageStartupMessages(library("stringr")) 
-suppressPackageStartupMessages(library("penalized")) 
-suppressPackageStartupMessages(library("cowplot")) 
-suppressPackageStartupMessages(library("parallel")) 
-suppressPackageStartupMessages(library("doParallel")) 
-suppressPackageStartupMessages(library("logr")) 
-suppressPackageStartupMessages(library("coop")) 
-suppressPackageStartupMessages(library("data.table")) 
-suppressPackageStartupMessages(library("glmnet")) 
-suppressPackageStartupMessages(library("svMisc")) 
-suppressPackageStartupMessages(library("nFactors")) 
+#suppressPackageStartupMessages(library("plyr"))
+suppressPackageStartupMessages(library("dplyr"))
+suppressPackageStartupMessages(library("ggplot2"))
+suppressPackageStartupMessages(library("stringr"))
+suppressPackageStartupMessages(library("penalized"))
+suppressPackageStartupMessages(library("cowplot"))
+suppressPackageStartupMessages(library("parallel"))
+suppressPackageStartupMessages(library("doParallel"))
+suppressPackageStartupMessages(library("logr"))
+suppressPackageStartupMessages(library("coop"))
+suppressPackageStartupMessages(library("data.table"))
+suppressPackageStartupMessages(library("glmnet"))
+suppressPackageStartupMessages(library("svMisc"))
+suppressPackageStartupMessages(library("nFactors"))
 #suppressPackageStartupMessages(library("argparse"))
 suppressPackageStartupMessages(library("optparse"))
 dir ="/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/src/"
@@ -37,12 +39,12 @@ quickSort <- function(tab, col = 1)
 
 updateStatement  <- function(l,a,l_og, a_og, run,time)
 {
-  
+
   log_print(paste0("Run complete. (Time: ", time, " min)"))
-  log_print(paste0("Sparsity params: F ", l, ", L ", a))  
-  log_print(paste0("Sparsity scale: F ", l_og, ", L ", a_og))  
-  log_print(paste0("Current F sparsity: ", run$V_sparsity), console = FALSE)  
-  log_print(paste0("Current L sparsity: ", run$U_sparsity), console = FALSE)  
+  log_print(paste0("Sparsity params: F ", l, ", L ", a))
+  log_print(paste0("Sparsity scale: F ", l_og, ", L ", a_og))
+  log_print(paste0("Current F sparsity: ", run$V_sparsity), console = FALSE)
+  log_print(paste0("Current L sparsity: ", run$U_sparsity), console = FALSE)
   log_print(paste0("Number of active factors: ", ncol(run$V)))
 }
 GLOBAL_BASE <- 0
@@ -74,10 +76,10 @@ reportOpenFiles <- function(option)
       #{
       #  print(t[[i]])
       #}
-      
+
       GLOBAL_BASE <<- length(t)
     }
-    
+
   }
 option_list <- list(
 make_option(c("--gwas_effects"), type = 'character', help = "Specify the Z or B file, depending on specified weighting scheme. First column is ids of each variant, column names specify the trait"),
@@ -103,7 +105,7 @@ make_option(c("--scale_n"), type = "character", default = "",  help = "Specify t
 make_option(c("--IRNT"), type = "logical", default = FALSE,  help = "If you want to transform the effect sizes ", action = "store_true"),
 make_option(c("--MAP_autofit"), type = "integer", default = -1,  help = "Specify if you want to the MAP autofit sparsity parameter to learn lambda, alpha"),
 make_option(c("-f", "--converged_F_change"), type="double", default=0.02,help="Change in factor matrix to call convergence"),
-make_option(c("-o", "--converged_obj_change"), type="double", default=1,help="Relative change in the objective function to call convergence"),
+make_option(c("-o", "--converged_obj_change"), type="double", default=1e-4,help="Relative change in the objective function to call convergence"),
 make_option(c("--no_SNP_col"), type="logical", default= FALSE, action = "store_true", help="Specify this option if there is NOT first column there..."),
 make_option(c("--parameter_optimization"), type="integer", default= 1, action = "store_true", help="Specify how many iterations to run to get the cophenetic optimization, etc. "),
 make_option(c("--regression_method"), type="character", default= "penalized", help="Specify which regression method to use. Options are [penalized (Default), glmnet]"),
@@ -111,7 +113,8 @@ make_option(c("--genomic_correction"), type="character", default= "", help="Spec
 make_option(c("--epsilon"), type="double", default= 1e-8, help="The convergence criteria for the L1. If exploring the space, try making this larger to speed up runtime. "),
 make_option(c("--subsample"), type="integer", default= 0, help="Specify if you wish to subsample from the full dataset, and if so by how much. For repeated runs, this will choose a different subsample each time."),
 make_option(c("-v", "--verbosity"), type="integer", default= 0, help="How much output information to give in report? 0 is quiet, 1 is loud"),
-make_option(c("--auto_grid_search"), type="logical", default=FALSE, action = "store_true", help="Specify if you want to do an auatomatic grid search")
+make_option(c("--auto_grid_search"), type="logical", default=FALSE, action = "store_true", help="Specify if you want to do an auatomatic grid search"),
+make_option(c("-c","--covar_matrix"), type = "character", default = "", help = "Path to a covariance matrix. Should be pre-filtered to include only significant elements")
 )
 args <- parse_args(OptionParser(option_list=option_list))
 message("Please make sure the first column of input data is SNP/RSIDs.")
@@ -132,29 +135,30 @@ if(FALSE) #For debug functionality on MARCC- this is currently loading the udler
   args <- list()
   #args$gwas_effects <- paste0(datdir, "beta_signed_matrix.tsv")
   #args$uncertainty <-  paste0(datdir, "se_matrix.tsv")
-  
+
   args$gwas_effects <-"/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwas_extracts/ukbb_GWAS_h2-0.1_rg-0.9/B.tsv"
   args$uncertainty <- "/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwas_extracts/ukbb_GWAS_h2-0.1_rg-0.9/SE.tsv"
   args$fixed_first <- TRUE
   args$genomic_correction <- "/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwas_extracts/ukbb_GWAS_h2-0.1_rg-0.9/Lambda_gc.tsv"
-  args$nfactors <- 15
+  args$nfactors <- 5
   args$calibrate_k <- FALSE
   args$subsample <- -1
   args$trait_names = ""
   args$overview_plots <- FALSE
   args$parameter_optimization <- 5
   args$niter <- 15
+  args$covar_matrix <- "/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/ldsr_results/ukbb_GWAS_h2-0.1_rg-0.9/summary_data/gcov_int.tab.new_names.txt"
   #args$alphas <- "0.01,0.05,0.1,0.15,0.2" #using 0.00001 since it doesn't like 0
   #args$lambdas <- "0.01,0.05,0.1,0.15,0.2"
-  args$alphas <- "" #using 0.00001 since it doesn't like 0
-  args$lambdas <- ""
+  args$alphas <- "1000" #using 0.00001 since it doesn't like 0
+  args$lambdas <- "36"
   args$MAP_autofit <- -1
-  args$auto_grid_search <- TRUE
+  args$auto_grid_search <- FALSE
     args$cores <- 1
   args$IRNT <- FALSE
   args$fixed_first <- TRUE
   args$weighting_scheme = "B_SE"
-  args$output <- "/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results/ukbb_GWAS_h2-0.1_rg-0.9/model_selection_nov2022/nov22_rstudio"
+  args$output <- "/scratch16/abattle4/ashton/snp_networks/scratch/testing_gwasMF_code/gls/"
   args$converged_obj_change <- 0.1
   args$scaled_sparsity <- FALSE
   args$posF <- FALSE
@@ -166,9 +170,12 @@ if(FALSE) #For debug functionality on MARCC- this is currently loading the udler
   args$regression_method <- "penalized"
   args$scale_n = ""
   args$debug <- FALSE
-  
+  args$cores = 1
+  args$IRNT <- FALSE
+
 }
 log.path <- paste0(args$output, "gwasMF_log.", Sys.Date(), ".txt")
+print(log.path)
 lf <- log_open(log.path, show_notes = FALSE)
 options("logr.compact" = TRUE)
 options("logr.notes" = FALSE)
@@ -194,7 +201,16 @@ log_print("Succesfully loaded program options....")
 #reportOpenFiles(option)
 #read in the data
 input.dat <- readInData(args)
-X <- input.dat$X; W <- input.dat$W; all_ids <- input.dat$ids; names <- input.dat$trait_names
+X <- input.dat$X; W <- input.dat$W; all_ids <- input.dat$ids; names <- input.dat$trait_names; W_c <- input.dat$W_c
+Sigma <- input.dat$C;
+#make it a block matrix for this analysis...
+if(is.null(Sigma))
+{
+	option$covar <- diag(ncol(X))
+}else
+{
+	option$covar <- blockifyCovarianceMatrix(Sigma)
+}
 #Estimate sparsity space (doesn't work too well.)
 max_sparsity <- approximateSparsity(X, W, option) #Has errors when you don't specify sparsity
 if(option$calibrate_k)
@@ -212,7 +228,7 @@ log_print(paste0("Max alpha: ", max_sparsity$alpha))
 log_print(paste0("Max lambda: ", max_sparsity$lambda))
 option$K <- max_sparsity$newK #sets K if not provided.
 message("THE ABOVE estimates are INCORRECT. NEED TO UPDATE CODE. TODO")
-reportOpenFiles(option)
+#reportOpenFiles(option)
 #Use the max to set up autofit
 if(option$MAP_autofit > -1)
 {
@@ -239,7 +255,7 @@ if(option$calibrate_sparsity)
   {
     alphas <- hp$a * max_sparsity$alpha
     lambdas <- hp$l * max_sparsity$lambda
-    
+
     option$calibrate_sparsity <- FALSE
     updateLog("Scaled amounts are:", option)
     updateLog("    Lambdas:", option)
@@ -259,21 +275,26 @@ if(option$calibrate_sparsity)
 
 if(option$auto_grid_search)
 {
+  start <- Sys.time()
   message("initializing for automatic grid search")
-  init.params <- GetCoarseSparsityParams(X,W,option, burn.in.reps = 5)
+  init.params <- GetCoarseSparsityParams(X,W,option, burn.in.reps = 5, logs = TRUE, n.points = 4)
   alphas <- init.params$alphas; lambdas <- init.params$lambdas
-  message("Alphas", alphas)
-  message("Lambdas", lambdas)
+  message("Alphas")
+  print(alphas)
+  message("Lambdas")
+  print(lambdas)
+  time <-  round(difftime(Sys.time(), start, units = "mins"), digits = 3)
+  log_print(paste0("Sparsity parameter estimation time: ", time))
 }
 
 opti=1
 #Figure out the parallelism
-#Basically, if splitting across all the cores results in less than 1000 SNPs/core, I should just split this loop across other cores, i.e. 
+#Basically, if splitting across all the cores results in less than 1000 SNPs/core, I should just split this loop across other cores, i.e.
 #if 20 cores specified, and only 10,000 SNPs
 #I should split this loop across 2 cores, and then gi
 
 #args$parameter_optimization <- 5
-for(opti in 1:args$parameter_optimization) 
+for(opti in 1:args$parameter_optimization)
 {
   message(paste0("On optimization run number: ", opti))
   if(option$subsample > 0)
@@ -286,15 +307,15 @@ for(opti in 1:args$parameter_optimization)
 
   #reportOpenFiles(option)
   #Store stats here
-  type_ <- args$weighting_scheme 
+  type_ <- args$weighting_scheme
   run_stats <- list()
   name_list <- c()
-  
+
   a_plot <- c()
   l_plot <- c()
   iter_count <- 1
   #In the case of autofit, you wouldn't go through a bunch of starting points, would you? maybe. Actually not a bad idea, huh.
-  
+
   for(i in 1:length(alphas)){
     for (j in 1:length(lambdas)){
       #reportOpenFiles(option)
@@ -311,22 +332,22 @@ for(opti in 1:args$parameter_optimization)
       #things for plots
       if(length(run) == 0)
       {
-        fname = paste0(output, "A", a, "_L", l, "_","K", type_, ".NO_OUTPUT.png")
+        fname = paste0(output, "K", option$K, "_A", a, "_L", l, "_","K", type_, ".NO_OUTPUT.png") #add in k
       } else
       {
         #reportOpenFiles(option)
         updateStatement(l,a,hp$l[j],hp$a[i], run,time)
-        fname = paste0(output, "A", round(a, digits = 4), "_L", round(l, digits = 4), "_", type_,".", opti, ".png")
+        fname = paste0(output, "K", option$K,"_A", round(a, digits = 4), "_L", round(l, digits = 4), "_", type_,".", opti, ".png")
         title_ = paste0("A", round(a, digits = 4), "_L", round(l, digits = 4), " Type = ", args$weighting_scheme )
         p <- plotFactors(run$V,trait_names = names, title = title_, scale.cols = TRUE)
         ggsave(filename = fname, plot = p, device = "png", width = 10, height = 8)
         #Lazy bookeeping nonsense for plots
-        name_list <- c(name_list,  paste0("A", round(a, digits = 6), "_L", round(l, digits = 6)))
+        name_list <- c(name_list,  paste0("K", option$K,"_A", round(a, digits = 6), "_L", round(l, digits = 6)))
         a_plot <- c(a_plot, a)
         l_plot <- c(l_plot, l)
-        writeFactorMatrix(names, all_ids, run,  paste0("A", round(a, digits = 6), "_L", round(l, digits = 6), "_", type_, ".", opti), output)
-      } 
-      
+        writeFactorMatrix(names, all_ids, run,  paste0("K", option$K,"_A", round(a, digits = 6), "_L", round(l, digits = 6), "_", type_, ".", opti), output)
+      }
+
     }
   }
   #Save all the data...
@@ -349,43 +370,44 @@ for(opti in 1:args$parameter_optimization)
       log_print("Unable to write out images... no completed runs.")
       break
     }
-    factor_sparsities <- data.frame("alpha" = a_plot, "lambda" = l_plot, 
-                                    "sparsity" = unlist(lapply(valid_run_stats, function(x) x[[4]])), 
+    message('this code is still so buggy')
+    factor_sparsities <- data.frame("alpha" = a_plot, "lambda" = l_plot,
+                                    "sparsity" = unlist(lapply(valid_run_stats, function(x) x[[4]])),
                                     "runtime" = unlist(lapply(valid_run_stats, function(x) x[[7]])))
-    loading_sparsities <- data.frame("alpha" = a_plot, "lambda" = l_plot, 
-                                     "sparsity" = unlist(lapply(valid_run_stats, function(x) x[[3]])), 
+    loading_sparsities <- data.frame("alpha" = a_plot, "lambda" = l_plot,
+                                     "sparsity" = unlist(lapply(valid_run_stats, function(x) x[[3]])),
                                      "runtime" = unlist(lapply(valid_run_stats, function(x) x[[7]])))
     message(paste0(output, "factor_sparsity", opti, ".png"))
-    
-    ggplot(data = factor_sparsities, aes(x = alpha, y= lambda, fill = sparsity)) + geom_tile() + 
+
+    ggplot(data = factor_sparsities, aes(x = alpha, y= lambda, fill = sparsity)) + geom_tile() +
       theme_minimal(15) + scale_fill_gradient(low="white", high="navy") + ggtitle("Factor Sparsity")
-    ggsave(paste0(output, "factor_sparsity.", opti, ".png"), device = "png")  
-    
-    ggplot(data = loading_sparsities, aes(x = alpha, y= lambda, fill = sparsity)) + geom_tile() + 
+    ggsave(paste0(output, "factor_sparsity.", opti, ".png"), device = "png")
+
+    ggplot(data = loading_sparsities, aes(x = alpha, y= lambda, fill = sparsity)) + geom_tile() +
       theme_minimal(15) + scale_fill_gradient2(low="white", high="navy", limits = c(0,max(loading_sparsities$sparsity))) + ggtitle("Loading Sparsity")
-    ggsave(paste0(output, "loading_sparsity", opti, ".png"), device = "png")  
-    
+    ggsave(paste0(output, "loading_sparsity", opti, ".png"), device = "png")
+
     #Plot the change in objective function for each one too....
    max_len <- max(unlist(lapply(valid_run_stats, function(x) length(x[[6]]))))
    res <- lapply(valid_run_stats, function(x) c(x[[6]], rep(NA,max_len- length(x[[6]]))))
   objectives <- data.frame("obj" = res)
    colnames(objectives) <- name_list
    objectives <- objectives %>% mutate("iteration" =1:nrow(objectives)) %>% reshape2::melt(., id.vars = "iteration")
-   ggplot(data = objectives, aes(x = iteration, y = value, color = variable)) + geom_point() + geom_line() + 
+   ggplot(data = objectives, aes(x = iteration, y = value, color = variable)) + geom_point() + geom_line() +
       theme_minimal(15) + ggtitle("Objective function") + ylab("Objective score")
-    ggsave(paste0(output, "objective.", opti, ".png"), device = "png")    
+    ggsave(paste0(output, "objective.", opti, ".png"), device = "png")
   }
   rm(run_stats)
-  log_print(paste0("Completed iteration number ", opti))
+  log_print(paste0("Completed stability iteration number ", opti))
   log_print("----------------------------------")
   log_print("")
 }
-save(run_stats,"/scratch16/abattle4/ashton/snp_networks/scratch/testing_gwasMF_code/model_selection/coarse_grid_gwasMF.nov22.RData")
 ####Propose the optimal solution
-param.combos <- unlist(lapply(alphas, function(x) 
+##TODO: this is not right. Have updated code that does this better, use that.
+param.combos <- unlist(lapply(alphas, function(x)
   lapply(lambdas, function(y) paste0("A", x, "_L", y))))
 
-original.combos <- unlist(lapply(hp$a, function(x) 
+original.combos <- unlist(lapply(hp$a, function(x)
   lapply(hp$l, function(y) paste0("A", x, "_L", y))))
 
 if(args$parameter_optimization > 1)
@@ -400,7 +422,7 @@ if(args$parameter_optimization > 1)
     fmats[[i]] <- list()
     #lmats[[i]] <- list()
   }
-  
+
   for(opti in 1:args$parameter_optimization)
   {
     #drop ones with only one factor
@@ -415,17 +437,17 @@ if(args$parameter_optimization > 1)
   }
   coph.results <- lapply(fmats, copheneticAssessment) #give a list of the 30
   corr.results <- lapply(fmats, correlationAssessment) #give a list of the 30
-  
+
   #plot cophenetic results
   top.result <- which.max(coph.results)
   message("Based on finished results, we recommend raw ALPHA, LAMBDA: ", param.combos[top.result])
   message("This corresponds to scaled values of ALPHA, LAMBDA: ", original.combos[top.result])
-  
+
   #report the average across these runs for that one.
   out <- data.frame("Coph" = unlist(coph.results), "Corr_frob" = unlist(corr.results), "R" =param.combos, "R_og" =  original.combos) %>% arrange(Coph, Corr_frob)
   write.table(out, file =  paste0(output, "performance_summary_file.txt"), sep = "\t", quote = FALSE, row.names=FALSE)
   print(out %>% filter(Coph > 0.9) %>% arrange(Corr_frob))
- 
+
 }
 
 log_print("Option settings",console = FALSE)

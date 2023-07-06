@@ -40,12 +40,13 @@ weightEffects <- function(X,W, decorrelate, z_score = FALSE, precalc.U = NULL)
 
 #This function from YUAN, with tweaks
 #Read in a factor matrix, and return a vector of trait names, and the composition per factor.
+#readInFactors(args$factors,args$scale_factors, trait_names=colnames(combined))
 readInFactors <- function(input_file, scale, trait_names=NA,thresh = 0.01){
   ### read in the factor matrix
   ## if there are multiple runs, use the one whose factors being the most independent
   #OMitted that paart
   factors <- fread(input_file)
-  traits <- factors[,1]
+  traits <- unlist(factors[,1])
   
   #Make sure the names are right
   if(any(is.na(trait_names)))
@@ -58,15 +59,15 @@ readInFactors <- function(input_file, scale, trait_names=NA,thresh = 0.01){
     {
       factors$n <- factor(unlist(factors[,1]), levels = trait_names)
       factors <- factors %>% arrange(n) %>% select(-n)
-      traits <- factors[,1]
+      traits <- unlist(factors[,1])
     }
     #Omitted- names not included on the factors file anymore. Should do though.
     #after fixing, check again
-    name_check <- any(factors[,1] != trait_names)
+    name_check <- any(unlist(factors[,1]) != trait_names)
     if(name_check) {
       print("Error in names; please check input data")
       print(factors[,1])
-      print(names(combined))
+      print(trait_names)
       print("Error in names")
       return(NA)
       #quit(save = "no")
@@ -96,11 +97,14 @@ readInCovariance <- function(p, name_order)
   if(p == "") {return(NULL)}
   else
   {
-    message("We make the strong assumption that the matrix is in the correct order.")
+    message("We make the strong assumption that the matrix rows and columns are in the same order. (check by looking at diags)")
+    message("Enforcing the column order to be the same as input file name order")
     
-    w.in <- fread(p) 
-    pick.names <- which(colnames(w.in) %in% name_order)
-    as.matrix(w.in[pick.names, ..pick.names])
+    w.in <- as.matrix(fread(p))
+    row.names(w.in) <- colnames(w.in)
+   stopifnot(all(diag(as.matrix(w.in)) == 1)) 
+    #pick.names <- which(colnames(w.in) %in% name_order)
+    as.matrix(w.in[name_order, name_order])
   }
   
 
@@ -120,12 +124,14 @@ lmProjection <- function(factors, projection.target, W, trait.list, f.compositio
                 nrow = nrow(projection.target), ncol = ncol((projection.target)))
   }
   #Get the matrix for whitening, if it exists
+ 	message("here...")
   whitening.matrix <- buildWhiteningMatrix(decorrelate, blockify = make.blocks)
   #^We do this here so we don't have to repeat each time on a step that is already SLOW.
   message("Weighting F")
   weighted.F <- weightEffects(factors, W, decorrelate,precalc.U = whitening.matrix ) #This returns a list
   message("Weighting X")
   weighted.X <- weightEffects(projection.target, W,decorrelate, precalc.U = whitening.matrix) #this returns a matrix
+ 
   message("Prepping object")
   #process.obj <- lapply(1:nrow(weighted.X), function(i) list("X" = weighted.X[i,], "F" = weighted.F[[i]]))
   return(run_regression(weighted.X, weighted.F, trait.list, f.composition))
@@ -186,7 +192,7 @@ run_regression <- function(weighted.X, weighted.F, tissues, compositions){
   }else
   {
 	 #result = mclapply(weighted_data, function(x) compute_p(x,tissues, compositions),mc.preschedule = TRUE)
-  	result = lapply(weighted_data, function(x) compute_p(x, tissues, compositions))
+  	result = lapply(1:nrow(weighted.X), function(i) compute_p(list("X" = weighted.X[i,], "F" = weighted.F[[i]]), tissues, compositions))
   	pValues = c()
   	Betas   = c()
   	SE = c()
@@ -325,4 +331,4 @@ cleanUpFiles <- function(f)
 
 
 #sanity check
-dat <- fread("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results/infertility/p0.001_FULL/flash_backfit_zscores/LM_projection/projected_hapmap3_loadings.txt")
+#dat <- fread("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results/infertility/p0.001_FULL/flash_backfit_zscores/LM_projection/projected_hapmap3_loadings.txt")

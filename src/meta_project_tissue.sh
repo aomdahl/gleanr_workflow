@@ -1,4 +1,5 @@
 #!/bin/bash
+#a variant of the "custom project tissue" where we use the meta method. Really for quick testing.
 SRC=/scratch16/abattle4/ashton/snp_networks/gwas_decomp_ldsc/src/
 ID=$1 #what you want it to be called. Must be an aboslute path, or this breaks on cd
 FACTORS=$2 #Path to the factor file
@@ -15,10 +16,6 @@ else
 	A=""
 fi
 echo "full_hapmap3_snps.z$A.tsv"
-if [[ "$4" != "" ]]; then
-       VARIANTS=$4
-fi
-#echo $VARIANTS
 
 #Project
 echo "Starting with projection"
@@ -27,14 +24,15 @@ Rscript $SRC/projectSumStats.R --output $ID/projected_hapmap3_loadings.txt --sum
 
 #Make the GWAS files
 echo "Making the gwas files..."
-mkdir -p $ID/loading_ss_files_meta
-Rscript /scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/src/buildSumStats.R --projected_loadings $ID/projected_hapmap3_loadings.txt --samp_file $VARIANTS/full_hapmap3_snps.n$A.tsv --hapmap_list $hapmap_list --output $ID/loading_ss_files_meta/ --factors $FACTORS --samp_counts avg
-
+mkdir -p $ID/loading_ss_files_F
+Rscript /scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/src/buildSumStats.R --projected_loadings $ID/projected_hapmap3_loadings.txt --samp_file $VARIANTS/full_hapmap3_snps.n$A.tsv --hapmap_list $hapmap_list --output $ID/loading_ss_files_F/ --factors $FACTORS --samp_counts avg
 #LDSC projection
 bash src/tissue_testing_only.sh $ID $FACTORS
 
 #rule ldsc_visualize:
-bash src/visualize_LDSC_custom.sh $ID/meta_ldsc_enrichment_Multi_tissue_chromatin/ 
+
+            #Rscript $SRC/visualizeLDSC.R --input_dir $ID/ --plot_type "fdr_sig" --output $ID/fdr_heatmap.png"  --extension "*.cell_type_results.txt
+            #Rscript $SRC/visualizeLDSC.R --input_dir $ID/ --plot_type "horizontal" --output $ID/full_heatmap.png"  --extension "*.cell_type_results.txt
 
  
 

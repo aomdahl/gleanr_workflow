@@ -224,8 +224,8 @@ FitVGlobal <- function(X, W, W_c, U, option, formerV = NULL)
     #long.u <- unitScaleColumns(long.u, colnorms = s)
     #Put it in matrix form for convenience
     #s <- matrix(s, nrow = M,byrow = TRUE)
-    s <- Matrix::norm(long.u, type = "F")
-    long.u <- long.u / s
+    s.tmp <- FrobScale(long.u)
+    s <- s.tmp$s; long.u <- s.tmp$m.scaled
   }
 
   nopen.cols <- sapply(1:ncol(long.u), function(x) x %% K)
@@ -275,13 +275,15 @@ FitVGlobal <- function(X, W, W_c, U, option, formerV = NULL)
   lasso.active.set <- rep(1, ncol(long.u))
   if( option$fixed_ubiq) {lasso.active.set[nopen.cols == 1] <- 0 }
 
-  #every first entry is 0
-  fit = glmnet::glmnet(x = long.u, y = long.x, family = "gaussian", alpha = 1,
-                       intercept = FALSE, standardize = option$std_coef, penalty.factor = lasso.active.set) #lambda = option[['alpha1']],
-
- lambda.list <- fit$lambda
  if(is.na(option$lambda1)) #we are still parameter searching
  {
+
+   #every first entry is 0
+   fit = glmnet::glmnet(x = long.u, y = long.x, family = "gaussian", alpha = 1,
+                        intercept = FALSE, standardize = option$std_coef, penalty.factor = lasso.active.set) #lambda = option[['alpha1']],
+
+   lambda.list <- fit$lambda
+   penalty <- fit$penalty
    message("Using BIC to select out the best one...")
    if(FALSE)
    {   bic.list <- c()
@@ -315,12 +317,21 @@ FitVGlobal <- function(X, W, W_c, U, option, formerV = NULL)
      lower.next <- fit$lambda[min.index + 25]
    }
    return(list("V" = v.ret,"lambda.sel"=fit$lambda[min.index],"bic"= bic.list[min.index], "sparsity_space"=max(fit$lambda),
-               "total.log.lik" = NA, "penalty" = NA, "s"=s, "next.upper" = upper.next, "next.lower" = lower.next))
+               "total.log.lik" = NA, "penalty" = penalty, "s"=s, "next.upper" = upper.next, "next.lower" = lower.next))
 
  }else
  {
+
+
+
+   #every first entry is 0
+   fit = glmnet::glmnet(x = long.u, y = long.x, family = "gaussian", alpha = 1,
+                        intercept = FALSE, standardize = option$std_coef, penalty.factor = lasso.active.set,
+                        lambda=option$lambda1)
+
+   penalty <- fit$penalty
    v.curr = matrix(coef(fit, s = option$lambda1)[-1], nrow = ncol(X), ncol = ncol(U),byrow = TRUE)
-   return(list("V" = v.curr, "sparsity_space"=max(fit$lambda), "total.log.lik" = NA, "penalty" = NA, "s"=s))
+   return(list("V" = v.curr, "sparsity_space"=max(fit$lambda), "total.log.lik" = NA, "penalty" = NA, "s"=s,"SSE"=deviance(fit)))
  }
 
   #ProposeNewSparsityParams(bic.list, fit$lambda, (fit$lambda), 2, n.points = 20) #need to modify this to allow for conditions.....

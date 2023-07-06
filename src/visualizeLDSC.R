@@ -126,7 +126,7 @@ if(args$include_factors != "ALL")
 {
   source_choices = unique(for_plotting$Source)
 }
-for_plotting <- for_plotting %>% filter(Source %in% source_choices)
+for_plotting <- for_plotting %>% filter(Source %in% source_choices) %>% mutate("z_score" = Coefficient/Coefficient_std_error)
 
 
 
@@ -157,15 +157,14 @@ fdr_thresh = as.character(args$fdr)
 
 print(args$plot_type)
 if(args$plot_type == "factor_tissue_FDR" | args$plot_type == "global_tissue_FDR"){ 
-  wid = 10
-  ht = 7 
+  wid = 13
+  ht = 12
   if(args$plot_type == "factor_tissue_FDR"){
     for_plotting_strict <- for_plotting %>% group_by(tissue, Source) %>% 
       mutate("ts_bonfp" = p.adjust(Coefficient_P_value, method = "bonferroni")) %>% 
       slice_min(ts_bonfp, n = 1, with_ties = FALSE)  %>% ungroup() %>% group_by(Source) %>%
       mutate("fdr" = p.adjust(ts_bonfp, method = "fdr")) %>% 
       ungroup() %>% mutate("fdrpass" = ifelse(fdr < args$fdr, 1, 0))
-    print(for_plotting_strict)
     title_ = paste0("Tissue-specific enrichment,\nfactor tissue adjusted FDR < ", fdr_thresh)
     #args$plot_type = "fdr_sig"
   }
@@ -185,14 +184,14 @@ if(args$plot_type == "factor_tissue_FDR" | args$plot_type == "global_tissue_FDR"
   
   pass_tissues <- unique((for_plotting_strict %>% filter(fdr < args$fdr))$tissue)
   pass_cat_names <- unique((for_plotting_strict %>% arrange(color_code) %>% filter(fdr < args$fdr))$new_category)
-  pass <- for_plotting_strict %>% filter(tissue %in% pass_tissues) %>% mutate("coef_out" = ifelse(fdrpass == 1, Coefficient, 0 ))
+  pass <- for_plotting_strict %>% filter(tissue %in% pass_tissues) %>% mutate("coef_out" = ifelse(fdrpass == 1, z_score, 0 ))
   
   p = ggplot(pass, aes(x= factor(Source, level = factor_order), y =factor(p_tissue, level = tissue.order), 
                    fill = color_code, alpha = coef_out)) + 
     geom_tile(color = "gray")  + scale_fill_identity(guide = "legend", labels =pass_cat_names) + 
     scale_y_discrete(label=function(x) abbreviate(gsub(x,pattern = "_", replacement = " "), minlength = 20)) + 
     ylab("Tissue type") + xlab("Factor Number") + ggtitle(title_) +
-    guides(fill=guide_legend(title="Tissue Category")) + theme_classic(17) + labs("alpha" = "Coefficient size")
+    guides(fill=guide_legend(title="Tissue Category")) + theme_classic(17) + labs("alpha" = "Z-score")
   
   if(args$orientation == "horizontal")
   {
@@ -224,8 +223,8 @@ if(args$plot_type == "factor_tissue_FDR" | args$plot_type == "global_tissue_FDR"
     theme(axis.text.y=element_blank())
   
 } else if (args$plot_type == "facet_wrap") {
-  wid = 13
-  ht = 6
+  wid = 15
+  ht = 7
   
   p=ggplot(for_plotting , aes(x = Name, y= factor(Source, level = factor_order), fill = Coefficient/Coefficient_std_error)) + 
     geom_tile(color = "gray")  + 
@@ -243,8 +242,8 @@ if(args$plot_type == "factor_tissue_FDR" | args$plot_type == "global_tissue_FDR"
    scale_y_discrete(label=function(x) abbreviate(gsub("A\\d+\\.(\\d\\d\\d.)*", "", x),minlength = 7)) + ylab("Tissue type") + xlab("Factor Number")
   
 }else if (args$plot_type == "fdr_sig") {
-    wid = 13
-    ht = 6
+    wid = 15
+    ht = 8
   pass_tissues <- unique((for_plotting_strict %>% filter(fdr < args$fdr))$Name)
   fdr_thresh = as.character(args$fdr)
     if(length(pass_tissues) == 0)

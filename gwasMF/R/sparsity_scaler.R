@@ -34,7 +34,11 @@ find_mode <- function(x) {
   u[tab == max(tab)]
 }
 
-
+FrobScale <- function(m)
+{
+  s <- Matrix::norm(m, type = "F")
+  return(list("m.scaled" =m / s, "s"=s))
+}
 
 ##Autofiting scripts
 ### MAP estimation approach

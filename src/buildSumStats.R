@@ -5,14 +5,14 @@
 ###
 
 pacman::p_load(data.table, tidyr, dplyr, ggplot2, stringr, optparse, magrittr)
-
+source("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/src/formatting_functs.R")
 option_list <- list(
 make_option("--projected_loadings", type = 'character', help = "projected_loadings file. First column is ecpected to be snp ids,  in form chr:pos or "),
 make_option("--factors", type = 'character', help = "factor matrix; needed for good estimate fo sample sizes."),
 make_option("--output", type = "character", help = "Path to output location."),
 make_option("--hapmap_list", type = "character", help = "Path SNP list to use, default given.", 
             default = "/data/abattle4/aomdahl1/reference_data/hapmap_chr_ids.txt"),  
-make_option("--samp_counts", type = "numeric", help = "Number of samples across the studies- give as an average.", default = -1),
+make_option("--samp_counts", type = "character", help = "Number of samples across the studies- give as an average.", default = "avg"),
 make_option("--samp_file", type = "character", help = "Option to read in a file that contains the sample counts"),
 make_option("--normal_transform", type = "character", help = "Put these on the scale of regular z-scores, so mean is 0, variance is 1", action = "store_true", default = FALSE)
 )
@@ -72,33 +72,41 @@ print("projected_loadings inputted and processed")
 print("Ids lined up!")
 
 #2) get the counts the right way
-if(args$samp_counts == -1)
+if(args$samp_counts == "avg" | args$samp_counts == "weighted")
 {
+  #a few options for doing this- take the average across all studies, the sum, etc.
+  #For now, I'm not sure what to do. but the weighting doesn't seem like its the right way.
   n <- fread(args$samp_file) %>% drop_na() 
-  nn <- colnames(n); nn[1] <- "ids";
+  nn <- standardizeColNames(colnames(n)); nn[1] <- "ids";
   n <- n %>% set_colnames(nn) %>% filter(ids %in% dat$id) %>% arrange(ids)
-  #12/02- better heuristic for weighting...
-  factors <- fread(args$factors) %>% mutate("rownames" = factor(rownames, level=nn)) %>% arrange(rownames)
-  stopifnot(all(nn[-1] == factors$rownames))
-  #order rows 
-  weights <- apply(factors[,-1],2, function(x) x^2/sum(x^2))
-  weighted.n <- as.matrix(n[,-1]) %*% as.matrix(weights)
-  #var_counts <- rowMeans(n[,-1])
-  if(nrow(weighted.n) != nrow(dat))
+  if(args$samp_counts == "avg")
   {
-    message("More SNPs to evaluate than we've sampled SNPs for.")
-    message("Current standard- reduce L_proj to the smaller size.")
-    ndat <- filter(dat,id %in% n$ids)
-    if(nrow(ndat) > 900000)
-    {
-      dat <- ndat
-    }
+	  message("Sample size by mean")
+	  var_counts <- rowMeans(n[,-1])
   }
-  
-  
-}else
-{
-  var_counts = rep(args$samp_counts, nrow(dat))
+  if(args$samp_counts == "weighted")
+  {
+	  #12/02- better heuristic for weighting...
+	  
+	  factors <- fread(args$factors) %>% mutate("rownames" = factor(rownames, level=nn)) %>% arrange(rownames)
+	  stopifnot(all(nn[-1] == factors$rownames))
+	  #order rows 
+	  weights <- apply(factors[,-1],2, function(x) x^2/sum(x^2))
+	  weighted.n <- as.matrix(n[,-1]) %*% as.matrix(weights)
+	  #var_counts <- rowMeans(n[,-1])
+	  if(nrow(weighted.n) != nrow(dat))
+	  {
+	    message("More SNPs to evaluate than we've sampled SNPs for.")
+	    message("Current standard- reduce L_proj to the smaller size.")
+	    ndat <- filter(dat,id %in% n$ids)
+	    if(nrow(ndat) > 900000)
+	    {
+	      dat <- ndat
+	    }
+  	  }
+  }
+  }  else {
+  var_counts = rep(as.numeric(args$samp_counts), nrow(dat))
 }
 #3) build a sumstats file for each factor ''
 offset <- 1
@@ -121,9 +129,10 @@ for(i in 2:ncol(projected_loadings)) #from 2 since first column is IDs...
   #SNP   A1  A2  N   Z #a1 is effect allel
   if(!(names(projected_loadings)[i] %in% c("id", "CHROM", "POS", "REF", "ALT"))) #make sure its the factr columns
   {
+    
     #this is a bit.... concerning. Why the error????
-    zs <- unlist(dat[,..i])
-    print(head(dat[,..i]))
+    zs <- as.numeric(unlist(dat[,..i]))
+  print(head(zs))
     #Briefly report on the distribution of the data.x
     rand.samp <- sample(zs, size = 10000)
     #message("Data has mean ",   round(mean(rand.samp, na.rm = TRUE), digits = 5), " and variance ", round(var(rand.samp, na.rm = TRUE), digits = 5))
@@ -131,9 +140,13 @@ for(i in 2:ncol(projected_loadings)) #from 2 since first column is IDs...
     #message("By the KS test of deviation from standard normal, pvalue is: ", dev)
     if(args$normal_transform)
     {
-        zs <- scale(zs) #This is not an inverse rank normal transform. That may be better.
+      zs <- scale(zs) #This is not an inverse rank normal transform. That may be better.
     }
-    out <- data.frame("SNP" = dat$id, "A1" = dat$ALT, "A2" = dat$REF, "N" = weighted.n[,(i-offset)], "Z" = zs) #TODO: check the ref alt stuff make sure on point.
+    if(args$samp_counts == "weighted")
+    {
+	    var_counts = weighted.n[,(i-offset)]
+    }
+    out <- data.frame("SNP" = dat$id, "A1" = dat$ALT, "A2" = dat$REF, "N" = var_counts, "Z" = zs) #TODO: check the ref alt stuff make sure on point.
     names(out) <- c("SNP", "A1","A2", "N","Z")
     #write_tsv(out, paste0(args$output,"/F",i-offset, ".sumstats.gz"))
     fwrite(x = out, file= paste0(args$output,"/F",i-offset, ".sumstats.gz"), compress = "gzip", sep = "\t")

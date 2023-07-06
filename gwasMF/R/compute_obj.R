@@ -4,6 +4,11 @@
 
 
 
+
+getQuickObj <- function(sse,n, U,V,option)
+{
+  1/(2*n) * (sse) + getUPenalty(U, option) + getVPenalty(V, option)
+}
 #' Helper function to get the residuals across all terms
 #'
 #' @param X Matrix of raw effect sizes (N x M)
@@ -12,10 +17,11 @@
 #' @param V Currest estimate of factors (V, M x K)
 #' @param W_c Inverse cholesky decomposition decorrelation matrix (M x M), optional
 #' @param fixed_first Do we omit the first factor?
+#' @param scalar is the fit scaled in any way?
 #'
 #' @return the matrix of residuals, N x M
 #' @export
-calcGlobalResiduals <- function(X,W,U,V, W_cov = NULL, fixed_first = FALSE, scale.explanatory = FALSE)
+calcGlobalResiduals <- function(X,W,U,V, W_cov = NULL, fixed_first = FALSE, scale.explanatory = FALSE, scalar = 1)
 {
 
   #if(fixed_first)
@@ -37,11 +43,11 @@ calcGlobalResiduals <- function(X,W,U,V, W_cov = NULL, fixed_first = FALSE, scal
       return(NA)
     }
     explanatory.var <-t(W_cov) %*% t(W * X)
-    if(scale.explanatory)
-    {
-      explanatory.var <- mleScaleMatrix(explanatory.var)
-    }
-    return((explanatory.var - t(W_cov) %*% t(W * (U %*% t(V)))) %>% t())
+    #if(scale.explanatory)
+    #{
+    #  explanatory.var <- mleScaleMatrix(explanatory.var)
+    #}
+    return((explanatory.var - (t(W_cov) %*% t(W * (U %*% t(V))))/scalar) %>% t())
     #return(t(W_cov) %*% t(W * X - W * (U %*% t(V))) %>% t()) #Final transpose at end to switch the dimensions correctly. Verified this matches expected objective on 4/10
   }
   message("This case should not occur")
@@ -50,7 +56,7 @@ calcGlobalResiduals <- function(X,W,U,V, W_cov = NULL, fixed_first = FALSE, scal
   {
     explanatory.var <- mleScaleMatrix(explanatory.var)
   }
-  return((explanatory.var - W * (U %*% t(V))))
+  return((explanatory.var - (W * (U %*% t(V)))/scalar))
 }
 
 mleScaleMatrix <- function(explanatory.var)
@@ -157,11 +163,12 @@ penYuan <-function(residuals)
   -sum(sum(residuals^2))
 }
 
-penalizedLogLikU <- function(X,W,W_c, U,V, use.resid = NULL, fixed_first = FALSE)
+penalizedLogLikU <- function(X,W,W_c, U,V, use.resid = NULL,...)
 {
   #simple way
   total.log.lik <- 0
-  residuals = calcGlobalResiduals(X,W,U,V, W_cov=W_c)
+  fixed_first = FALSE
+  residuals = calcGlobalResiduals(X,W,U,V, W_cov=W_c,...)
   if(!is.null(use.resid))
   {
     residuals = use.resid
@@ -183,6 +190,11 @@ getUPenalty <- function(U, option)
   if(option$std_coef) {
     U <- mleStdMatrix(U)
   }
+  #if(option$scale)
+  #{
+  #  message("not scaling U- this is the output and is directly associated with the given lambda")
+  #  #U <-FrobScale(U)$m.scaled
+  #}
   option[['alpha1']]* sum(abs(U)) + 0 * sqrt(sum(U^2));
 
 }
@@ -192,6 +204,11 @@ getVPenalty <- function(V, option)
   if(option$std_coef) {
     V <- mleStdMatrix(V)
   }
+  #if(option$scale)
+  #{
+  #  message("not scaling V- this is the direct output from fit and is associated with the given lambda")
+ #   #V <-FrobScale(V)$m.scaled
+  #}
   FactorV_penalty = option[['lambda1']] * sum(abs(V)) + 0 * sqrt(sum(V ^ 2));
   if(option$fixed_ubiq)
   {
@@ -204,7 +221,7 @@ getVPenalty <- function(V, option)
   }
 }
 #modified to global LL!
-compute_obj <- function(X, W, W_c, L, FactorM, option, decomp = FALSE, loglik = TRUE, globalLL=TRUE){
+compute_obj <- function(X, W, W_c, L, FactorM, option, decomp = FALSE, loglik = TRUE, globalLL=TRUE, scalar = 1){
 
 	if(is.null(FactorM) | is.null(L))
 	{
@@ -220,7 +237,7 @@ compute_obj <- function(X, W, W_c, L, FactorM, option, decomp = FALSE, loglik = 
   N = nrow(X)
   #message("Scaling out L, in DEVELOPMENT")
   #L <- apply(L,2, function(x) x/norm(x, "2"))
-  residuals = calcGlobalResiduals(X,W,L, FactorM, W_cov =W_c, fixed_first = FALSE);
+  residuals = calcGlobalResiduals(X,W,L, FactorM, W_cov =W_c, fixed_first = FALSE, scalar =scalar);
 	#Residual_penalty = sum(sum(residual^2));
 #	Residual_penalty = sum(residual^2) / (2 * nrow(L));
 #After some quick evaluation, we either scale everything or don't scale at all. For simplicity we scale nothing.
@@ -250,7 +267,7 @@ compute_obj <- function(X, W, W_c, L, FactorM, option, decomp = FALSE, loglik = 
       #mine = penYuan(residuals)
     }else
     {
-      mine = penalizedLogLik(X,W,W_c,L,FactorM, fixed_first = FALSE)
+      mine = penalizedLogLik(X,W,W_c,L,FactorM, fixed_first = FALSE, scalar=scalar)
     }
 
     #message("Mine:  ", mine)

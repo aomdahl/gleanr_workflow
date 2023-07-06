@@ -217,31 +217,32 @@ CalcMatrixBIC.loglikversion <- function(X,W,U,V, which.learning, W_cov = NULL, d
 #' @param fit glmnet object
 #' @param covars long.v or long.u
 #' @param y long.x- the explanatory data (weighted)
-#' @param bic.mode which version to use; options are Zou, dev, sklearn, or the extended variants of them. 
+#' @param bic.mode which version to use; options are Zou, dev, sklearn, or the extended variants of them.
 #' @return BIC score for each call (list)
 #' @export
 calculateBIC <- function(fit, covars,y, bic.mode)
 {
-    switch(  
-    bic.mode,  
-    "sklearn_eBIC"= sklearnBIC(fit,covars,y) + extendedBIC(fit),  
-    "sklearn"= sklearnBIC(fit,covars,y),  
-    "Zou_eBIC"= ZouBIC(fit, covars, y) + extendedBIC(fit, scale = TRUE),  
+    switch(
+    bic.mode,
+    "sklearn_eBIC"= sklearnBIC(fit,covars,y) + extendedBIC(fit),
+    "sklearn"= sklearnBIC(fit,covars,y),
+    "Zou_eBIC"= ZouBIC(fit, covars, y) + extendedBIC(fit, scale = TRUE),
     "Zou"= ZouBIC(fit, covars, y),
     "dev_eBIC"= BICglm(fit)+ extendedBIC(fit),
-    "dev"= BICglm(fit)            
-          ) 
+    "dev"= BICglm(fit),
+    "std"= stdBIC(fit,covars,y),
+    sklearnBIC(fit,covars,y)
+          )
 }
 
-#' Calculate the extended term which accounts for model size, based on work by Chen et al (2008) 
+#' Calculate the extended term which accounts for model size, based on work by Chen et al (2008)
 #'
 #' @param fit glmnet object
 #'
-#' @return extended 
+#' @return extended
 #' @export
 extendedBIC <- function(fit, scale = FALSE)
 {
-  message("Using ebic")
     #p is the number of parameters under consideration
     #n is the
     p = dim(fit$beta)[1] #all the possible parameters to learn
@@ -251,6 +252,13 @@ extendedBIC <- function(fit, scale = FALSE)
     ifelse(scale, r/nobs(fit), r)
 }
 
+stdBIC <- function(fit, long.v, long.x)
+{
+  all.preds <- predict(fit, newx = long.v)
+  p = dim(fit$beta)[1]
+  n = nobs(fit)
+  sapply(1:ncol(all.preds), function(i) -2*penLLSimp(n, p, long.x - all.preds[,i]) + log(n) * fit$df[i])
+}
 
 #' BIc calculation for use with glmnet
 #'
@@ -1235,10 +1243,19 @@ checkConvergenceBICSearch <- function(index, record.data, conv.perc.thresh = 0.0
   }else if(conv.mode == "BIC.change")
     {
     #Goes until the BIC stops dropped, or the change crosses 0.
+    #I think maybe you need a better condition.. if you stop too soon you miss a nice minimum somewhere else.
     sum.bic.score <- record.data$bic.a + record.data$bic.l
     delta.bic.score <- sapply(2:length(sum.bic.score), function(i) sum.bic.score[i-1] > sum.bic.score[i])
-    if(any((!delta.bic.score)))
+    li <- length(delta.bic.score)
+    #if(any((!delta.bic.score)))
+    if(!delta.bic.score[li]) #The last element isn't decreasing
     {
+      #CAse 1- we've only been increasing so far, give it some more time
+      if(all(!delta.bic.score)[-li]) #all have been increasing
+      {
+        message("BIC only increasing so far, give it some time...")
+        return(FALSE)
+      }
       selected.index <- min(which(!delta.bic.score))
       if(selected.index != (index - 1))
       {
@@ -1302,7 +1319,7 @@ if(maxK != 0)
 {
   maxK <- ncol(reg.run$V)
 }
-  reg.run <- PruneNumberOfFactors(X,W,W_c,reg.run,option$Kmin, maxK, option) %>% OrderEverythingByPVE(.)
+  reg.run <- PruneNumberOfFactors(X,W,W_c,reg.run,option$Kmin, maxK, option) %>% OrderEverythingByPVE(.,X,W)
 
 
 save(reg.run, file = paste0(option$out,opath, "_gwasMF_iter.Rdata" ))
@@ -1432,7 +1449,7 @@ runStdPipeClean <- function(args,alpha,lambda, opath = "", initV = NULL)
 #' @export
 #' #res <- gwasMFBIC(true.betas,1/true.ses, snps, colnames(true.ses), K=5,C=NULL)
 gwasMFBIC <- function(X,W, snp.ids, trait.names, C = NULL, K=0, gwasmfiter =5, rep.run = FALSE,
-                      bic.var= "mle", use.init.k = FALSE, init.mat = "V", is.sim = FALSE, save.path = "", scale.mats = FALSE, regression.method = "penalized")
+                      bic.var= "std", use.init.k = FALSE, init.mat = "V", is.sim = FALSE, save.path = "", scale.mats = FALSE, regression.method = "penalized")
 {
   opath = ""
   if(is.null(C))
@@ -1450,6 +1467,7 @@ gwasMFBIC <- function(X,W, snp.ids, trait.names, C = NULL, K=0, gwasmfiter =5, r
   option$svd_init <- TRUE; args$svd_init <- TRUE
   K.cap <- K
   option$bic.var <- bic.var
+  print(paste("bic var setting:", bic.var))
   #Do the bic learning...
   use.optim <- TRUE
   option$regression_method = regression.method

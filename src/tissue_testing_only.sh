@@ -8,7 +8,7 @@ conda activate py27
 pwd
 cd $LDSC_REF_DAT
 mkdir -p $ID/meta_ldsc_enrichment_Multi_tissue_chromatin/
-for l in $ID/loading_ss_files_F/*.gz; do
+for l in $ID/loading_ss_files_meta/*.gz; do
         
 	echo $l 
         T=`basename $l`

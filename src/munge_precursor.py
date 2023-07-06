@@ -10,11 +10,11 @@ for f in files
 #NOTE that using effectivee sample size isn't recommended for Ldsc, but whatever.
 n_options =["N_SAMPLES", "EFFSAMPLESIZE", "N_COMPLETE_SAMPLES", "NEFF", "TOTALSAMPLESIZE"]
 n_options_LDSC=['N','NCASE','CASES_N','N_CASE', 'N_CASES','N_CONTROLS','N_CAS','N_CON','N_CASE','NCONTROL','CONTROLS_N','N_CONTROL', "NSTUDY", "N_STUDY", "NSTUDIES", "N_STUDIES"] #These are ones in LDSC
-snp_options = ["MARKER",  "VARIANT_ID", "SNP-ID", "RSIDS"] 
+snp_options = ["MARKER",  "VARIANT_ID", "SNP-ID", "RSIDS", "ID"] 
 a1_options = ["RISK_ALLELE", "ALT", "effectAllele".upper()] #effect allele
 a2_options = ["OTHER_ALLELE", "REF", "BASELINE", "referenceAllele".upper()] #non-effect allele
 sum_stats = ["MAINEFFECTS", "ESTIMATE", "ODDS_RATIO"]
-maf_options = ["MINOR_AF", "REF_ALLELE_FREQUENCY", "FREQ1"]
+maf_options = ["MINOR_AF", "REF_ALLELE_FREQUENCY", "FREQ1", "AF"]
 se_options = ["MAINSE","SDE", "SE_estimate".upper()]
 pval_options = ["MAINP", "P_GC"]
 PVAL_FULL=["MAINP", "P_GC", "P", "PVALUE", "P_VALUE", "PVAL", "P_VAL", "GC_PVALUE"]
@@ -597,7 +597,7 @@ parser.add_argument("--calls_only", help = "Use this if you want only to generat
 
 parser.add_argument("--output", help = "output path")
 args = parser.parse_args()
-
+print("Important TODO: update to use RSIDs over chr:pos in the event of hg38 as reference.")
 #get the hg37 build dict in memory....
 build_list = buildReferenceList(args)
 

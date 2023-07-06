@@ -6,7 +6,9 @@ quickSort <- function(tab, option, col = 1)
   {
     return(tab)
   }
-  tab[order(tab[,..col], decreasing = TRUE),]
+  #tab <- as.matrix(tab)
+  tab[order(tab[,col, with = FALSE], decreasing = TRUE),] #the package version.
+  #tab[order(tab[,..col], decreasing = TRUE),] #the debug version
 }
 
 
@@ -116,6 +118,8 @@ matrixGWASQC <- function(X, W, id.list, na_thres = 0.5, is.sim = FALSE)
 
 
 
+#tidy up the column-names. fread has some wierd behavior I don't like....
+
 #Takes care of all the necessary data I/O
 #Procedures include:
 # Read in files
@@ -129,7 +133,7 @@ matrixGWASQC <- function(X, W, id.list, na_thres = 0.5, is.sim = FALSE)
 readInBetas <- function(fpath, option)
 {
   `%>%` <- magrittr::`%>%`
-  data.table::fread(fpath) %>% quickSort(.,option)
+  data.table::fread(fpath, check.names = TRUE) %>% quickSort(.,option)
 }
 
 #Function to read in a covariance matrix.
@@ -143,7 +147,7 @@ readInCovariance <- function(p, name_order)
     message("We make the strong assumption that the matrix rows and columns are in the same order. (check by looking at diags)")
     message("Enforcing the column order to be the same as input file name order")
 
-    w.in <- as.matrix(data.table::fread(p))
+    w.in <- as.matrix(data.table::fread(p, check.names = TRUE))
     row.names(w.in) <- colnames(w.in)
     stopifnot(all(diag(as.matrix(w.in)) == 1))
     if(!isSymmetric(w.in, tol = 1e-3))
@@ -167,7 +171,7 @@ readInLambdaGC <- function(fpath,X, names)
 {
   `%>%` <- magrittr::`%>%`
   #note- this can come in as a matrix or as a simple list
-  GC <-  data.table::fread(fpath)
+  GC <-  data.table::fread(fpath, check.names = TRUE)
   if(nrow(GC) >= ncol(X)) #we have a single entry for each
   {
     message("Testing that the ordering is the same")
@@ -208,9 +212,9 @@ readInLambdaGC <- function(fpath,X, names)
   GC
 }
 
-SpecifyWeightingScheme <- function(effects, all_ids, args)
+SpecifyWeightingScheme <- function(effects, all_ids,all_phenos, args)
 {
-  effects <- as.matrix(effects[,-1])
+  effects <- as.matrix(effects[,-1]) %>% orderColumnsByName(., all_phenos,force.ref = args$trait_names)
   #Look at the weighting scheme options...
   if(args$weighting_scheme == "Z" || args$weighting_scheme == "B")
   {
@@ -221,16 +225,18 @@ SpecifyWeightingScheme <- function(effects, all_ids, args)
   } else if(args$weighting_scheme == "B_SE")
   {
     message("Scaling by 1/SE.")
-    W_se <- data.table::fread(args$uncertainty) %>% dplyr::filter(unlist(.[,1]) %in% all_ids) %>% quickSort(.,args)
+    W_se <- data.table::fread(args$uncertainty, check.names = TRUE) %>%
+      dplyr::filter(unlist(.[,1]) %in% all_ids) %>% quickSort(.,args)
     stopifnot(all(all_ids == W_se[,1]))
-    W_se <- W_se[,-1]
+    W_se <- W_se[,-1] %>% orderColumnsByName(., all_phenos, force.ref = args$trait_names)
+    message("Dims of W_se are now:", dim(W_se))
     W <- 1/ W_se
     X <- effects
 
   } else if(args$weighting_scheme == "B_MAF")
   {
     message("Scaling by 1/var(MAF)")
-    W_maf <- data.table::fread(args$uncertainty) %>%
+    W_maf <- data.table::fread(args$uncertainty, check.names = TRUE) %>%
       dplyr::filter(ids %in% all_ids) %>% arrange(ids) %>% select(-ids)
     W <- 1/matrix(apply(W_maf, 2, function(x) 2*x*(1-x)), nrow = nrow(W_maf), ncol = ncol(W_maf))
     X <- effects
@@ -240,6 +246,62 @@ SpecifyWeightingScheme <- function(effects, all_ids, args)
     quit()
   }
   return(list("X" = X, "W" = W))
+}
+
+
+#' Function to order the columns by matching phenotype names
+#'.
+#' @param query.mat the matrix to check the order on
+#' @param ref the reference order of phenotypes
+#' @param force.ref the matrix doesn't yet have names, so just force the names in the order given in ref
+#'
+#' @return an ordered matrix
+#' @export
+orderColumnsByName <- function(query.mat, ref, force.ref = "")
+{
+  ret.mat <- as.matrix(query.mat) #matrix to return with right names
+  if(force.ref == "") #if we learned the names on the fly from the effects file. Assumes the names ARE present in the file..
+  {
+    ret.mat <- ret.mat[,setColOrder(colnames(query.mat), ref)]
+  }
+  print(ref)
+  print(length(ref))
+  print(dim(ret.mat))
+  print(head(ret.mat))
+  colnames(ret.mat) <- ref
+  ret.mat
+  #return(query.mat[,..o])
+}
+
+#' Title
+#'
+#' @param query
+#' @param ref
+#'
+#' @return
+#' @export
+#'
+#' @examples
+setColOrder <- function(query, ref)
+{
+  #The reference might not include all the phenotypes, huh?
+  ret.list <- 1:length(query)
+  #best case- same entries
+  if(length(query) == length(ref) & all(query == ref))
+  {
+    return(ret.list)
+  }else if(all(ref %in% query)) #next best- its all there, just need to rearrange
+  {
+    reorder.q <- order(factor(query, levels = ref))
+    return(reorder.q)
+  }else #bad case
+  {
+    message("Phenotype names in query file don't match the reference phenotypes. Check this")
+    print(query)
+    print("")
+    print(ref)
+    quit()
+  }
 }
 #' Load the relevant datasets for analysis based on an argument vector
 #'
@@ -263,12 +325,13 @@ readInData <- function(args)
   if(args$trait_names == "")
   {
     message("No trait names provided. Using the identifiers in the tabular effect data instead.")
-    names <- unlist(names(effects)[-1])
+    names <- unlist(names(effects)[-1]) %>% make.names(.)
   } else{
-    names <- scan(args$trait_names, what = character(), quiet = TRUE)
+    message("Using the provided trait names, and assuming all files have columns in the correct order.")
+    message("It is your responsibility to verify this.")
+    names <- scan(args$trait_names, what = character(), quiet = TRUE) %>% make.names(.)
   }
-
-  weighted.dat <- SpecifyWeightingScheme(effects, all_ids, args)
+  weighted.dat <- SpecifyWeightingScheme(effects, all_ids,names, args)
   X <- weighted.dat$X; W <- as.matrix(weighted.dat$W);
   if(args$drop_phenos != "")
   {
@@ -290,8 +353,16 @@ readInData <- function(args)
   #Consider moving this into GWASQC, limit studies with fewer than N samples?
   if(args$scale_n != "")
   {
-    N <- data.table::fread(args$scale_n) %>% dplyr::filter(!row_number() %in% r$drops) %>% dplyr::filter(unlist(.[,1]) %in% all_ids) %>% quickSort(.,args)
-    if(args$drop_phenos != "") {N <- N[,-drop.indices] } #Drop }
+    N <- as.matrix(data.table::fread(args$scale_n, check.names = TRUE) %>% dplyr::filter(!row_number() %in% r$drops) %>%
+      dplyr::filter(unlist(.[,1]) %in% all_ids) %>% quickSort(.,args))
+    if(args$drop_phenos != "")
+    {
+      drops <- unlist(strsplit(args$drop_phenos, split = ",")[[1]])
+      drop.indices <- which(colnames(N) %in% drops)
+      N <- N[,-drop.indices];
+      print(N)
+      dim(N)
+    }
     if(!all(all_ids == N[,1]))
     {
       #This would occur if we are missing variants.
@@ -306,7 +377,10 @@ readInData <- function(args)
       N <- rbind(N, new_rows) %>% quickSort(.,args)
       stopifnot(all(all_ids == N[,1]))
     }
-    N <- as.matrix(N[,-1] %>% apply(., 2, as.numeric))
+    N <- as.matrix(N[,-1] %>% apply(., 2, as.numeric)) %>% orderColumnsByName(query.mat = ., ref=names,force.ref = args$trait_names)
+
+    #if(args$drop_phenos != "") {N <- N[,-c(as.integer(drop.indices))] } #Drop }
+
    if(length(r$dropped_cols) > 1 | r$dropped_cols != 0)
    {
      N <- N[,-r$dropped_cols]
@@ -372,6 +446,7 @@ readInSettings <- function(args)
   }
   #Experimental
   message("Scaling is off by default")
+  #had to turn off for simulations, at least for now...
   option$scale <- FALSE
   option$burn.in <- 0
   option$fix.alt.setting <- NA
@@ -379,6 +454,7 @@ readInSettings <- function(args)
   option$bic.var <- args$bic_var
   option$svd_init <- args$svd_init
   option$std_y <- args$std_y
+  option$param_conv_criteria <- args$param_conv_criteria
 
   #Internal use only:
   option$actively_calibrating_sparsity <- FALSE
@@ -421,6 +497,7 @@ defaultSettings <- function(K=0, init.mat = "V")
   args <- UdlerArgs()
   args$niter <- 200
   args$uncertainty <- ""
+
   args$gwas_effects <- ""
   args$nfactors <- K
   args$scale_n <- ""
@@ -430,6 +507,7 @@ defaultSettings <- function(K=0, init.mat = "V")
   args$sort <- FALSE #b/c default for sims.
   args$converged_obj_change <- 0.001
   args$std_coef <- FALSE
+  #args$std_coef <- TRUE
   args$std_y <- FALSE
   if(init.mat == "U")
   {
@@ -541,6 +619,7 @@ UdlerArgs <- function()
   args$converged_obj_change <- 1
   args$scaled_sparsity <- TRUE
   args$posF <- FALSE
+  args$std_y <- FALSE
   args$init_F <- "ones_eigenvect"
   args$init_L <- ""
   args$epsilon <- 1e-8
@@ -552,6 +631,7 @@ UdlerArgs <- function()
   args$converged_obj_change <- 0.05 #this is the percent change from one to the next.
   args$prefix <- ""
   args$bic_var <- "mle"
+  args$param_conv_criteria <- "BIC.change"
   args
 }
 

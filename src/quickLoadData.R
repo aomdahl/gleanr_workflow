@@ -1,4 +1,4 @@
-pacman::p_load(data.table, tidyr, dplyr, ggplot2, stringr, penalized, cowplot, parallel, doParallel, flashr)
+pacman::p_load(data.table, tidyr, dplyr, ggplot2, stringr, penalized, cowplot, parallel, doParallel)
 #source("/Users/ashton/Documents/JHU/Research/LocalData/snp_network/sn-spMF/gwas_spMF/src/fit_F.R")
 #source("/Users/ashton/Documents/JHU/Research/LocalData/snp_network/sn-spMF/gwas_spMF/src/update_FL.R")
 #source("/Users/ashton/Documents/JHU/Research/LocalData/snp_network/sn-spMF/gwas_spMF/src/fit_L.R")
@@ -27,7 +27,8 @@ quickLoadFactorization <- function(error_type, local)
   samp.sizes <- fread(paste0(dir, "seed2_thresh0.9_h2-0.1_vars1e-5/seed2_thresh0.9_h2-0.1_vars1e-5.n.tsv")) %>% drop_na() %>% arrange(ids)
   
   
-  rsid_map <- fread(paste0(dir, "/seed2_thresh0.9_h2-0.1_vars1e-5/seed2_thresh0.9_h2-0.1_vars1e-5.pruned_rsids.txt"), header =FALSE) %>% rename("ids" = V1, "rsids" = V2) %>% 
+  rsid_map <- fread(paste0(dir, "/seed2_thresh0.9_h2-0.1_vars1e-5/seed2_thresh0.9_h2-0.1_vars1e-5.pruned_rsids.txt"), header =FALSE) %>% 
+    magrittr::set_colnames(c("ids", "rsids")) %>% 
     filter(ids %in% z_scores$ids) %>% .[!duplicated(.$ids),] %>% arrange(ids)
 stopifnot(!any(rsid_map$ids != z_scores$ids))
   sample_sizes <- fread(paste0(dir, "seed2_thresh0.9_h2-0.1_vars1e-5/seed2_thresh0.9_h2-0.1_vars1e-5.FULL_LIST.1e-5.se.tsv")) 

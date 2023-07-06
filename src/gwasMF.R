@@ -1,6 +1,6 @@
 #This version is to run functions from R directly.
 suppressPackageStartupMessages(library("tidyr"))
-suppressPackageStartupMessages(library("plyr")) 
+#suppressPackageStartupMessages(library("plyr")) 
 suppressPackageStartupMessages(library("dplyr")) 
 suppressPackageStartupMessages(library("stringr")) 
 suppressPackageStartupMessages(library("penalized")) 
