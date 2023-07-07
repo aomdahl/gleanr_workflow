@@ -264,10 +264,7 @@ orderColumnsByName <- function(query.mat, ref, force.ref = "")
   {
     ret.mat <- ret.mat[,setColOrder(colnames(query.mat), ref)]
   }
-  print(ref)
-  print(length(ref))
-  print(dim(ret.mat))
-  print(head(ret.mat))
+
   colnames(ret.mat) <- ref
   ret.mat
   #return(query.mat[,..o])
@@ -330,6 +327,11 @@ readInData <- function(args)
     message("Using the provided trait names, and assuming all files have columns in the correct order.")
     message("It is your responsibility to verify this.")
     names <- scan(args$trait_names, what = character(), quiet = TRUE) %>% make.names(.)
+  }
+  if(length(names) > (ncol(effects) - 1))
+  {
+    message("Error- passed in effect size file and list of phenotype names are of different lengths.")
+    quit()
   }
   weighted.dat <- SpecifyWeightingScheme(effects, all_ids,names, args)
   X <- weighted.dat$X; W <- as.matrix(weighted.dat$W);
@@ -463,7 +465,7 @@ readInSettings <- function(args)
 	#larger changes required if you're going to use this-- need to change some of the BIc functions
 	# option <- listenv::listenv()
   option$calibrate_k <- args$calibrate_k
-  option[['K']] <- as.numeric(args$nfactors)
+  option[['K']] <- args$nfactors
   option[['iter']] <- args$niter
   option[['convF']] <- 0
  option[["nsplits"]] <- as.numeric(args$cores)
@@ -487,7 +489,7 @@ readInSettings <- function(args)
   option$gls <- FALSE
   option[["covar"]] <- args$covar_matrix
   option$auto_grid_search <- args$auto_grid_search
-  option$sorted_vars <- args$sort
+  option$sort <- args$sort
   if(args$simulation)
   {
     message("specifying minimum K with simulation.")
@@ -561,7 +563,6 @@ defaultSettings <- function(K=0, init.mat = "V")
   args$sort <- FALSE #b/c default for sims.
   args$converged_obj_change <- 0.001
   args$std_coef <- FALSE
-  #args$std_coef <- TRUE
   args$std_y <- FALSE
   if(init.mat == "U")
   {
@@ -667,6 +668,7 @@ UdlerArgs <- function()
   args$autofit <- -1
   args$auto_grid_search <- TRUE
   args$cores <- 1
+  args$svd_init <- TRUE
   args$IRNT <- FALSE
   args$weighting_scheme = "B_SE"
   args$output <- "/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results/udler_original/bic_version/"
@@ -681,7 +683,7 @@ UdlerArgs <- function()
   args$scale_n <- "/scratch16/abattle4/ashton/snp_networks/scratch/udler_td2/processed_data/sample_counts_matrix.tsv"
   args$MAP_autofit <- -1
   args$auto_grid_search <- FALSE
-  args$regression_method = "penalized"
+  args$regression_method = "glmnet"
   args$converged_obj_change <- 0.05 #this is the percent change from one to the next.
   args$prefix <- ""
   args$bic_var <- "mle"
@@ -694,3 +696,64 @@ UdlerArgs <- function()
 #kevinblighe/PCAtools
 #I take no credit for this work whatsoever.
 
+#' Filling in settings, all relics of a past run.
+#' TODO: basically get rid of all this
+#'
+#' @param curr.args
+#'
+#' @return updated arguments
+#' @export
+#'
+fillDefaultSettings <- function(curr.args)
+{
+  curr.args$std_coef <- FALSE
+  curr.args$sort <- TRUE #what is this doing? sorts the snps I think...
+  curr.args$calibrate_k <- FALSE
+  curr.args$alphas <- ""
+  curr.args$lambdas <- ""
+  curr.args$autofit <- -1
+  curr.args$auto_grid_search <- TRUE
+  curr.args$cores <- 1
+  curr.args$svd_init <- TRUE
+  curr.args$IRNT <- FALSE
+  curr.args$scaled_sparsity <- TRUE
+  curr.args$posF <- FALSE
+  curr.args$std_y <- FALSE
+  curr.args$init_F <- "ones_eigenvect"
+  curr.args$init_L <- ""
+  curr.args$MAP_autofit <- -1
+  curr.args$auto_grid_search <- FALSE
+  curr.args$regression_method = "glmnet"
+  curr.args$prefix <- ""
+  curr.args$scale_n <- ""
+  curr.args$output <- curr.args$outdir
+  curr.args$simulation <- FALSE
+  curr.args$std_coef <- FALSE
+  curr.args$std_y <- FALSE
+  #TODO: add some checks for missing or cnflicing parameters
+  curr.args
+}
+
+
+#' Quick readout to report settings, useful for debugging
+#'
+#' @param argsin the current arguments in.
+#'
+#' @return
+#' @export
+#'
+#' @examples
+writeRunReport <- function(argsin)
+{
+  message("Running GLEANER, settings as follows:")
+  message("--------------- INPUT FILES ---------------")
+  message("Effect sizes: ", basename(argsin$gwas_effects))
+  message("Uncertainty estimates: ", basename(argsin$uncertainty))
+  message("Cohort overlap adjustment: ", basename(argsin$covar_matrix))
+  message("Genomic correction terms: ", basename(argsin$genomic_correction))
+
+  message("--------------- INPUT SETTINGS ---------------")
+  message("BIC convergence criteria: ", argsin$param_conv_criteria)
+  message("BIC method: ", argsin$bic_var)
+  message("K init: ", argsin$nfactors)
+}
