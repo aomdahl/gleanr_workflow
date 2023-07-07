@@ -39,7 +39,7 @@ cor2 <- function(x) {
 #@return U_burn: the burn-in estimate of U
 #@return max_sparsity_params: a list indexed by iteration containing the list of max alphas and lambdas (i.e. list[[i]]$alpha))
 #DefineSparsitySpaceInit(X, W, option, burn.in = burn.in.iter)
-DefineSparsitySpaceInit <- function(X, W,W_c, W_ld, option, burn.in = 5)
+DefineSparsitySpaceInit <- function(X, W,W_c, W_ld, option, burn.in = 5,...)
 {
   #Perform burn.in # of iterations with no sparsity (OLS) and calculate the maximum sparsity value at each step.
   new.options <- option
@@ -50,7 +50,7 @@ DefineSparsitySpaceInit <- function(X, W,W_c, W_ld, option, burn.in = 5)
   #for testing purposes
   Xint <- as.matrix(X)
   Wint <-as.matrix(W)
-  V.dat <- initV(Xint,Wint, new.options)
+  V.dat <- initV(Xint,Wint, new.options, ...)
   V<-V.dat$V
 
   if(burn.in < 1)
@@ -180,15 +180,19 @@ DefineSparsitySpace <- function(X,W,W_cov,fixed,learning, option, fit = "None")
 
 
 #Function to initialize V as desired
-initV <- function(X,W,option, preV = NULL)
+initV <- function(X,W,option, preV = NULL, rg_ref = NULL)
 {
-  #message("hard-coding seed.")
-  #set.seed(3)
   D = ncol(X)
+  cor_struct <- cor2(X)
+  #svd.r <- svd(cor_struct, nu = option$K)
+  svd.corr <- svd(cor_struct)
+  svd.dat <- svd(X)
+  message("Wastefully calculating all SVs now, change this later.")
+  setK = selectInitK(option,X,W,svs = svd.r$d)
   if(!option[['preinitialize']])
   {
     message("TODO: initializing only positive for now.")
-    V = matrix(runif(D*(option[['K']] - 1), min = -1, max = 1), nrow = D);
+    V = matrix(runif(D*(setK - 1), min = -1, max = 1), nrow = D);
 
     if(option[['f_init']] == 'ones_plain')
     {
@@ -196,24 +200,33 @@ initV <- function(X,W,option, preV = NULL)
       V = cbind(rep(1, D), V);
     }	else if(option[['f_init']] == 'ones_eigenvect') {
       message("1st column based on direction of svd of cor")
-      cor_struct <- cor2(X)
-      svd <- svd(cor_struct, nu = option$K) #fortunately its symmetric, so  U and V are the same here!
-      ones <- sign(svd$u[,1])
+      ones <- sign(svd.corr$u[,1])
       #Reintroduced later- no problems here, and gives a nice speedup I think.
       if(option$svd_init)
       {
         message("initializing with SVD")
-        V <- svd(X)$v[,1:(option$K-1)]
+        V <- svd.dat$v[,1:(setK-1)]
         #V <- svd$u[,2:(option$K)]
       } #otherwise its random.
 
     } else if(option[['f_init']] == 'plieotropy')
     {
       message("1st column based svd of cor(|Z|), since plieotropy has no direction.")
-      cor_struct <- cor(abs(X))
-      svd <- svd(cor_struct, nu = 1) #fortunately its symmetric, so  U and V are the same here!
-      ones <- svd$u
-    } else {
+      ones <- svd.r$u
+    }else if(grepl(pattern = "rg_ref",x = option$f_init) & !is.null(rg_ref)) #Use an RG reference file
+    {
+      message("using the passed in rg...")
+      evals <- base::eigen(rg_ref)
+      ones = evals$vectors[,1]
+      V <- evals$vectors[,2:(setK)]
+      if(grepl(pattern = 'ones_eigenvect',x = option$f_init))
+      {
+        ones <- sign(svd.r$u[,1])
+        V <- evals$vectors[,1:(setK-1)]
+      }
+
+    }
+    else {
       ones = matrix(runif(D*(option[['K']])), nrow = D)[,1]
     }
     V = cbind(ones, V);
@@ -228,11 +241,6 @@ initV <- function(X,W,option, preV = NULL)
     V = abs(V)
   }
   s=1
-  if(option$scale)
-  {
-    f <- FrobScale(V)
-    s<-f$s; V <- f$m.scaled
-  }
   return(list("V"=V, "s"=s))
 }
 
@@ -586,7 +594,7 @@ Update_FL <- function(X, W, W_c, option, preV = NULL, preU = NULL, burn.in = FAL
   option[['carry_coeffs']] <- FALSE
 
   U.dat = FitUWrapper(X,W,W_c,V, option) #returns it scaled, with S  #CONFIRM
-  U <- U.dat$U #if scaling is on, is unit scaled.
+  U <- U.dat$U
   option[['carry_coeffs']] <- og_option
   #if(option$debug)
   #{em.objective[[0]] <- compute_obj(X,W,W_c, U,V,option, globalLL=TRUE,decomp = TRUE)}
@@ -707,6 +715,8 @@ Update_FL <- function(X, W, W_c, option, preV = NULL, preU = NULL, burn.in = FAL
         ret$final.scaling <- U.new$s
         ret$dev.obj <- easy.objective
         ret$dev.only <- dev.score
+        ret$s_V <- U.new$s #this was the scalar used to adjust V, in the last step
+        ret$s_U <- V.new$s #This was the scalar used to adjust U
        # }
      return(ret)
     }else{

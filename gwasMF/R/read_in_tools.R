@@ -317,7 +317,7 @@ readInData <- function(args)
 {
   `%>%` <- magrittr::`%>%`
   #Load the effect size data
-
+  rg <- NULL
   effects <- readInBetas(args$gwas_effects, args)
 
     all_ids <- unlist(effects[,1])
@@ -333,12 +333,18 @@ readInData <- function(args)
   }
   weighted.dat <- SpecifyWeightingScheme(effects, all_ids,names, args)
   X <- weighted.dat$X; W <- as.matrix(weighted.dat$W);
+  if(args$rg_ref != "")
+  {
+    message("Using an LDSC-rg based V initialization")
+    rg <- readInCovariance(args$rg_ref, names)
+  }
   if(args$drop_phenos != "")
   {
     message("Dropping data corresponding to names: ", args$drop_phenos)
     drops <- unlist(strsplit(args$drop_phenos, split = ",")[[1]])
     drop.indices <- which(names %in% drops)
     X <- X[,-drop.indices]; W <- W[,-drop.indices]
+    rg <- rg[-drop.indices,-drop.indices]
     names <- names[-drop.indices]
   }
 
@@ -399,10 +405,56 @@ readInData <- function(args)
    message("Reading in covariance structure from sample overlap...")
    C <- readInCovariance(args$covar_matrix, names)
    W_c <- buildWhiteningMatrix(C, ncol(X))
-  return(list("X" = X, "W" = W, "ids" = all_ids, "trait_names" = names, "C" = C, "W_c" = W_c))
+  return(list("X" = X, "W" = W, "ids" = all_ids, "trait_names" = names, "C" = C, "W_c" = W_c, "rg"=rg))
 
 }
 
+#' Select the K to initialize with. A few different options, made for testing.
+#'
+#' @param args a list with settings; key settings are K desired (either a number or a method)
+#' @param X input data effect sizes
+#' @param W input data weights
+#' @param svs (optional) the singular values
+#'
+#' @return a number of K to initialize with
+#' @export
+#'
+#' @examples
+selectInitK <- function(args,X,W, svs = NULL)
+{
+  #Optiosn now are: MAX (default), KAISER, GD
+  #GD method: from https://arxiv.org/pdf/1305.5870.pdf
+  #Kaiser: from ??? TODO
+  #MAX: m-1
+  #M/2: M/2
+
+  if(is.null(svs) & args$K %in% c("KAISER", "GD"))
+  {
+    #We've already done spectral decomp, no need to do it again...
+    svrun <- svd(X*W)
+    svs <- svrun$d
+
+  }
+
+  if(is.numeric(args$K) & args$K !=0)
+  {
+    message("User has specified a number of factors initially- this will be given preference.")
+    message("No selection method will be used.")
+    return(args$K)
+  } else
+  {
+    k = switch(
+      args$K,
+      "MAX"= ncol(X)-1,
+      "GD"= PCAtools::chooseGavishDonoho(X*W,  var.explained=svs^2, noise=1), #see https://rdrr.io/github/kevinblighe/PCAtools/man/chooseGavishDonoho.html
+      "KAISER"= sum(svs^2 > mean(svs^2)),
+      "K/2"=ceiling(ncol(X)/2),
+    )
+
+  }
+
+  return(k)
+}
 
 readInSettings <- function(args)
 {
@@ -488,6 +540,8 @@ readInSettings <- function(args)
   option$std_coef <- args$std_coef
   return(option)
 }
+
+
 
 #####
 ## Setting defaults helpful for running elsewhere
@@ -635,5 +689,8 @@ UdlerArgs <- function()
   args
 }
 
-
+#Try another selection method..
+#https://rdrr.io/github/kevinblighe/PCAtools/src/R/randomMethods.R
+#kevinblighe/PCAtools
+#I take no credit for this work whatsoever.
 
