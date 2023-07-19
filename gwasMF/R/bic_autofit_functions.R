@@ -1635,6 +1635,14 @@ getBICMatricesGLMNET <- function(opath,option,X,W,W_c, all_ids, names, min.iter 
     rec.dat$U_sparsities = c(rec.dat$U_sparsities, matrixSparsity(optimal.u, ncol(X)));
     #TODO: drop empty columns here, now.
     optimal.u <- DropEmptyColumns(optimal.u)
+    #Do a check- is it empty?
+    if(CheckUEmpty(optimal.u)) {message("U has no signal; ending model selection phase");
+      return(list("optimal.v" = matrix(0, ncol = ncol(optimal.u), nrow = ncol(optimal.v)),"resid.var" = u.fit$resid_var,
+                  "rec.dat" = rec.dat, "lambda"=rec.dat$lambda.s[i], "alpha"=rec.dat$alpha.s[i], "options" = option,
+                  "K"= NA, "alpha.path" = rec.dat$alpha.s, "lambda.path" = rec.dat$lambda.s, "optimal.u" = optimal.u, "convergence.options" = conv.options))
+      }
+
+
     #fit V now
     v.fits <- FitVWrapper(X,W,W_c, optimal.u,option)
     rec.dat$lambda.s <- c(rec.dat$lambda.s,v.fits$lambda.sel)
@@ -1645,6 +1653,12 @@ getBICMatricesGLMNET <- function(opath,option,X,W,W_c, all_ids, names, min.iter 
     rec.dat$V_sparsities = c(rec.dat$V_sparsities, matrixSparsity(optimal.v, ncol(X)));
     rec.dat$lambdas <- UpdateAndCheckSparsityParam(rec.dat$lambdas, v.fits$lambda.sel, errorReport = TRUE)
     rec.dat$bic.l <- c(rec.dat$bic.l,v.fits$bic)
+    if(CheckVEmpty(optimal.v)) {message("V has no signal; ending model selection phase");
+    return( list("optimal.v" = optimal.v, nrow = ncol(optimal.v),"resid.var" = u.fit$resid_var,
+                "rec.dat" = rec.dat, "lambda"=rec.dat$lambda.s[i], "alpha"=rec.dat$alpha.s[i], "options" = option,
+                "K"= NA, "alpha.path" = rec.dat$alpha.s, "lambda.path" = rec.dat$lambda.s,
+           "optimal.u" =  matrix(0, ncol = ncol(optimal.v), nrow = ncol(optimal.u)), "convergence.options" = conv.options))
+    }
 
     if(ncol(optimal.u) == ncol(optimal.v))
 
@@ -1677,7 +1691,7 @@ getBICMatricesGLMNET <- function(opath,option,X,W,W_c, all_ids, names, min.iter 
     #Conditions for early stopping
     #we no longer want this situation- if its down to 1 and fixed factor, continue to impose sparsity on U.
     #There is still an opportunity to drop.
-    if(TRUE)
+    if(FALSE)
     {
       if(ncol(optimal.v) == 1 & option$fixed_ubiq)
       {
