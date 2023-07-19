@@ -252,10 +252,20 @@ extendedBIC <- function(fit, scale = FALSE)
     ifelse(scale, r/nobs(fit), r)
 }
 
+#' Calculate the BIC using a vanilla, textbook standard formulation from a GLMNET fit object
+#'
+#' @param fit the GLMNET fit object
+#' @param long.v the covariates matrix, sparse
+#' @param long.x the outcome variable
+#'
+#' @return a vector of BIC scores across multiple different \lambda settings
+#' @export
+#'
 stdBIC <- function(fit, long.v, long.x)
 {
   all.preds <- predict(fit, newx = long.v)
-  p = dim(fit$beta)[1]
+  #I've already extended the dims here, so n = MN
+  p = 1
   n = nobs(fit)
   sapply(1:ncol(all.preds), function(i) -2*penLLSimp(n, p, long.x - all.preds[,i]) + log(n) * fit$df[i])
 }
@@ -962,14 +972,15 @@ ProposeNewSparsityParams <- function(bic.list,sparsity.params, curr.dist, curr.i
 #  bic.dat <- getBICMatrices(opath,option,X,W,all_ids, names)
   #getBICMatrices(opath,option,X,W,all_ids, names, burn.in.iter = 1)
   #option$bic.var <- "mle". #unbiased is oto strong here
-getBICMatrices <- function(opath,option,X,W,W_c, all_ids, names, min.iter = 2, max.iter = 100, burn.in.iter = 0, bic.type = 4, use.optim = TRUE)
+getBICMatrices <- function(opath,option,X,W,W_c, all_ids, names, min.iter = 2,
+                           max.iter = 100, burn.in.iter = 0, bic.type = 4, use.optim = TRUE, rg_ref = NULL)
 {
   message("using BIC type:  ", bic.type)
   W_ld = NULL
   conv.options <- list()
 #If we get columns with NA at this stage, we want to reset and drop those columns at the beginning.
   #Currently, just using NULL for W_ld
-  burn.in.sparsity <- DefineSparsitySpaceInit(X, W, W_c, NULL, option, burn.in = burn.in.iter) #If this finds one with NA, cut them out here, and reset K; we want to check pve here too.
+  burn.in.sparsity <- DefineSparsitySpaceInit(X, W, W_c, NULL, option, burn.in = burn.in.iter, rg_ref =rg_ref ) #If this finds one with NA, cut them out here, and reset K; we want to check pve here too.
 
   #optimal.v <- DropLowPVE(X,W,burn.in.sparsity$V_burn, thresh = 0.01)  #skipping... in sims seems to be bad?
   if(option$u_init != "")
@@ -1554,14 +1565,15 @@ gwasMFBIC <- function(X,W, snp.ids, trait.names, C = NULL, K=0, gwasmfiter =5, r
 
 #####
 #Verion optimized for glmnet
-getBICMatricesGLMNET <- function(opath,option,X,W,W_c, all_ids, names, min.iter = 2, max.iter = 100, burn.in.iter = 0, init.mat = NULL)
+getBICMatricesGLMNET <- function(opath,option,X,W,W_c, all_ids, names, min.iter = 2, max.iter = 100, burn.in.iter = 0,
+                                 init.mat = NULL, rg_ref=NULL)
 {
   bic.type = 4
   W_ld = NULL
   conv.options <- list()
   #If we get columns with NA at this stage, we want to reset and drop those columns at the beginning.
   #Currently, just using NULL for W_ld
-  burn.in.sparsity <- DefineSparsitySpaceInit(X, W, W_c, NULL, option, burn.in = burn.in.iter) #If this finds one with NA, cut them out here, and reset K; we want to check pve here too.
+  burn.in.sparsity <- DefineSparsitySpaceInit(X, W, W_c, NULL, option, burn.in = burn.in.iter, rg_ref = rg_ref) #If this finds one with NA, cut them out here, and reset K; we want to check pve here too.
   if(option$u_init != "")
   {
     optimal.u <- burn.in.sparsity$U_burn
@@ -1661,17 +1673,25 @@ getBICMatricesGLMNET <- function(opath,option,X,W,W_c, all_ids, names, min.iter 
     }
 
     rec.dat$sparsity.obj[[i]] <- jk
-    if(ncol(optimal.v) == 1 & option$fixed_ubiq)
+
+    #Conditions for early stopping
+    #we no longer want this situation- if its down to 1 and fixed factor, continue to impose sparsity on U.
+    #There is still an opportunity to drop.
+    if(TRUE)
     {
-      message("Only down to 1 factor, best be stopping now.")
-      #align
-      aligned <- AlignFactorMatrices(X,W,optimal.u,optimal.v); optimal.u <- aligned$U; optimal.v<- aligned$V
-      if(i < min.iter)
+      if(ncol(optimal.v) == 1 & option$fixed_ubiq)
       {
-        message("Zeroed-out the results very quickly, this suggests some kind of instability...")
+        message("Only down to 1 factor, best be stopping now.")
+        #align
+        aligned <- AlignFactorMatrices(X,W,optimal.u,optimal.v); optimal.u <- aligned$U; optimal.v<- aligned$V
+        if(i < min.iter)
+        {
+          message("Zeroed-out the results very quickly, this suggests some kind of instability...")
+        }
+        NOT.CONVERGED <- FALSE
       }
-      NOT.CONVERGED <- FALSE
     }
+
     #align
     aligned <- AlignFactorMatrices(X,W,optimal.u,optimal.v); optimal.u <- aligned$U; optimal.v<- aligned$V
     #Check convergence
