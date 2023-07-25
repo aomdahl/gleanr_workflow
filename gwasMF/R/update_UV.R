@@ -419,7 +419,7 @@ CheckMatrixEmpty <- function(mat, name)
   non_empty_mat = which(apply(mat, 2, function(x) sum(x!=0)) > 0)
   if(length(non_empty_mat) == 0){
     #| (non_empty_v[1] == 1 & option$fixed_ubiq & (length(non_empty_f) == 1))){
-    message('Finished', option);
+    message('Finished ', name);
     message(name, ' is completely empty.')
     return(TRUE)
   }
