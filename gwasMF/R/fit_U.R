@@ -163,7 +163,7 @@
   {
     #it_U(X, W, W_c, initV, option)
     max.sparsity <- NA; penalty = NA; ll = NA; l = NA; sse=NA
-    long.x <- c(t(W_c) %*% t(X*W)) #stacks by SNP1, SNP2...
+    long.x <- c(t(W_c) %*% t(X*W)) #stacks by SNP1, SNP2... #modify
     if(option$std_y) { long.x <- mleStdVector(long.x)}
     #This multiplies each SNP row by the correction matrix
     weighted.copies <- lapply(1:nrow(X), function(i) t(W_c) %*% diag(W[i,]) %*% V)
@@ -171,15 +171,12 @@
     s = 1
     if(option$scale)
     {
-      #repurposing this, june26, 2023
-      #s <- getColScales(long.v)
-      #s[is.na(s)] <- 1 #replace the NAs with 1s.
-      #long.v <- unitScaleColumns(long.v, colnorms = s)
-      #make into matrix for convenience:
-      #s = matrix(s, nrow = nrow(X), ncol = ncol(V),byrow = TRUE)
-      #ensure its unit length already:
-      s.tmp <- FrobScale(long.v)
-      s <- s.tmp$s; long.v <- s.tmp$m.scaled
+      #This version won't work because its repeted Vs! Maybe scale by the max single V?
+      #s.tmp <- FrobScale(long.v)
+      #s <- s.tmp$s; long.v <- s.tmp$m.scaled
+      #Scalingby max frob norm
+      s <- max(sapply(weighted.copies, function(x) Matrix::norm(x, type = "F")))
+      long.v <- long.v/s
     }
 
     if(!is.null(formerU))

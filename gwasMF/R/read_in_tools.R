@@ -198,7 +198,7 @@ readInLambdaGC <- function(fpath,X, names)
       GC <- GC %>% dplyr::mutate("pheno_rank" = factor(phenotype, levels = names)) %>% arrange(pheno_rank) %>% select(-pheno_rank)
       stopifnot(GC$phenotype == names)
     }
-    lambdagc <- as.matrix((do.call("rbind", lapply(1:nrow(X), function(x) unlist(GC[,..ecol])))), nrow = nrow(X))
+    lambdagc <- as.matrix((do.call("rbind", lapply(1:nrow(X), function(x) unlist(GC[,ecol])))), nrow = nrow(X))
     GC <- lambdagc
   } else { #matrix version.
     GC <- GC %>% dplyr::filter(!row_number() %in% r$drops) %>% dplyr::filter(unlist(.[,1]) %in% all_ids) %>% quickSort(.,args)
@@ -406,8 +406,9 @@ readInData <- function(args)
 
    message("Reading in covariance structure from sample overlap...")
    C <- readInCovariance(args$covar_matrix, names)
-   W_c <- buildWhiteningMatrix(C, ncol(X))
-  return(list("X" = X, "W" = W, "ids" = all_ids, "trait_names" = names, "C" = C, "W_c" = W_c, "rg"=rg))
+   whitening.dat <- buildWhiteningMatrix(C, ncol(X))
+  return(list("X" = X, "W" = W, "ids" = all_ids, "trait_names" = names, "C" = C,
+              "W_c" = whitening.dat$W_c, "rg"=rg, "C_block"=whitening.dat$C_block))
 
 }
 
@@ -451,7 +452,9 @@ selectInitK <- function(args,X,W, svs = NULL)
       "GD"= PCAtools::chooseGavishDonoho(X*W,  var.explained=svs^2, noise=1), #see https://rdrr.io/github/kevinblighe/PCAtools/man/chooseGavishDonoho.html
       "KAISER"= sum(svs^2 > mean(svs^2)),
       "K/2"=ceiling(ncol(X)/2),
+      "K-2"=ceiling(ncol(X)/2)
     )
+    message("Proceeding with initialized K of ", k)
 
   }
 
@@ -745,12 +748,14 @@ fillDefaultSettings <- function(curr.args)
 #' @examples
 writeRunReport <- function(argsin)
 {
-  message("Running GLEANER, settings as follows:")
+  message("Running GLEANER, with settings as follows:")
+  message("")
   message("--------------- INPUT FILES ---------------")
   message("Effect sizes: ", basename(argsin$gwas_effects))
   message("Uncertainty estimates: ", basename(argsin$uncertainty))
   message("Cohort overlap adjustment: ", basename(argsin$covar_matrix))
   message("Genomic correction terms: ", basename(argsin$genomic_correction))
+  message("")
 
   message("--------------- INPUT SETTINGS ---------------")
   message("BIC convergence criteria: ", argsin$param_conv_criteria)

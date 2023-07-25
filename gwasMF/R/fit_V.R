@@ -212,20 +212,19 @@ FitVGlobal <- function(X, W, W_c, U, option, formerV = NULL)
     blocks[[length(blocks) + 1]] <- (interval * nsnps + 1) : (interval * nsnps + extra.count)
   }
 
-  all.pieces <- lapply(blocks, function(x) stackVs(x, M,K, joined.weights, U))
-  long.u <- do.call("rbind", all.pieces)
-
+  all.pieces <- lapply(blocks, function(x) stackUs(x, M,K, joined.weights, U, norm = option$scale))
   s = 1
   if(option$scale)
   {
-    #Put it in matrix form for convenience
-    #s <- getColScales(long.u)
-    #s[is.na(s)] <- 1 #replace the NAs with 1s.
-    #long.u <- unitScaleColumns(long.u, colnorms = s)
-    #Put it in matrix form for convenience
-    #s <- matrix(s, nrow = M,byrow = TRUE)
-    s.tmp <- FrobScale(long.u)
-    s <- s.tmp$s; long.u <- s.tmp$m.scaled
+    #s.tmp <- FrobScale(long.u)
+    #s <- s.tmp$s; long.u <- s.tmp$m.scaled
+    #add across all blocks
+    long.u <- do.call("rbind", lapply(all.pieces, function(x) x$matrices))
+    s <- max(sapply(1:M, function(i) sum(sapply(all.pieces, function(x) x$norm.list[[i]]))))
+    #s <- max(lapply(all.pieces, function(x) x$norm.list))
+    long.u <- long.u/s
+  }else{
+    long.u <- do.call("rbind", all.pieces)
   }
 
   nopen.cols <- sapply(1:ncol(long.u), function(x) x %% K)
@@ -380,18 +379,19 @@ FitVWrapper <- function(X, W,W_c, U, option, formerV = NULL)
 
 ##HELPER FUNCTION for quickly stakcing vs sparsely
 
-#' Stack weighted elements of U too learn v. Could be helpful for paralellizing
+#' Stack weighted elements of U to learn v. Could be helpful for paralellizing
 #'
 #' @param nsnps the chunk size to analyze
 #' @param M the number of studies
 #' @param K current K
-#' @param joined.weights a list of the covariance matrix times the diagonal weightings matrix
+#' @param joined.weights a list of the covariance matrix times the diagonal weightings matrices
 #' @param U current u
 #'
 #' @return an nm x mk sparse matrix
 #' @export
-stackVs <- function(nsnps, M, K, joined.weights, U)
+stackUs <- function(nsnps, M, K, joined.weights, U, norm = FALSE)
 {
+  if(norm){norm.list <- rep(0, M)}
   global.stack <- list()
   for(i in nsnps)
   {
@@ -401,8 +401,15 @@ stackVs <- function(nsnps, M, K, joined.weights, U)
       prod.blank <- matrix(0, nrow = M, ncol = K)
       prod.blank[m,] <- U[i,]
       curr.stack[,(K*(m-1)+1):(m*K)] <- joined.weights[[i]] %*% prod.blank
+      if(norm){norm.list[m] <- norm.list[m] + Matrix::norm(curr.stack[,(K*(m-1)+1):(m*K)], type = "F")^2 }
     }
     global.stack[[i]] <-curr.stack
   }
-  Matrix::Matrix(do.call("rbind", global.stack), sparse = TRUE)
+  ret.dat =  Matrix::Matrix(do.call("rbind", global.stack), sparse = TRUE)
+  if(norm)
+  {
+    return(list("matrices"=ret.dat, "norm.list"=lapply(norm.list, sqrt)))
+  }
+  return(ret.dat)
+
 }

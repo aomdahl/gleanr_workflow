@@ -188,7 +188,7 @@ initV <- function(X,W,option, preV = NULL, rg_ref = NULL)
   svd.corr <- svd(cor_struct)
   svd.dat <- svd(X)
   message("Wastefully calculating all SVs now, change this later.")
-  setK = selectInitK(option,X,W,svs = svd.r$d)
+  setK = selectInitK(option,X,W,svs = svd.dat$d)
   if(!option[['preinitialize']])
   {
     message("TODO: initializing only positive for now.")
@@ -229,6 +229,10 @@ initV <- function(X,W,option, preV = NULL, rg_ref = NULL)
     else {
       ones = matrix(runif(D*(option[['K']])), nrow = D)[,1]
     }
+    #make sure ones is scaled to be on the same scale as V
+    ones <- ones / sqrt(sum(ones^2))
+    message("Scaling 1st col to be all ones...")
+    stopifnot(abs(sum(ones^2) - 1) < 1e-12)
     V = cbind(ones, V);
   } else #you pre-provide the first F.
   {
@@ -307,7 +311,8 @@ UpdateTrackingParams <- function(sto.obj, X,W,W_c,U,V,option, sparsity.thresh = 
     sto.obj$decomp_obj = compute_obj(X, W,W_c, U, V, option,decomp = TRUE, scalar=scalar)
   if(is.na(sto.obj$obj[1]))
   {
-    sto.obj$obj[1] <- obj_updated
+    sto.obj$obj <- c(obj_updated)
+    #sto.obj$obj[1] < obj_updated
   }
   obj_change = sto.obj$obj[length(sto.obj$obj)] - obj_updated;
   sto.obj$obj = c(sto.obj$obj, obj_updated);
@@ -384,35 +389,42 @@ UpdateSparsityMAPAutofit <- function(iter, U, V, option)
 }
 
 
-#Checking results along the way
+#' Function to check if U
+#'
+#' @param U to check
+#'
+#' @return TRUe or false if empty
+#' @export
+#'
 CheckUEmpty <- function(U)
 {
-  non_empty_u = which(apply(U, 2, function(x) sum(x!=0)) > 0) #Truly all 0
-  if(length(non_empty_u) == 0){
-    message('Finished');
-    message('L is completely empty, alpha1 too large')
-    #V = NULL;
-    #F_sparsity = 1;
-    #L_sparsity = 1;
-    #factor_corr = 1;
-    #Nfactor = 0;
-    return(TRUE)
-  }
-  FALSE
+  CheckMatrixEmpty(U, "U")
 }
 
+#' Check if all the entries in a V matrix are 0 with a message
+#'
+#' @param V matrix to check
+#'
+#' @return Boolean if V is empty or not
+#' @export
+#'
 CheckVEmpty <- function(V)
 {
-  non_empty_v = which(apply(V, 2, function(x) sum(x!=0)) > 0)
-  #CHange: only ending if all the factors are empty. This is basically impossible. We proceed if the first factor is still valid...
-  if(length(non_empty_v) == 0){  #| (non_empty_v[1] == 1 & option$fixed_ubiq & (length(non_empty_f) == 1))){
-    updateLog('Finished', option);
-    updateLog('F is completely empty or loaded only on ubiquitous factor, lambda1 too large', option)
+  CheckMatrixEmpty(V, "V")
+}
+
+
+CheckMatrixEmpty <- function(mat, name)
+{
+  non_empty_mat = which(apply(mat, 2, function(x) sum(x!=0)) > 0)
+  if(length(non_empty_mat) == 0){
+    #| (non_empty_v[1] == 1 & option$fixed_ubiq & (length(non_empty_f) == 1))){
+    message('Finished', option);
+    message(name, ' is completely empty.')
     return(TRUE)
   }
   return(FALSE)
 }
-
 
 CheckLowPVE <- function(X,W,V, thresh = "default") #this might be high but oh well...
 {

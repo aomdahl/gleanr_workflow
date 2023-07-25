@@ -115,7 +115,7 @@ buildWhiteningMatrix<- function(covar, dim, blockify = TRUE,...)
   #chol.diag <- (chol(covar, pivot=TRUE))
   #I think this was wrong...
   #solve(t(chol(covar)))
-  solve((chol(covar)))
+  return(list("W_c" = solve((chol(covar))),"C_block"=covar))
 }
 #Non PD covariance matrix.....
 #possible fixes:

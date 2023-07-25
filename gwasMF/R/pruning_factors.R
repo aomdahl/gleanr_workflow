@@ -14,6 +14,8 @@
 #'
 #' @return updated ALS output list (same as Update_FL output)
 #' @export
+#'
+#'  PruneNumberOfFactors(X,W,W_c,reg.run, 0, 3, option)
 PruneNumberOfFactors <- function(X,W,W_c,reg.run, minK, maxK, option)
 {
 
@@ -60,10 +62,11 @@ PruneNumberOfFactors <- function(X,W,W_c,reg.run, minK, maxK, option)
 #' @param maxK K to parse down to
 #' @param option std options
 #' @param calc.param which parameter to use as metric, either "fit" or "obj" (which includes sparsity terms)
+#' @param scalar for calculating objective...
 #'
 #' @return list containing, U, V and K
 #' @export
-DropFactorsByFit <- function(X,W,W_c,U,V, maxK, option, calc.param="obj")
+DropFactorsByFit <- function(X,W,W_c,U,V, maxK, option, calc.param="obj", scalar = 1)
 {
 
   if(is.null(maxK) | length(maxK) == 0 | maxK == 0)
@@ -90,7 +93,6 @@ DropFactorsByFit <- function(X,W,W_c,U,V, maxK, option, calc.param="obj")
   {
     return(list("U"=U, "V" = V, "K" = ncol(V)))
   }
-  init.obj.fit <-
   init.obj.fit <- switch(calc.param,
          "fit" = compute_obj(X,W,W_c, U, V, option, decomp = TRUE, scalar =  scalar)$Fit.p,
          "obj" = compute_obj(X,W,W_c, U, V, option, scalar =  scalar))
@@ -121,7 +123,7 @@ DropFactorsByFit <- function(X,W,W_c,U,V, maxK, option, calc.param="obj")
     {
       message("Calling the next iteration")
       message("Dropping: ", min.index)
-      return(DropFactorsByFit(X,W,W_c,U[,-min.index],V[,-min.index], maxK, option))
+      return(DropFactorsByFit(X,W,W_c,U[,-min.index],V[,-min.index], maxK, option,scalar = scalar))
     }else
     {
       return(list("U"=U, "V" = V, "K" = ncol(V)))
@@ -144,6 +146,7 @@ DropFactorsByFit <- function(X,W,W_c,U,V, maxK, option, calc.param="obj")
 #'
 #' @return updated U,V,K
 #' @export
+
 DropFactorsByObjective <- function(X,W,W_c,U,V, maxK, option, minK = 0, scalar = 1)
 {
 

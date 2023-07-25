@@ -42,12 +42,13 @@ calcGlobalResiduals <- function(X,W,U,V, W_cov = NULL, fixed_first = FALSE, scal
       message("Dimensions mismatch. Bug detected")
       return(NA)
     }
-    explanatory.var <-t(W_cov) %*% t(W * X)
+    outcome.var <-t(W_cov) %*% t(W * X)
     #if(scale.explanatory)
     #{
     #  explanatory.var <- mleScaleMatrix(explanatory.var)
     #}
-    return((explanatory.var - (t(W_cov) %*% t(W * (U %*% t(V))))/scalar) %>% t())
+    xhat <- (t(W_cov) %*% t(W * (U %*% t(V))))/scalar
+    return((outcome.var -xhat) %>% t())
     #return(t(W_cov) %*% t(W * X - W * (U %*% t(V))) %>% t()) #Final transpose at end to switch the dimensions correctly. Verified this matches expected objective on 4/10
   }
   message("This case should not occur")
@@ -219,6 +220,7 @@ getVPenalty <- function(V, option)
 
     }
   }
+  return(FactorV_penalty)
 }
 #modified to global LL!
 compute_obj <- function(X, W, W_c, L, FactorM, option, decomp = FALSE, loglik = TRUE, globalLL=TRUE, scalar = 1){
