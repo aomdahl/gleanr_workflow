@@ -60,7 +60,7 @@ rule mungeCommands:
     shell:
         """
         conda activate std
-        python src/munge_precursor.py --study_list {input.study_ref} --merge_alleles {input.snp_ref} --output {params} --mod
+        python src/munge_precursor.py --study_list {input.study_ref} --merge_alleles {input.snp_ref} --output {params} --mod --keep_maf
         #we want the mod version...
         """
 
@@ -112,14 +112,16 @@ full_study_ids = [gwas_list[i] + "." + trait_list[i] for i in range(0,len(gwas_l
 
 #Do a check on the quality of the summary statistics- how much missingness do they each have?
 rule checkMissingness:
-	input: expand("gwas_extracts/{{identifier}}/{study_id}.sumstats.gz",study_id=full_study_ids)
-	output: "gwas_extracts/{identifier}/missingness_report.tsv"
+	input: 
+		studies=expand("gwas_extracts/{{identifier}}/{study_id}.sumstats.gz",study_id=full_study_ids),
+		order="trait_selections/{identifier}.studies.txt"
+	output: "gwas_extracts/{identifier}/missingness_report.tsv", "gwas_extracts/{identifier}/sample_sd_report.tsv"
 	params:
 		"gwas_extracts/{identifier}/"
 	shell:
 		"""
 		conda activate renv; 
-		Rscript src/qc_check_munged_ss.R --gwas_dir {params[0]} --output {output} --gwas_ext {config[file_ext]} --missing_thresh 0.1
+		Rscript src/qc_check_munged_ss.R --gwas_dir {params[0]} --output {params[0]} --gwas_ext {config[file_ext]} --missing_thresh 0.1 --trait_order {input.order}
 		"""
 		
 
