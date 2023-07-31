@@ -5,6 +5,28 @@ import glob
 import pickle
 import gzip
 import os
+
+#thought about it, making sure order matches.
+"""
+if(args.file_order != ""):
+  with open(args.file_order, 'r') as istream:
+    order = istream.readlines()
+  order = [x.strip() for x in order]
+  name_lookups = [x.replace(".sumstats.gz","") for x in  ret_dat["beta"].keys()]
+order_ref = dict()
+for i, n in enumerate(name_lookups):
+    j = getClosestRefIndex(n, order)
+    order_ref[n]= j
+
+"""
+
+def getClosestRefIndex(n, truenames):
+  fname = n.split(".")
+  for j,tn in enumerate(truenames):
+    if any([x == tn for x in fname]):
+      return j
+  return -1
+
 def readInSNPs(snp_list, ind):
     snps = list()
     with open(snp_list, 'r') as istream:
@@ -30,6 +52,7 @@ parser.add_argument("--gwas_dir", help = "gwas directory to look in.")
 parser.add_argument("--type", help = "if its ldsc or not", default = "NOT")
 parser.add_argument("--keep_dump", help = "Should we keep a backup dump file as we go?", default =False, action = "store_true")
 parser.add_argument("--extension", help = "File extension to grab")
+parser.add_argument("--file_order", help = "File extension to grab",default = "")
 args = parser.parse_args()
 
 snps =list()
@@ -77,7 +100,7 @@ ldsc  = {"z":4, "n":3}
 #ldsc custom can vary, depending on if MAF data is available or not
 ldsc_custom = {"z":7, "n":3, "se":5, "p":6,"beta":4}
 #keep this here, but adjust it leater
-key = {11:cont, 12:disc, 5:ldsc, 8:ldsc_custom}
+key = {11:cont, 12:disc, 5:ldsc, 8:ldsc_custom, 9:ldsc_custom}
 snp_ids = list()
 first = True
 print("Reading through files")
@@ -142,7 +165,7 @@ for f_line in file_list:
                       ret_dat[dt][f][snp_ref_index]=np.NaN
                     else:
                       try:
-                          ret_dat[dt][f][snp_ref_index] = tab[k[dt]]
+                          ret_dat[dt][f][snp_ref_index] = float(tab[k[dt]])
                       except:
                           print("dt", dt)
                           print("f",f)
@@ -161,6 +184,7 @@ for f_line in file_list:
     first = False
 #print(ret_dat["beta"]["GWAS_abdominal_hernia_SAIGE_550.txt.vcf.abdominal_hernia.sumstats.gz"][lookup_snps["rs10489588"]] )
 #print(ret_dat["beta"].keys())
+
 import pandas as pd 
 for dt in ret_dat:
     d = ret_dat[dt]
@@ -175,6 +199,7 @@ for dt in ret_dat:
     cols = out.columns.tolist()
     cols = cols[-1:] + cols[:-1]
     out = out[cols]
+    
     out.to_csv(args.output + "." + dt + ".tsv" ,index = False, sep = '\t')
 
 

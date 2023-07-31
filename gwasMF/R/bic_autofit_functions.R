@@ -1503,6 +1503,13 @@ gwasMFBIC <- function(X,W, snp.ids, trait.names, C = NULL, K=0, gwasmfiter =5, r
     bic.dat5 <- getBICMatrices(opath,option,X,W,W_c,all_ids, names)
   }
 
+  if(is.na(bic.dat$K) | is.na(bic.dat$alpha))
+  {
+    message("No signal detected under current settings. Program will end")
+     return(list("V" = matrix(0, nrow=ncol(X), ncol = 1), "U" = matrix(0, nrow=nrow(X), ncol = 1), "initK" = NA, "K" =0, "obj" = c(NA), "obj_change" = c(),
+                     "V_sparsities" = c(), "U_sparsities" = c(), "autofit_lambda" = c(), "autofit_alpha"=c(), "mse" = c(),
+                     "V_change" = c(), "U_change" = c(), "decomp_obj" ="", "model.loglik" = c(), "Vs"=list(), "Us"=list(), "pve"=c(0)))
+  }
   option <- bic.dat$options
   option$V <- TRUE
   option$alpha1 <- bic.dat$alpha #this is used to regularize U

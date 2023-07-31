@@ -37,7 +37,7 @@ updateStatement  <- function(l,a,l_og, a_og, run,time)
 initializeGwasMF <- function(X,W,C,snp.ids, trait.names, K=0, init.mat = "V")
 {
   #SourcePackages()
-
+  message("This is an archaic initialization; recommend doing away with this...")
   args <- defaultSettings(K=K,init.mat = init.mat)
   args$pve_init <- FALSE
   option <- readInSettings(args)
@@ -62,7 +62,9 @@ initializeGwasMF <- function(X,W,C,snp.ids, trait.names, K=0, init.mat = "V")
   #Run the bic thing...
   option$V <- FALSE
   option$fixed_ubiqs <- TRUE
-  W_c <- buildWhiteningMatrix(C, blockify = TRUE)
+  W_c_dat <- buildWhiteningMatrix(C, blockify = TRUE)
+  W_c = W_c_dat$W_c
+  #(list("W_c" = solve((chol(covar))),"C_block"=covar))
   list("args" = args, "options" = option,
        "hp" = hp, "all_ids" = snp.ids, "names" = trait.names, "initk" = initk, "W_c" = W_c)
 }

@@ -20,7 +20,8 @@ make_option(c("--genomic_correction"), type="character", default= "", help="Spec
 make_option(c("--bic_var"), type = 'character', help = "Specify the bic method to use. Options are [sklearn_eBIC,sklearn,Zou_eBIC,Zou,dev_eBIC,dev, std]", default = "sklearn_eBIC"),
 make_option(c("-p", "--param_conv_criteria"), type = 'character', help = "Specify the convergene criteria for parameter selection", default = "BIC.change"),
 make_option(c("-r", "--rg_ref"), type = 'character', help = "Specify a matrix of estimated genetic correlations to initialize V from", default = ""),
-make_option(c("-v", "--verbosity"), type="integer", default= 0, help="How much output information to give in report? 0 is quiet, 1 is loud")
+make_option(c("-v", "--verbosity"), type="integer", default= 0, help="How much output information to give in report? 0 is quiet, 1 is loud"),
+make_option(c("-s", "--sample_sd"), type="character", default= "", help="File containing the standard deviation of SNPs; if provided, used to scale LDSC gcov terms.")
 )
 
 #Tools for debugging
@@ -38,6 +39,16 @@ t= c("--gwas_effects=/scratch16/abattle4/ashton/snp_networks/custom_l1_factoriza
      "--outdir=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results/ukbb_benchmark/comparative_analysis//BIC-std_K-MAX.DEBUG", 
      "--fixed_first",  "--nfactors=MAX", "--bic_var=dev","--verbosity=1")
 
+
+t= c("--gwas_effects=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwas_extracts/ukbb_benchmark//ukbb_benchmark.beta.tsv",
+     "--uncertainty=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwas_extracts/ukbb_benchmark//ukbb_benchmark.se.tsv",
+     "--trait_names=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwas_extracts/ukbb_benchmark//pheno.names.txt",
+     "--outdir=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results/ukbb_benchmark/comparative_analysis//sklearn_max_covar_manual", 
+     "--fixed_first",  "--nfactors=MAX", "--bic_var=sklearn","--verbosity=1", 
+     "--covar=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/ldsr_results/finngen_benchmark/summary_data/gcov_int.tab.csv",
+     "--genomic_correction=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/ldsr_results/finngen_benchmark/summary_data/genomic_correction_intercept.tsv",
+     "--sample_sd=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwas_extracts/ukbb_benchmark/sample_sd_report.tsv")
+
 args_input <- parse_args(OptionParser(option_list=option_list))#, args = t)
 #TODO: cut oout this middle-man, make a more efficient argument input vector.
 
@@ -54,7 +65,7 @@ outdir <-args$outdir
 #Read in the hyperparameters to explore
 hp <- readInParamterSpace(args)
 input.dat <- readInData(args)
-X <- input.dat$X; W <- input.dat$W; all_ids <- input.dat$ids; names <- input.dat$trait_names; W_c <- input.dat$W_c
+X <- input.dat$X; W <- input.dat$W; all_ids <- input.dat$ids; names <- input.dat$trait_names; W_c <- input.dat$W_c; C <- input.dat$C_block
 #Run the bic thing...
 
 bic.dat <- getBICMatricesGLMNET(opath,option,X,W,W_c, all_ids, names)

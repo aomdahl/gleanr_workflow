@@ -40,12 +40,16 @@ if(FALSE)
   args$output <- "/home/aomdahl1/scratch16-abattle4/ashton/snp_networks/custom_l1_factorization/results/udler_original/ldsc_summary"
   args$input_path <- "/home/aomdahl1/scratch16-abattle4/ashton/snp_networks/scratch/udler_td2/ldsr_all/ldsr_results/"
   args$trait_names <- "default"
+  args$trait_names <-"/home/aomdahl1/scratch16-abattle4/ashton/snp_networks/scratch/udler_td2/trait_names_clean.61.txt"
   args$which_data <- "gcov_int"
-  args$cohort_data <-"/home/aomdahl1/scratch16-abattle4/ashton/snp_networks/scratch/infertility_analysis/trait_data/simple.second.cohort_data.txt"
   args$filter_se <- FALSE
-  args$trait_names <- "default" #haven't implemented this yet..
-}
 
+}
+if(args$trait_names != "default")
+{
+  #read them from a file
+  cn <- scan(args$trait_names,what = character())
+}
 #TODO: check that rows and columns are in the same order.
 
 #MAke the r2g and heatmap....
@@ -58,14 +62,20 @@ if(args$which_data[1] == "intercept" | args$which_data == "ALL")
 }
 if(args$which_data == "rg"| args$which_data == "ALL")
 {
-  rg <- ldscGCOVIntoMatrix(look_path = args$input_path,"rg",filter_se = args$filter_se)
+  rg <-  ldscGCOVIntoMatrix(look_path = args$input_path,"rg",filter_se = TRUE)
+  rg.raw <-  ldscGCOVIntoMatrix(look_path = args$input_path,"rg",filter_se = FALSE)
   if(args$trait_names == "default")
   {
     cn <- unlist(lapply(str_split(colnames(rg),pattern = "\\."), function(x) x[(length(x) - 2)]))
+  }
     rg <- renameAll(rg, cn)
+    rg.raw <- renameAll(rg, cn)
   }
   plotCorrelationHeatmap(rg,typin ="heatmap.default", title = "Heatmap of genetic correlation (rg)")
   ggsave(filename = paste0(args$output, "rg_heatmap.png"),width = 10, height = 10)
+  write.table(rg, file= paste0(args$output, "rg.tab.SE_FILTERs.csv"), quote = FALSE,row.names = FALSE)
+  write.table(rg.raw, file= paste0(args$output, "rg.tab.NO_SE_FILTERs.csv"), quote = FALSE,row.names = FALSE)
+  
   
 }
 if(args$which_data == "p"| args$which_data == "ALL")

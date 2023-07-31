@@ -406,6 +406,15 @@ readInData <- function(args)
 
    message("Reading in covariance structure from sample overlap...")
    C <- readInCovariance(args$covar_matrix, names)
+   if(args$sample_sd != "")
+   {
+      message("Verify that the name order is correct. Should be...")
+      sd.df <- fread(args$sample_sd)
+      sd.scaling <- 1/(as.matrix(sd.df$V2) %*% t(as.matrix(sd.df$V2)))
+      diag(sd.scaling) <- 1 #make it correlation matrix
+      C <- C*sd.scaling
+   }
+
    whitening.dat <- buildWhiteningMatrix(C, ncol(X))
   return(list("X" = X, "W" = W, "ids" = all_ids, "trait_names" = names, "C" = C,
               "W_c" = whitening.dat$W_c, "rg"=rg, "C_block"=whitening.dat$C_block))
@@ -755,6 +764,7 @@ writeRunReport <- function(argsin)
   message("Uncertainty estimates: ", basename(argsin$uncertainty))
   message("Cohort overlap adjustment: ", basename(argsin$covar_matrix))
   message("Genomic correction terms: ", basename(argsin$genomic_correction))
+  message("Z-score sample standard deviation: ", basename(argsin$sample_sd))
   message("")
 
   message("--------------- INPUT SETTINGS ---------------")
