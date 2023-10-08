@@ -21,7 +21,11 @@ make_option(c("--bic_var"), type = 'character', help = "Specify the bic method t
 make_option(c("-p", "--param_conv_criteria"), type = 'character', help = "Specify the convergene criteria for parameter selection", default = "BIC.change"),
 make_option(c("-r", "--rg_ref"), type = 'character', help = "Specify a matrix of estimated genetic correlations to initialize V from", default = ""),
 make_option(c("-v", "--verbosity"), type="integer", default= 0, help="How much output information to give in report? 0 is quiet, 1 is loud"),
-make_option(c("-s", "--sample_sd"), type="character", default= "", help="File containing the standard deviation of SNPs; if provided, used to scale LDSC gcov terms.")
+#These related to covariance matrix tweaks
+make_option(c("-s", "--sample_sd"), type="character", default= "", help="File containing the standard deviation of SNPs; if provided, used to scale LDSC gcov terms."),
+TODO pick up here
+make_option(c("-b", "--block_covar"), type = "nueric", default= 0.2, help="Specify the degree to which a block structure is enforced. Default is 0.2"),
+make_option(c("-g", "--WLgamma"), type="numeric", default= 0, help="Specify the extent of the WL shrinkage- higher is better!")
 )
 
 #Tools for debugging
