@@ -175,3 +175,32 @@ adjustMatrixAsNeeded <- function(X, covar, whitener = NULL)
     return(X)
   }
 }
+
+
+
+#' Simplifed WL shrinkage using a
+#'
+#' @param sample_cov_mat the input covariance matrix used, from LDSC
+#' @param gamma the setting at which to run this
+#'
+#' @return shrunk estimate
+#' @export
+#'
+#' @examples
+linearShrinkLWSimple <- function(sample_cov_mat, gamma)
+{
+  stopifnot(gamma >= 0 & gamma <= 1)
+  # get the number of variables and observations
+  p_n <- ncol(sample_cov_mat)
+
+  # define the identity
+  idn_pn <- diag(p_n)
+
+  # estimate the mean scalar (average across diagonal, should just be 1?)
+  m_n <- matrixStats::sum2(sample_cov_mat * idn_pn) / p_n
+
+  estimate <- gamma * m_n * idn_pn +
+    (1-gamma) * sample_cov_mat
+
+  return(estimate)
+}

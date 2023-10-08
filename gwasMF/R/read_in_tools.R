@@ -405,21 +405,43 @@ readInData <- function(args)
   }
 
    message("Reading in covariance structure from sample overlap...")
-   C <- readInCovariance(args$covar_matrix, names)
-   if(args$sample_sd != "")
-   {
-      message("Verify that the name order is correct. Should be...")
-      sd.df <- fread(args$sample_sd)
-      sd.scaling <- 1/(as.matrix(sd.df$V2) %*% t(as.matrix(sd.df$V2)))
-      diag(sd.scaling) <- 1 #make it correlation matrix
-      C <- C*sd.scaling
-   }
-
-   whitening.dat <- buildWhiteningMatrix(C, ncol(X))
-  return(list("X" = X, "W" = W, "ids" = all_ids, "trait_names" = names, "C" = C,
-              "W_c" = whitening.dat$W_c, "rg"=rg, "C_block"=whitening.dat$C_block))
+  covar.dat <- SampleOverlapCovarHandler(args, names, X)
+  return(list("X" = X, "W" = W, "ids" = all_ids, "trait_names" = names, "C" = covar.dat$C,
+              "W_c" = covar.dat$W_c, "rg"=rg, "C_block"=covar.dat$C_block))
 
 }
+
+#' Wrapper to get all the important data extracted and used for cohort overlap covariance adjjustment
+#'
+#' @param args
+#' @param names
+#' @param X
+#'
+#' @return list containing Whitening matrix W_c inverse, Block versino of the C matrix and unblocked version of C matrix.
+#' @export
+#'
+SampleOverlapCovarHandler <- function(args, names, X)
+{
+  #Just read in the file
+  C <- readInCovariance(args$covar_matrix, names)
+  #If we are scaling by the sample standard deviation, assuming we use LDSC input
+  if(args$sample_sd != "")
+  {
+    message("Verify that the name order is correct. Should be...")
+    sd.df <- fread(args$sample_sd)
+    sd.scaling <- 1/(as.matrix(sd.df$V2) %*% t(as.matrix(sd.df$V2)))
+    diag(sd.scaling) <- 1 #make it correlation matrix
+    C <- C*sd.scaling
+  }
+  #perform covariance matrix shrinkage
+
+  #option 1- perform shrinkage with block adjustment
+  adjusted.C <- linearShrinkLWSimple(C, args$WLgamma)
+  whitening.dat <- buildWhiteningMatrix(adjusted.C, ncol(X),blockify = args$block_covar)
+  return(list("W_c" =  whitening.dat$W_c, "C_block"=whitening.dat$C_block,"C" = adjusted.C))
+}
+
+
 
 #' Select the K to initialize with. A few different options, made for testing.
 #'
