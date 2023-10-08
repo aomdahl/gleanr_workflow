@@ -75,13 +75,13 @@ blockify <- function(cormat, blocks)
 
 #buildWhiteningMatrix(decorrelate)
 # W_c <- buildWhiteningMatrix(C, ncol(X), blockfiy = TRUE)
-buildWhiteningMatrix<- function(covar, dim, blockify = TRUE,...)
+buildWhiteningMatrix<- function(covar, dim, blockify = 0.2,...)
 {
   if(is.null(covar)){
     message("buildWhiteningMatrix- decorrelating with an identity matrix.")
     return(diag((dim))) #Just return an identity matrix, we aren't going to do anything....
   }
-  blocks <- create_blocks(covar,...)
+  blocks <- create_blocks(covar,cor_thr=blockify,...)
   if(blockify)
   {
     covar <- blockifyCovarianceMatrix(blocks, covar)
