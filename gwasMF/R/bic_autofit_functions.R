@@ -34,7 +34,6 @@ trackAlternativeConvergences <- function(X,W,W_c, U,V, index, record.data, u.alp
 
 
 
-
 UpdateAndCheckSparsityParam <-  function(prev.list, new, errorReport = FALSE)
 {
  if(!is.null(prev.list))
@@ -1460,15 +1459,21 @@ runStdPipeClean <- function(args,alpha,lambda, opath = "", initV = NULL)
 #' @export
 #' #res <- gwasMFBIC(true.betas,1/true.ses, snps, colnames(true.ses), K=5,C=NULL)
 gwasMFBIC <- function(X,W, snp.ids, trait.names, C = NULL, K=0, gwasmfiter =5, rep.run = FALSE,
-                      bic.var= "std", use.init.k = FALSE, init.mat = "V", is.sim = FALSE, save.path = "", scale.mats = FALSE, regression.method = "penalized")
+                      bic.var= "std", use.init.k = FALSE, init.mat = "V", is.sim = FALSE, save.path = "", scale.mats = FALSE, regression.method = "glmnet", shrinkWL=-1)
 {
   opath = ""
   if(is.null(C))
   {
     C = diag(ncol(X))
   }
-  d <- initializeGwasMF(X,W,C, snp.ids, trait.names, K=ifelse(use.init.k, K, 0), init.mat=init.mat) #Either use specified, or prune down as we
+
+
+  d <- initializeGwasMF(X,W,C, snp.ids, trait.names, K=ifelse(use.init.k, K, 0), init.mat=init.mat, covar_shrinkage=shrinkWL) #Either use specified, or prune down as we
   option <- d$options; args <- d$args; hp <- d$hp; all_ids <- d$all_ids; names <- d$namesl; W_c <- d$W_c
+
+  #pick up here.
+  option$block_covar <- 0.2
+  option$WLgamma <- 0.6
   if(is.sim)
   {
     option$Kmin <- K
@@ -1578,9 +1583,23 @@ getBICMatricesGLMNET <- function(opath,option,X,W,W_c, all_ids, names, min.iter 
   bic.type = 4
   W_ld = NULL
   conv.options <- list()
+  rec.dat <- list("alphas"=c(), "lambdas"=c(), "bic.a" = c(), "bic.l"=c(), "obj"=c(),
+                  "v.sparsity" = c(), "u.sparsity"=c(), "iter"=c(), "sd.sparsity.u" = c(), "sd.sparsity.v" = c(),
+                  "alpha.s" = c(), "lambda.s" = c(), "Ks" = c(), "Vs" = list(), "X_hat" = c(), "sparsity.obj" <- list())
   #If we get columns with NA at this stage, we want to reset and drop those columns at the beginning.
   #Currently, just using NULL for W_ld
-  burn.in.sparsity <- DefineSparsitySpaceInit(X, W, W_c, NULL, option, burn.in = burn.in.iter, rg_ref = rg_ref) #If this finds one with NA, cut them out here, and reset K; we want to check pve here too.
+  #In the case we don't want any sparsity, just terminate early.
+
+    burn.in.sparsity <- DefineSparsitySpaceInit(X, W, W_c, NULL, option, burn.in = burn.in.iter, rg_ref = rg_ref) #If this finds one with NA, cut them out here, and reset K; we want to check pve here too.
+    if(option$bic.var == "NONE")
+    {
+      return(list("optimal.v" = burn.in.sparsity$V_burn,"resid.var" = NA,
+                  "rec.dat" = rec.dat, "lambda"=1e-20, "alpha"=1e-20, "options" = option,
+                  "K"= burn.in.sparsity$new.k, "alpha.path" = NA, "lambda.path" = NA, "optimal.u" = NA, "convergence.options" = NA))
+      #We don't need U passed in unless it is request to innitialize U, but not considering for th emoment.
+    }
+
+
   if(option$u_init != "")
   {
     optimal.u <- burn.in.sparsity$U_burn
@@ -1600,10 +1619,10 @@ getBICMatricesGLMNET <- function(opath,option,X,W,W_c, all_ids, names, min.iter 
   consider.params <- SelectCoarseSparsityParams(burn.in.sparsity, burn.in.iter, n.points = 15)
 
   #things to record
-  rec.dat <- list("alphas"=c(), "lambdas"=c(), "bic.a" = c(), "bic.l"=c(), "obj"=c(),
-                  "v.sparsity" = c(), "u.sparsity"=c(), "iter"=c(), "sd.sparsity.u" = c(), "sd.sparsity.v" = c(),
-                  "alpha.s" = c(), "lambda.s" = c(), "Ks" = c(), "Vs" = list(), "X_hat" = c(), "sparsity.obj" <- list())
 
+
+
+  rec.dat$
   INCR.LIMIT=3
   NOT.CONVERGED <- TRUE; i = 1
   #CONV.MODE = "any"
