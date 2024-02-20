@@ -492,6 +492,7 @@
 #' @return A list containing the return matrix U, the distribution of maximum sparsity parameters, and any columns dropped because they contained NAs
 #' @export
 #'
+#'#
   FitUWrapper <- function(X,W,W_c,V, option, prevU = NULL,...)
   {
     if(option[['ncores']] > 1) #This is not working at all. Can't tell you why. But its not. Need to spend some time debugging at some point.

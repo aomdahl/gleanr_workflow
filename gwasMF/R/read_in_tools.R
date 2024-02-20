@@ -345,9 +345,12 @@ readInData <- function(args)
     message("Dropping data corresponding to names: ", args$drop_phenos)
     drops <- unlist(strsplit(args$drop_phenos, split = ",")[[1]])
     drop.indices <- which(names %in% drops)
-    X <- X[,-drop.indices]; W <- W[,-drop.indices]
-    rg <- rg[-drop.indices,-drop.indices]
-    names <- names[-drop.indices]
+    if(length(drop.indices) > 0)
+    {
+      X <- X[,-drop.indices]; W <- W[,-drop.indices]
+      rg <- rg[-drop.indices,-drop.indices]
+      names <- names[-drop.indices]
+    }
   }
 
   #remove NAs, extreme values.
@@ -367,7 +370,11 @@ readInData <- function(args)
     {
       drops <- unlist(strsplit(args$drop_phenos, split = ",")[[1]])
       drop.indices <- which(colnames(N) %in% drops)
-      N <- N[,-drop.indices];
+      if(length(drop.indices) > 0)
+      {
+        N <- N[,-drop.indices];
+      }
+
       print(N)
       dim(N)
     }
@@ -422,6 +429,14 @@ readInData <- function(args)
 #'
 SampleOverlapCovarHandler <- function(args, names, X)
 {
+  #If its an empty file, just limit to identity
+  if(args$covar_matrix == "")
+  {
+    message("No covariance matrix provided, identity matrix will be used.")
+    id = diag(length(names))
+    return(list("W_c" =  id, "C_block"=id,"C" = id))
+  }
+
   #Just read in the file
   C <- readInCovariance(args$covar_matrix, names)
   #If we are scaling by the sample standard deviation, assuming we use LDSC input
@@ -436,8 +451,14 @@ SampleOverlapCovarHandler <- function(args, names, X)
   #perform covariance matrix shrinkage
 
   #option 1- perform shrinkage with block adjustment
-  adjusted.C <- linearShrinkLWSimple(C, args$WLgamma)
-  whitening.dat <- buildWhiteningMatrix(adjusted.C, ncol(X),blockify = args$block_covar)
+  #adjusted.C <- linearShrinkLWSimple(C, args$WLgamma)
+  #whitening.dat <- buildWhiteningMatrix(adjusted.C, ncol(X),blockify = args$block_covar)
+  #alternative option- blockify first, then shrink.
+  #Trying this, b/c sizes aren't obvious
+  blocks <- create_blocks(C,cor_thr=args$block_covar)
+  covar <- blockifyCovarianceMatrix(blocks, C)
+  adjusted.C <- linearShrinkLWSimple(covar, args$WLgamma)
+  whitening.dat <- buildWhiteningMatrix(adjusted.C, ncol(X),blockify = -1)
   return(list("W_c" =  whitening.dat$W_c, "C_block"=whitening.dat$C_block,"C" = adjusted.C))
 }
 
@@ -470,11 +491,12 @@ selectInitK <- function(args,X,W, svs = NULL)
 
   }
 
-  if(is.numeric(args$K) & args$K !=0)
+  #if(is.numeric(args$K) & args$K !=0)
+  if(args$K %in% paste(1:ncol(X)))
   {
     message("User has specified a number of factors initially- this will be given preference.")
     message("No selection method will be used.")
-    return(args$K)
+    return(as.numeric(args$K))
   } else
   {
     k = switch(
@@ -483,7 +505,8 @@ selectInitK <- function(args,X,W, svs = NULL)
       "GD"= PCAtools::chooseGavishDonoho(X*W,  var.explained=svs^2, noise=1), #see https://rdrr.io/github/kevinblighe/PCAtools/man/chooseGavishDonoho.html
       "KAISER"= sum(svs^2 > mean(svs^2)),
       "K/2"=ceiling(ncol(X)/2),
-      "K-2"=ceiling(ncol(X)/2)
+      "K-2"=ceiling(ncol(X)/2),
+      as.numeric(args$K)
     )
     message("Proceeding with initialized K of ", k)
 

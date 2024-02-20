@@ -34,7 +34,7 @@ updateStatement  <- function(l,a,l_og, a_og, run,time)
 }
 
 
-initializeGwasMF <- function(X,W,C,snp.ids, trait.names, K=0, init.mat = "V")
+initializeGwasMF <- function(X,W,C,snp.ids, trait.names, K=0, init.mat = "V", covar_shrinkage=-1)
 {
   #SourcePackages()
   message("This is an archaic initialization; recommend doing away with this...")
@@ -62,7 +62,21 @@ initializeGwasMF <- function(X,W,C,snp.ids, trait.names, K=0, init.mat = "V")
   #Run the bic thing...
   option$V <- FALSE
   option$fixed_ubiqs <- TRUE
-  W_c_dat <- buildWhiteningMatrix(C, blockify = TRUE)
+
+  #Adjusted blocking approach- block first, then shrinkg
+    blocks <- create_blocks(C,cor_thr=0.2)
+  covar <- blockifyCovarianceMatrix(blocks, C)
+  #if specified, srhink
+  if(covar_shrinkage > -1)
+  {
+    message("Performing WL shrinkage, as desired")
+
+  covar <- linearShrinkLWSimple(covar, args$WLgamma)
+
+  }
+ W_c_dat <- buildWhiteningMatrix(covar, ncol(X),blockify = -1)
+  
+ # W_c_dat <- buildWhiteningMatrix(C, blockify = 0.2)
   W_c = W_c_dat$W_c
   #(list("W_c" = solve((chol(covar))),"C_block"=covar))
   list("args" = args, "options" = option,

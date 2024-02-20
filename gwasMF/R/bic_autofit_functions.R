@@ -1457,8 +1457,8 @@ runStdPipeClean <- function(args,alpha,lambda, opath = "", initV = NULL)
 #'
 #' @return
 #' @export
-#' #res <- gwasMFBIC(true.betas,1/true.ses, snps, colnames(true.ses), K=5,C=NULL)
-gwasMFBIC <- function(X,W, snp.ids, trait.names, C = NULL, K=0, gwasmfiter =5, rep.run = FALSE,
+#' #res <- gleaner(true.betas,1/true.ses, snps, colnames(true.ses), K=5,C=NULL)
+gleaner <- function(X,W, snp.ids, trait.names, C = NULL, K=0, gwasmfiter =5, rep.run = FALSE,
                       bic.var= "std", use.init.k = FALSE, init.mat = "V", is.sim = FALSE, save.path = "", scale.mats = FALSE, regression.method = "glmnet", shrinkWL=-1)
 {
   opath = ""
@@ -1473,7 +1473,7 @@ gwasMFBIC <- function(X,W, snp.ids, trait.names, C = NULL, K=0, gwasmfiter =5, r
 
   #pick up here.
   option$block_covar <- 0.2
-  option$WLgamma <- 0.6
+  #option$WLgamma <- 0.6
   if(is.sim)
   {
     option$Kmin <- K
@@ -1577,6 +1577,7 @@ gwasMFBIC <- function(X,W, snp.ids, trait.names, C = NULL, K=0, gwasmfiter =5, r
 
 #####
 #Verion optimized for glmnet
+#bic.dat <- getBICMatricesGLMNET(opath,option,X,W,W_c, all_ids, names)
 getBICMatricesGLMNET <- function(opath,option,X,W,W_c, all_ids, names, min.iter = 2, max.iter = 100, burn.in.iter = 0,
                                  init.mat = NULL, rg_ref=NULL)
 {
@@ -1620,9 +1621,6 @@ getBICMatricesGLMNET <- function(opath,option,X,W,W_c, all_ids, names, min.iter 
 
   #things to record
 
-
-
-  rec.dat$
   INCR.LIMIT=3
   NOT.CONVERGED <- TRUE; i = 1
   #CONV.MODE = "any"

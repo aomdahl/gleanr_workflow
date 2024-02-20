@@ -82,7 +82,7 @@ buildWhiteningMatrix<- function(covar, dim, blockify = 0.2,...)
     return(diag((dim))) #Just return an identity matrix, we aren't going to do anything....
   }
   blocks <- create_blocks(covar,cor_thr=blockify,...)
-  if(blockify)
+  if(blockify > 0)
   {
     covar <- blockifyCovarianceMatrix(blocks, covar)
   }
@@ -190,6 +190,7 @@ adjustMatrixAsNeeded <- function(X, covar, whitener = NULL)
 linearShrinkLWSimple <- function(sample_cov_mat, gamma)
 {
   stopifnot(gamma >= 0 & gamma <= 1)
+  message("gamma set to ", gamma)
   # get the number of variables and observations
   p_n <- ncol(sample_cov_mat)
 
@@ -203,4 +204,81 @@ linearShrinkLWSimple <- function(sample_cov_mat, gamma)
     (1-gamma) * sample_cov_mat
 
   return(estimate)
+}
+
+#test
+#cor.comp <- matrix(rnorm(100), ncol=2)
+#Z <- matrix(rnorm(1000, sd= 2), ncol = 10)
+#' Quickly estimate the correlation matrix that comes from non-genetic effects
+#' Baesd on the method described here by Sebanti:https://deepblue.lib.umich.edu/bitstream/handle/2027.42/143992/sebanti_1.pdf?sequence=1
+#' @param Z matrix of Z scores with dimensions n x m
+#' @param z_thresh threshold of Z scores to omit, default is 2
+#'
+#' @return an
+#' @export
+#'
+#' @examples
+#' #TODO: build a test case with truncatedCovarMatrix
+#' use_test("truncatedCovarMatrix")
+truncatedCovarMatrix <- function(Z, z_thresh=2)
+{
+  cor.mat <- diag(ncol(Z))
+  for(i in 1:ncol(Z))
+  {
+    for(j in i:ncol(Z))
+    {
+      cor.comp <- Z[,c(i,j)]
+      cor.comp[abs(cor.comp) < z_thresh] <- NA
+      cor.comp <- data.frame(cor.comp) %>% drop_na()
+      cor.mat[i,j] <- cor(cor.comp)[1,2]
+      cor.mat[j,i] <- cor(cor.comp)[1,2]
+    }
+  }
+  cor.mat
+}
+
+
+#' Wrapper to update the gamma parameter based on residual variance
+#'
+#' @param X
+#' @param W
+#' @param C
+#' @param U
+#' @param V
+#' @param par_init what the current gamma is. Always start at 0 if this is the first run
+#'
+#' @return The updated gamma that better corresponds to the residual variance.
+#' @export
+#'
+#' @examples
+updateGammaShrinkage <- function(X,W,C,U,V,par_init=0)
+{
+
+  optim(par=par_init, fn = mleCovarFull,
+        X=X,W=W, C=C, X_hat=U %*% t(V), lower = 0, upper = 1, method = "Brent")$par
+}
+
+
+
+
+#' Calculate fit of residual variance with current covariance matrix C
+#'
+#' @param X
+#' @param W
+#' @param X_hat
+#' @param C
+#' @param par lambda parameter setting
+#'
+#' @return Frobenius norm distance of current C setting with shrinkage
+#' @export
+#'
+#' @examples
+mleCovarFull <- function(X, W, X_hat, C, par)
+{
+  lambda=par
+  z_resid = (X-X_hat) * W
+  gamma=par
+  I = diag(ncol(X))
+  full_C= lambda * I + (1-lambda) * C
+  norm(cor(z_resid)-full_C, "F" )
 }
