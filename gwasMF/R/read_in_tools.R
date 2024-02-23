@@ -139,7 +139,7 @@ readInBetas <- function(fpath, option)
 #Function to read in a covariance matrix.
 #This code was copied from "projection_regression_helper.R", but belongs here
 # readInCovariance(args$covar_matrix, names)
-readInCovariance <- function(p, name_order)
+readInCovariance <- function(p, name_order, diag_enforce = 1)
 {
   if(p == "" | is.null(p)) {return(NULL)}
   else
@@ -149,7 +149,7 @@ readInCovariance <- function(p, name_order)
 
     w.in <- as.matrix(data.table::fread(p, check.names = TRUE))
     row.names(w.in) <- colnames(w.in)
-    stopifnot(all(diag(as.matrix(w.in)) == 1))
+    stopifnot(all(diag(as.matrix(w.in)) == diag_enforce))
     if(!isSymmetric(w.in, tol = 1e-3))
     {
       #could just be due to numerical errors, round it
@@ -457,7 +457,22 @@ SampleOverlapCovarHandler <- function(args, names, X)
   #Trying this, b/c sizes aren't obvious
   blocks <- create_blocks(C,cor_thr=args$block_covar)
   covar <- blockifyCovarianceMatrix(blocks, C)
-  adjusted.C <- linearShrinkLWSimple(covar, args$WLgamma)
+  if(toupper(args$WLgamma) == "STRIMMER")
+  {
+    se.path= gsub(args$covar_matrix, pattern="gcov_int.tab.csv", replacement = "gcov_int_se.tab.csv")
+    C_se <- readInCovariance(se.path, diag_enforce = 0)
+    C_se <- C_se * sd.scaling
+    C_se[covar == 0] <- 0
+    offdiag <- covar; diag(offdiag) <- 0
+    gamma = sum(C_se^2) / sum(offdiag^2)
+  }else if(toupper(args$WLgamma) == "MLE")
+  {
+    adjusted.C <- covar #no change, adjust later
+  }else
+  {
+    adjusted.C <- linearShrinkLWSimple(covar, as.numeric(args$WLgamma))
+  }
+
   whitening.dat <- buildWhiteningMatrix(adjusted.C, ncol(X),blockify = -1)
   return(list("W_c" =  whitening.dat$W_c, "C_block"=whitening.dat$C_block,"C" = adjusted.C))
 }

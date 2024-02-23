@@ -1629,6 +1629,31 @@ getBICMatricesGLMNET <- function(opath,option,X,W,W_c, all_ids, names, min.iter 
   message("Convergence mode: ", CONV.MODE)
   option$regression_method = "glmnet"
   while(i < max.iter & NOT.CONVERGED){
+    #TEST version
+    if(i == 1 & args$WLgamma == "MLE")
+    {
+      message("Using the iterative update version to estimate gamma. Not recommended.")
+      gamma.list <- c(option$WLgamma)
+      option$alpha1 <- 1e-20
+      option$lambda1 <- 1e-20
+      for(j in 1:5)
+      {
+        u.fit <- FitUWrapper(X, W, W_c, optimal.v, option)
+        #Fit V
+        v.fits <- FitVWrapper(X,W,W_c, u.fit$U,option)
+        #Update Wc
+        option$WLgamma <- updateGammaShrinkage(X,W,option$C,u.fit$U,v.fits$V)
+        gamma.list <- c(gamma.list, option$WLgamma)
+        #apply shrinkage
+        new.C <- linearShrinkLWSimple(option$C, option$WLgamma)
+        #Update Wc
+        W_c <- buildWhiteningMatrix(new.C, dim, blockify = -1)$W_c
+
+        #Repat a few times
+      }
+
+    }
+
     if(option$u_init != "")
     {
       v.fits <- FitVWrapper(X,W,W_c, optimal.u,option)

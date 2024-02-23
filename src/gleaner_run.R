@@ -24,7 +24,8 @@ make_option(c("-v", "--verbosity"), type="integer", default= 0, help="How much o
 #These related to covariance matrix tweaks
 make_option(c("-s", "--sample_sd"), type="character", default= "", help="File containing the standard deviation of SNPs; if provided, used to scale LDSC gcov terms."),
 make_option(c("-b", "--block_covar"), type = "numeric", default= 0.2, help="Specify the degree to which a block structure is enforced, by cluster distance. Default is 0.2"),
-make_option(c("-g", "--WLgamma"), type="numeric", default= 0, help="Specify the extent of the WL shrinkage on the input covariance matrix- 0 is none, 1 is complete!")
+make_option(c("-g", "--WLgamma"), type="character", default= "0", 
+            help="Specify the extent of the WL shrinkage on the input covariance matrix.\nCan pass as a number (1 for no covariance adjustment, 0 for full adjustment), or to specify a method (either MLE or Strimmer)")
 )
 
 #Tools for debugging
@@ -67,8 +68,32 @@ t= c("--gwas_effects=/scratch16/abattle4/ashton/snp_networks/custom_l1_factoriza
      "--covar_matrix=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/ldsr_results/finngen_benchmark/summary_data/gcov_int.tab.csv",
      "--genomic_correction=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/ldsr_results/finngen_benchmark/summary_data/genomic_correction_intercept.tsv",
      "--sample_sd=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwas_extracts/ukbb_benchmark/sample_sd_report.tsv")
+#No covar testing
+t= c("--gwas_effects=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwas_extracts/ukbb_benchmark//ukbb_benchmark.beta.tsv",
+     "--uncertainty=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwas_extracts/ukbb_benchmark//ukbb_benchmark.se.tsv",
+     "--trait_names=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwas_extracts/ukbb_benchmark//pheno.names.txt",
+     "--outdir=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results/ukbb_benchmark/comparative_analysis//sklearn_max_covar_manual", 
+     "--fixed_first",  "--nfactors=2", "--bic_var=sklearn_eBIC","--verbosity=1", 
+     "--genomic_correction=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/ldsr_results/finngen_benchmark/summary_data/genomic_correction_intercept.tsv",
+     "--sample_sd=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwas_extracts/ukbb_benchmark/sample_sd_report.tsv")
 
+#Debug run to verify the K parameter selection
+t= c("--gwas_effects=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwas_extracts/ukbb_benchmark_2/ukbb_benchmark_2_conservative.beta.tsv",
+     "--uncertainty=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwas_extracts/ukbb_benchmark_2//ukbb_benchmark_2_conservative.se.tsv",
+     "--trait_names=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwas_extracts/ukbb_benchmark_2//pheno.names.txt",
+     "--outdir=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results/ukbb_benchmark_2/comparative_analysis//sklearn_max_covar_manual", 
+     "--fixed_first",  "--nfactors=KAISER", "--bic_var=sklearn","--verbosity=1",
+     "--covar_matrix=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/ldsr_results/ukbb_benchmark_2/summary_data/gcov_int.tab.csv",
+     "--sample_sd=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwas_extracts/ukbb_benchmark_2/sample_sd_report.tsv")
 
+#finngen version of above:
+t= c("--gwas_effects=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwas_extracts/finngen_benchmark_2/finngen_benchmark_2_conservative.beta.tsv",
+     "--uncertainty=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwas_extracts/finngen_benchmark_2//finngen_benchmark_2_conservative.se.tsv",
+     "--trait_names=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwas_extracts/finngen_benchmark_2//pheno.names.txt",
+     "--outdir=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results/finngen_benchmark_2/comparative_analysis//sklearn_max_covar_manual", 
+     "--fixed_first",  "--nfactors=KAISER", "--bic_var=sklearn","--verbosity=1",
+     "--covar_matrix=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/ldsr_results/finngen_benchmark_2/summary_data/gcov_int.tab.csv",
+     "--sample_sd=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwas_extracts/finngen_benchmark_2/sample_sd_report.tsv")
 args_input <- parse_args(OptionParser(option_list=option_list))#, args = t)
 #args_input <- parse_args(OptionParser(option_list=option_list), args = t)
 #TODO: cut oout this middle-man, make a more efficient argument input vector.
@@ -90,10 +115,11 @@ hp <- readInParamterSpace(args)
 #args$block_covar <- 0.2 This is the issue
 input.dat <- readInData(args)
 X <- input.dat$X; W <- input.dat$W; all_ids <- input.dat$ids; names <- input.dat$trait_names; W_c <- input.dat$W_c; C <- input.dat$C_block
-
+option$C <- C
+option$WLgamma <- args$WLgamma
 #Perform sparsity selection,
 bic.dat <- getBICMatricesGLMNET(opath,option,X,W,W_c, all_ids, names)
-save(bic.dat,option, file = paste0(outdir, "_bic_dat.RData"))
+ save(bic.dat,option, file = paste0(outdir, "_bic_dat.RData"))
 if(is.na(bic.dat$K))
 {
   message("No signal detected under current settings. Program will end")
