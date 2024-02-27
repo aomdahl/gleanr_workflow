@@ -23,7 +23,12 @@ done
 
 ODIR=$2
 FILE=$1
-NUMO=`echo $3`
+NUMO=`echo $4`
+
+LDSC_SRC_DIR=$3
+LDSC_DAT=`basename $LDSC_SRC_DIR`
+LDSC_DIR=`dirname $LDSC_SRC_DIR`
+
 OFILE=${ODIR}ldsr.runscript.sh
 #Get of list of files to run on...
 N=`wc -l $FILE| awk '{print $1}'`
@@ -69,8 +74,8 @@ if [ -n "$NUMO" ] && [ "$NUMO" -eq "$NUMO" ] 2>/dev/null; then
 	     ID=`sed -n "${LN}p" runids.tmp`
 	     echo "python2  ~/.bin/ldsc/ldsc.py \
 	    --rg $QUERY \
-	    --ref-ld-chr eur_w_ld_chr/ \
-	    --w-ld-chr eur_w_ld_chr/ \
+	    --ref-ld-chr $LDSC_DAT/ \
+	    --w-ld-chr $LDSC_DAT/ \
 	    --out ${ODIR}${ID}" >> ${ODIR}_ldsc.run.${BLAH}.sh
 	    LN=$((LN+1))
 	done < commandnames.tmp
@@ -81,14 +86,16 @@ else
   while read p; do
         ID=`sed -n "${LN}p" runids.tmp`
 	echo "Prepping $ID"
-	echo "cd /data/abattle4/aomdahl1/reference_data/ldsc_ref/" > ${ODIR}/${ID}_ldsc.run.sh
+	#Update- make this customizeable, so you can set where the LDSC ref is
+	echo "cd $LDSC_DIR" > ${ODIR}/${ID}_ldsc.run.sh
+	#echo "cd /data/abattle4/aomdahl1/reference_data/ldsc_ref/" > ${ODIR}/${ID}_ldsc.run.sh
         echo "set -euo pipefail" >> ${ODIR}/${ID}_ldsc.run.sh
         echo "ml anaconda; source activate py27" >> ${ODIR}/${ID}_ldsc.run.sh
         QUERY=`echo $p | sed -r 's/\s+//g'`
         echo "python2  ~/.bin/ldsc/ldsc.py \
     --rg $QUERY \
-    --ref-ld-chr eur_w_ld_chr/ \
-    --w-ld-chr eur_w_ld_chr/ \
+    --ref-ld-chr $LDSC_DAT/ \
+    --w-ld-chr $LDSC_DAT/ \
     --out ${ODIR}${ID}" >> ${ODIR}/${ID}_ldsc.run.sh
     LN=$((LN+1))
 done < commandnames.tmp
