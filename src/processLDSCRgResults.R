@@ -37,12 +37,12 @@ if(FALSE)
 if(FALSE)
 {
   args <- list()
-  args$output <- "/home/aomdahl1/scratch16-abattle4/ashton/snp_networks/custom_l1_factorization/results/udler_original/ldsc_summary"
-  args$input_path <- "/home/aomdahl1/scratch16-abattle4/ashton/snp_networks/scratch/udler_td2/ldsr_all/ldsr_results/"
+  args$output <- "/home/aomdahl1/scratch16-abattle4/ashton/snp_networks/custom_l1_factorization/ldsr_results/panUKBB_complete/summary_data/"
+  args$input_path <- "/home/aomdahl1/scratch16-abattle4/ashton/snp_networks/custom_l1_factorization/ldsr_results/panUKBB_complete/rg_ldsr/tabular/"
+  args$which_data <- "ALL"
+  args$focus_trait <- ""
   args$trait_names <- "default"
-  args$trait_names <-"/home/aomdahl1/scratch16-abattle4/ashton/snp_networks/scratch/udler_td2/trait_names_clean.61.txt"
-  args$which_data <- "gcov_int"
-  args$filter_se <- FALSE
+    args$filter_se <- TRUE
 
 }
 if(args$trait_names != "default")
@@ -60,24 +60,30 @@ if(args$which_data[1] == "intercept" | args$which_data == "ALL")
   intercepts <- ldscStdIntoMatrix(look_path = args$input_path,"" , filter_se = args$filter_se)
   write.table(intercepts, file = paste0(args$output, "genomic_correction_intercept.tsv"), quote = FALSE, row.names = FALSE)
 }
+#Extract the genetic correlation data
 if(args$which_data == "rg"| args$which_data == "ALL")
 {
   rg <-  ldscGCOVIntoMatrix(look_path = args$input_path,"rg",filter_se = TRUE)
   rg.raw <-  ldscGCOVIntoMatrix(look_path = args$input_path,"rg",filter_se = FALSE)
+  pvals <-  ldscGCOVIntoMatrix(look_path = args$input_path,"p",filter_se = FALSE)
   if(args$trait_names == "default")
   {
     cn <- unlist(lapply(str_split(colnames(rg),pattern = "\\."), function(x) x[(length(x) - 2)]))
   }
     rg <- renameAll(rg, cn)
     rg.raw <- renameAll(rg, cn)
-  }
+    pvals <- renameAll(pvals, cn)
+    
   plotCorrelationHeatmap(rg,typin ="heatmap.default", title = "Heatmap of genetic correlation (rg)")
   ggsave(filename = paste0(args$output, "rg_heatmap.png"),width = 10, height = 10)
   write.table(rg, file= paste0(args$output, "rg.tab.SE_FILTERs.csv"), quote = FALSE,row.names = FALSE)
   write.table(rg.raw, file= paste0(args$output, "rg.tab.NO_SE_FILTERs.csv"), quote = FALSE,row.names = FALSE)
-  
+  write.table(pvals, file= paste0(args$output, "rg_pvals.csv"), quote = FALSE,row.names = FALSE)
+  message("Ensure printing ocurred....")
   
 }
+
+#Extract p-values
 if(args$which_data == "p"| args$which_data == "ALL")
 {
   p <- ldscGCOVIntoMatrix(look_path = args$input_path,"p")
@@ -98,6 +104,8 @@ if(args$which_data == "p"| args$which_data == "ALL")
   ggsave(filename = paste0(args$output, "rg_heatmap_with_p.png"),width = 15, height = 10)
   }
 }
+
+#Extract observed heritability data
 if(args$which_data == "h2_obs"| args$which_data == "ALL")
 {
   h2obs <- ldscGCOVIntoMatrix(look_path = args$input_path,"h2_obs")
@@ -113,6 +121,10 @@ if(args$which_data == "h2_obs"| args$which_data == "ALL")
     rg <- renameAll(rg, cn)
     p <- renameAll(p, cn)
   }
+  ggplot(h2obs, aes(x = reorder(Trait, -h2_obs), y = h2_obs)) + geom_bar(stat ="identity") +
+    geom_errorbar(aes(ymin=h2_obs-1.96*h2_obs_se, ymax=h2_obs+1.96*h2_obs_se), width=.2, position=position_dodge(.9)) + theme_classic() + coord_flip() + 
+    xlab("Trait") + ylab("h2 (observed scale)")
+  ggsave(filename = paste0(args$output, "_heritability_obs.png"), width = 8, height = 10)
   
 }
 
@@ -125,33 +137,18 @@ if(args$focus_trait != "")
   ggsave(filename = paste0(args$output, "correlation_", args$focus_trait, ".png"), width = 8, height = 10)
 }
 
-if(args$which_data == "ALL" | args$which_data == "h2_obs")
-{
-  
-  ggplot(h2obs, aes(x = reorder(Trait, -h2_obs), y = h2_obs)) + geom_bar(stat ="identity") +
-    geom_errorbar(aes(ymin=h2_obs-1.96*h2_obs_se, ymax=h2_obs+1.96*h2_obs_se), width=.2, position=position_dodge(.9)) + theme_classic() + coord_flip() + 
-    xlab("Trait") + ylab("h2 (observed scale)")
-  ggsave(filename = paste0(args$output, "_heritability_obs.png"), width = 8, height = 10)
-  
-  
- # p<- ggplot(df2, aes(x=dose, y=len, fill=supp)) + 
- #   geom_bar(stat="identity", color="black", 
- #            position=position_dodge()) +
- #   geom_errorbar(aes(ymin=len-sd, ymax=len+sd), width=.2,
- #                 position=position_dodge(.9)) 
-  
-}
-
-if(args$which_data == "gcov_int"| args$which_data == "ALL")
+if(args$which_data %in%  c("gcov_int", "gcov_int_se") | args$which_data == "ALL")
 {
   message("Now looking at cohort overlaps...")
   int <- ldscGCOVIntoMatrix(look_path = args$input_path,"gcov_int",filter_se = args$filter_se, filter_fdr = 0.05)
+  int_se <- ldscGCOVIntoMatrix(look_path = args$input_path,"gcov_int_se",filter_se = args$filter_se, filter_fdr = 0.05)
+  #print(int_se)
   if(args$trait_names == "default")
   {
     cn <- unlist(lapply(str_split(colnames(int),pattern = "\\."), function(x) x[(length(x) - 2)]))
     int <- renameAll(int, cn)
+    int_se <- renameAll(int_se, cn)
   }
-print(cn) 
   if(args$cohort_data != "")
   {
     cohorts <- fread(args$cohort_data) %>% set_colnames(c("trait_name", "Cohort")) %>% 
@@ -166,21 +163,26 @@ print(cn)
     merge.frame <- data.frame("col" = col, "Cohort" = unique(cohorts$Cohort))
     cohorts <- left_join(cohorts, merge.frame, by = "Cohort")
   plotCorrelationHeatmap(int, title = "Heatmap of LDSC Rg Intercept\n(cohort overlap effects)",colors = cohorts$col)
-  ggsave(filename = paste0(args$output, "gcov_int.png"),width = 15, height = 10)
+  ggsave(filename = paste0(args$output,"gcov_int", ".png"),width = 15, height = 10)
+  
+  #SE term
+  plotCorrelationHeatmap(int_se, title = "Heatmap of LDSC Rg Intercept\n(cohort overlap effects)",colors = cohorts$col)
+  ggsave(filename = paste0(args$output,"gcov_int_se", ".png"),width = 15, height = 10)
   
 
   }else
   {
-  print(int)
-	  plotCorrelationHeatmap(int, title = "Heatmap of LDSC Rg Intercept\n(cohort overlap effects)")
+    plotCorrelationHeatmap(int, title = "Heatmap of LDSC Rg Intercept\n(cohort overlap effects)")
+    ggsave(filename =paste0(args$output, "gcov_int", ".png"),width = 15, height = 10)
   
-  ggsave(filename = paste0(args$output, "gcov_int.png"),width = 15, height = 10)
+  #SE term
+  plotCorrelationHeatmap(int_se, title = "Heatmap of LDSC Rg Intercept SEs\n(cohort overlap effects)",col_limit = c(0,max(int_se)))
+  ggsave(filename = paste0(args$output,"gcov_int_se", ".png"),width = 15, height = 10)
   
   }
-  #typin ="heatmap.default"
-  
-  
   #Save also the matrix itself.
   stopifnot(all(colnames(int) == rownames(int)))
-  write.table(int, file= paste0(args$output, "gcov_int.tab.csv"), quote = FALSE,row.names = FALSE)
+  write.table(int, file= paste0(args$output, "gcov_int", ".tab.csv"), quote = FALSE,row.names = FALSE)
+ print("Writing out the gcov_int_se file") 
+  write.table(int_se, file= paste0(args$output, "gcov_int_se", ".tab.csv"), quote = FALSE,row.names = FALSE)
 }

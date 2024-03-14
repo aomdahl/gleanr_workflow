@@ -165,11 +165,12 @@ lambdaGCWeights <- function(ldsc.path, file.list, snp.list, feature_list,  file.
 }
 
 
-ldscTableToMatrix <- function(joined_main, col_pick, diag_scores = 1, null_scores = 0)
+ldscTableToMatrixOLD <- function(joined_main, col_pick, diag_scores = 1, null_scores = 0)
 {
   overlap.mat <- joined_main %>% select(p1, p2, !!sym(col_pick)) %>% mutate("id" = paste0(p1, ":", p2)) %>% distinct_at(vars(id), .keep_all = TRUE) %>% 
     select(-id) %>% pivot_wider(values_from = !!sym(col_pick), names_from =p1) %>% arrange(p2) 
-  
+  if("gcov_int_se" == col_pick) diag_scores <- NA
+
   #which ons are missing?
   #colnames(overlap.mat)[!(colnames(overlap.mat) %in% overlap.mat$p2)]
   #overlap.mat$p2[!(overlap.mat$p2 %in% colnames(overlap.mat))]
@@ -204,7 +205,7 @@ ldscTableToMatrix <- function(joined_main, col_pick, diag_scores = 1, null_score
   stopifnot(all(colnames(new.overlap.mat)[-1] == new.overlap.mat$p2))
   ldscintmatrix <- as.matrix(new.overlap.mat[,-1])
   diag(ldscintmatrix) <- diag_scores
-
+  
   #make sure symmetric- garabage code
   m <- ldscintmatrix
   for(i in 1:nrow(m))
@@ -233,6 +234,55 @@ ldscTableToMatrix <- function(joined_main, col_pick, diag_scores = 1, null_score
   return(m)
 }
 
+ldscTableToMatrix <- function(joined_main, col_pick, diag_scores = 1, null_scores = NA)
+{
+  #ALTERNATIVE VERSION:
+  all.phenos <- unique(c(joined_main$p1,joined_main$p2))
+  out.mat <- matrix(NA, length(all.phenos), length(all.phenos))
+  #Convert the names to indices
+  x.ax <- sapply(joined_main$p1, function(x) which(all.phenos == x))
+  y.ax <- sapply(joined_main$p2, function(x) which(all.phenos == x))
+  col.ind <- which(colnames(joined_main) == col_pick)
+  long.only <- as.matrix(cbind(x.ax, y.ax, joined_main[,..col.ind]))
+  out.mat[ long.only[, 1:2] ] <- long.only[,3]
+  
+  diag(out.mat) <- diag_scores
+  colnames(out.mat) <- all.phenos; rownames(out.mat) <- all.phenos
+  #make sure symmetric- garabage code
+  m <- out.mat
+  for(i in 1:nrow(m))
+  {
+    for(j in 1:ncol(m))
+    {
+      if( j >= i) {
+        if(is.na(m[i,j]) |is.na(m[j,i]) |  (round(m[i,j], digits = 3) != round(m[j,i], digits = 3)))
+        {
+          #message("non-symmetric entry. Replacing if NA, leaving otherwise.")
+          if(is.na(m[i,j]) & (!is.na(m[j,i])))
+          {
+            m[i,j] <- m[j,i]
+          } else if(is.na(m[j,i]) & !is.na(m[i,j]))
+          {
+            m[j,i] <- m[i,j]
+          }
+        }else
+        {
+          #message("No replacement possible for cell.")
+        }
+      }
+    }
+  }
+  m[is.na(m)] <- null_scores
+  if(any(is.na(m))){ message("Matrix contains ", sum(is.na(m)), " null entries.")}
+  
+  #some sanity spot checks
+  rand.checks <- sample(1:nrow(joined_main), 5)
+  x.check <- sapply(joined_main$p1[rand.checks], function(x) which(all.phenos == x))
+  y.check <- sapply(joined_main$p2[rand.checks], function(x) which(all.phenos == x))
+  stopifnot(all(sapply(1:length(rand.checks), function(i) m[x.check[i], y.check[i]] == joined_main[rand.checks[i],..col.ind])))
+                                                                                  
+  return(m)
+}
 
 quickRead <- function(look_path, pattern)
 {
@@ -301,6 +351,7 @@ ldscGCOVIntoMatrix <- function(look_path = "/scratch16/abattle4/ashton/snp_netwo
       fdr <- rep(1, length(z.stat))
       fdr[!is.na(z.stat)] <- fdr.sub #put in the FDR.
       joined.main$gcov_int[fdr > filter_fdr] <- 0 #keep only those passing my FDR estimate.
+      joined.main$gcov_int_se[fdr > filter_fdr] <- 0 #keep only those passing my FDR estimate.
       } else(filter_se)
       {
         #Option to do it with confidence interval, or with a p-value of some kind of correction.
@@ -309,8 +360,6 @@ ldscGCOVIntoMatrix <- function(look_path = "/scratch16/abattle4/ashton/snp_netwo
         nullify_cases <- (lower < 0 & upper > 0) | is.na(joined.main$gcov_int)
         joined.main$gcov_int[nullify_cases] <- 0
       }
-
-      
     }
     else
     {
@@ -369,6 +418,7 @@ ldscStdIntoMatrix <- function(look_path, which.col, filter_se = FALSE)
   if(any(max.n$snp_overlap < 200000))
   {
     message("Beware- studies have fewer than 200,000 SNPS contributing to their estimates. This is recommended against by LDSC")
+    message( max.n[which(max.n$snp_overlap < 200000),1])
   }
   if(filter_se)
   {
