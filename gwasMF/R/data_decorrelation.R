@@ -254,8 +254,12 @@ truncatedCovarMatrix <- function(Z, z_thresh=2)
 updateGammaShrinkage <- function(X,W,C,U,V,par_init=0)
 {
 
-  optim(par=par_init, fn = mleCovarFull,
+  optim.version <- optim(par=par_init, fn = mleCovarFull,
         X=X,W=W, C=C, X_hat=U %*% t(V), lower = 0, upper = 1, method = "Brent")$par
+
+  my.version <- sapply(seq(0,1,by=0.05), function(par) mleCovarFull(X, W, X_hat=U %*% t(V), C, par))
+  stopifnot(abs(seq(0,1,by=0.05)[which.min(my.version)]) - optim.version <= 0.05)
+  return(min(optim.version, my.version))
 }
 
 
@@ -280,5 +284,17 @@ mleCovarFull <- function(X, W, X_hat, C, par)
   gamma=par
   I = diag(ncol(X))
   full_C= lambda * I + (1-lambda) * C
-  norm(cor(z_resid)-full_C, "F" )
+  z_resid_cor <-cor(z_resid)
+  #Alternative version- oomit likely significant effect
+  mod.z <- abs(X*W) > 2
+  z_resid_mod <- z_resid;  z_resid_mod[mod.z] <- NA
+  z_resid_cor_mod <- cor(mod.z, use = "pairwise.complete.obs")
+  z_resid_cor_mod <- blockifyCovarianceMatrix(create_blocks(z_resid_cor_mod, cor_thr=0.2), z_resid_cor_mod)
+
+
+  z_resid_cor <- blockifyCovarianceMatrix(create_blocks(z_resid_cor, cor_thr=0.2), z_resid_cor)
+  #norm(cov(z_resid)-full_C, "F" ) #This isn't fair, blockify.
+  #norm(z_resid_cor-full_C, "F" ) #This isn't fair, blockify.
+  norm(z_resid_cor_mod-full_C, "F" )#Now trying the mod versino...
+
 }

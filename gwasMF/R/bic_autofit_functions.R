@@ -11,8 +11,8 @@ trackAlternativeConvergences <- function(X,W,W_c, U,V, index, record.data, u.alp
   track.modes[["simple.sum"]] = record.data$alpha.s[[index]] + record.data$lambda.s[[index]]
   track.modes[["U.norm"]] = norm(U, "F")
   track.modes[["V.norm"]] = norm(V, "F")
-  track.modes[["U"]] = U
-  track.modes[["V"]] = V
+  track.modes[["U"]] = U #For memory?
+  track.modes[["V"]] = V #For memory?
   #scaled sum mode
   track.modes[["lambda.max"]] <-  v.lambdamax
   track.modes[["alpha.max"]] <- u.alphamax
@@ -1211,6 +1211,7 @@ getBICMatrices <- function(opath,option,X,W,W_c, all_ids, names, min.iter = 2,
     #align
     aligned <- AlignFactorMatrices(X,W,optimal.u,optimal.v); optimal.u <- aligned$U; optimal.v<- aligned$V
     #Check convergence
+    #Possible that the tracking of alternative converngcnes is huring our mmeory..
     conv.options[[i]] <- trackAlternativeConvergences(X,W,W_c, optimal.u,optimal.v, i, rec.dat, u.fits$sparsity_space, v.fits$sparsity_space, option)
     #Will this break something?
     i = i+1
@@ -1576,7 +1577,7 @@ gleaner <- function(X,W, snp.ids, trait.names, C = NULL, K=0, gwasmfiter =5, rep
 }
 
 #####
-#Verion optimized for glmnet
+#Version optimized for glmnet
 #bic.dat <- getBICMatricesGLMNET(opath,option,X,W,W_c, all_ids, names)
 getBICMatricesGLMNET <- function(opath,option,X,W,W_c, all_ids, names, min.iter = 2, max.iter = 100, burn.in.iter = 0,
                                  init.mat = NULL, rg_ref=NULL)
@@ -1584,15 +1585,20 @@ getBICMatricesGLMNET <- function(opath,option,X,W,W_c, all_ids, names, min.iter 
   bic.type = 4
   W_ld = NULL
   conv.options <- list()
+  #Data to track
   rec.dat <- list("alphas"=c(), "lambdas"=c(), "bic.a" = c(), "bic.l"=c(), "obj"=c(),
                   "v.sparsity" = c(), "u.sparsity"=c(), "iter"=c(), "sd.sparsity.u" = c(), "sd.sparsity.v" = c(),
                   "alpha.s" = c(), "lambda.s" = c(), "Ks" = c(), "Vs" = list(), "X_hat" = c(), "sparsity.obj" <- list())
   #If we get columns with NA at this stage, we want to reset and drop those columns at the beginning.
   #Currently, just using NULL for W_ld
   #In the case we don't want any sparsity, just terminate early.
-
-    burn.in.sparsity <- DefineSparsitySpaceInit(X, W, W_c, NULL, option, burn.in = burn.in.iter, rg_ref = rg_ref) #If this finds one with NA, cut them out here, and reset K; we want to check pve here too.
-    if(option$bic.var == "NONE")
+  print(pryr::mem_used())
+  print("Define sparsity space")
+  print("Memory change:")
+  print(pryr::mem_change(
+    burn.in.sparsity <- DefineSparsitySpaceInit(X, W, W_c, NULL, option, burn.in = burn.in.iter, rg_ref = rg_ref))) #If this finds one with NA, cut them out here, and reset K; we want to check pve here too.
+  print(paste0("Current memory usage:", pryr::mem_used()))
+if(option$bic.var == "NONE")
     {
       return(list("optimal.v" = burn.in.sparsity$V_burn,"resid.var" = NA,
                   "rec.dat" = rec.dat, "lambda"=1e-20, "alpha"=1e-20, "options" = option,
@@ -1630,7 +1636,8 @@ getBICMatricesGLMNET <- function(opath,option,X,W,W_c, all_ids, names, min.iter 
   option$regression_method = "glmnet"
   while(i < max.iter & NOT.CONVERGED){
     #TEST version
-    if(i == 1 & args$WLgamma == "MLE")
+    #if(i == 1 & args$WLgamma == "MLE")
+    if(FALSE)
     {
       message("Using the iterative update version to estimate gamma. Not recommended.")
       gamma.list <- c(option$WLgamma)
@@ -1675,7 +1682,10 @@ getBICMatricesGLMNET <- function(opath,option,X,W,W_c, all_ids, names, min.iter 
     bic.var = option$bic.var
     option$alpha1 <- NA # Important
     option$lambda1 <- NA #important.
+    print(paste0("Fitting U, iteration ", i))
     u.fit <- FitUWrapper(X, W, W_c, optimal.v, option)
+    print(pryr::mem_used())
+
     rec.dat$alphas <- UpdateAndCheckSparsityParam(rec.dat$alphas, u.fit$alpha.sel, errorReport = TRUE)
     rec.dat$bic.a <- c(rec.dat$bic.a,u.fit$bic)
     #Pick the best choice from here, using threshold.
@@ -1693,7 +1703,9 @@ getBICMatricesGLMNET <- function(opath,option,X,W,W_c, all_ids, names, min.iter 
 
 
     #fit V now
+    print(paste0("Fitting V, iteration ", i))
     v.fits <- FitVWrapper(X,W,W_c, optimal.u,option)
+    print(pryr::mem_used())
     rec.dat$lambda.s <- c(rec.dat$lambda.s,v.fits$lambda.sel)
     rec.dat$Ks <- c(rec.dat$Ks, ncol(optimal.v)) #this is based on the previous model?, we haven't pruned out empty columns yet?
     optimal.v <- v.fits$V

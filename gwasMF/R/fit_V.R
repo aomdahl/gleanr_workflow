@@ -188,6 +188,7 @@ FitVGlobal <- function(X, W, W_c, U, option, formerV = NULL)
   joined.weights <- lapply(1:nrow(X), function(i) t(W_c) %*% (diag(W[i,]))) #this is very fast
   #long.u <- Matrix::bdiag(weighted.copies) #weight this ish too you silly man.
   #REORDER approach- may be less expensive?
+  print(paste0("made joined weight: ", pryr::mem_used()))
 
   #old way- very slow
   if(FALSE)
@@ -226,7 +227,7 @@ FitVGlobal <- function(X, W, W_c, U, option, formerV = NULL)
   }else{
     long.u <- do.call("rbind", all.pieces)
   }
-
+  print(paste0("Joined matrices: ", pryr::mem_used()))
   nopen.cols <- sapply(1:ncol(long.u), function(x) x %% K)
 
   #special case this logic failes on
@@ -280,6 +281,8 @@ FitVGlobal <- function(X, W, W_c, U, option, formerV = NULL)
    #every first entry is 0
    fit = glmnet::glmnet(x = long.u, y = long.x, family = "gaussian", alpha = 1,
                         intercept = FALSE, standardize = option$std_coef, penalty.factor = lasso.active.set) #lambda = option[['alpha1']],
+   print(paste0("No set lambda: ", pryr::mem_used()))
+   print(pryr::mem_used())
 
    lambda.list <- fit$lambda
    penalty <- fit$penalty
@@ -297,6 +300,9 @@ FitVGlobal <- function(X, W, W_c, U, option, formerV = NULL)
      }
    }
    bic.list <- calculateBIC(fit, long.u, long.x, option$bic.var)
+
+      print(paste0("Calculated BIC: ", pryr::mem_used()))
+   print(pryr::mem_used())
    #bic.list <- BICglm(fit, option$bic.var)
    #bic.list <- sklearnBIC(fit,long.u,long.x, bic.mode =  option$bic.var)
    #bic.list <- ZouBIC(fit, long.u, long.x)
@@ -324,10 +330,11 @@ FitVGlobal <- function(X, W, W_c, U, option, formerV = NULL)
 
 
    #every first entry is 0
+
    fit = glmnet::glmnet(x = long.u, y = long.x, family = "gaussian", alpha = 1,
                         intercept = FALSE, standardize = option$std_coef, penalty.factor = lasso.active.set,
                         lambda=option$lambda1)
-
+   print(paste0("Glmnet- every first entry is 0: ", pryr::mem_used()))
    penalty <- fit$penalty
    v.curr = matrix(coef(fit, s = option$lambda1)[-1], nrow = ncol(X), ncol = ncol(U),byrow = TRUE)
    return(list("V" = v.curr, "sparsity_space"=max(fit$lambda), "total.log.lik" = NA, "penalty" = NA, "s"=s,"SSE"=deviance(fit)))

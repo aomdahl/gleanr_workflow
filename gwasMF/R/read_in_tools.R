@@ -149,7 +149,19 @@ readInCovariance <- function(p, name_order, diag_enforce = 1)
 
     w.in <- as.matrix(data.table::fread(p, check.names = TRUE))
     row.names(w.in) <- colnames(w.in)
-    stopifnot(all(diag(as.matrix(w.in)) == diag_enforce))
+    if(!is.na(diag_enforce))
+    {
+      stopifnot(all(diag(as.matrix(w.in)) == diag_enforce))
+    }
+
+    if(any(abs(w.in) > 1))
+    {
+	     message("Some entries in this matrix are greater than 1. This is possible b/c LDSC is not constrained so can yield estimates that exceed.")
+    	     message("Default behavior is to set these values to +/-0.95. Modify the matrix directly if you want different behavior")
+	     s <- sign(w.in)
+	     w.in[abs(w.in) > 1] <- 0.95 #set all values above 1 to 0.95
+	     w.in <- w.in * s #and then return the sign
+    }
     if(!isSymmetric(w.in, tol = 1e-3))
     {
       #could just be due to numerical errors, round it
@@ -439,6 +451,11 @@ SampleOverlapCovarHandler <- function(args, names, X)
 
   #Just read in the file
   C <- readInCovariance(args$covar_matrix, names)
+  if(any(abs(C) > 1))
+  {
+    message("Warning- some of the covariance overlap effect estimates > 1. These may severely influence factorization results, especially if you aren't scaling by sample SD")
+    message("Consider threshold these to < 1")
+  }
   #If we are scaling by the sample standard deviation, assuming we use LDSC input
   if(args$sample_sd != "")
   {
@@ -447,6 +464,7 @@ SampleOverlapCovarHandler <- function(args, names, X)
     sd.scaling <- 1/(as.matrix(sd.df$V2) %*% t(as.matrix(sd.df$V2)))
     diag(sd.scaling) <- 1 #make it correlation matrix
     C <- C*sd.scaling
+    write.table(C, file = paste0(args$output, "_scaledCovarMatrix.txt"), quote = FALSE, row.names = FALSE)
   }
   #perform covariance matrix shrinkage
 
@@ -459,14 +477,24 @@ SampleOverlapCovarHandler <- function(args, names, X)
   covar <- blockifyCovarianceMatrix(blocks, C)
   if(toupper(args$WLgamma) == "STRIMMER")
   {
-    se.path= gsub(args$covar_matrix, pattern="gcov_int.tab.csv", replacement = "gcov_int_se.tab.csv")
-    C_se <- readInCovariance(se.path, diag_enforce = 0)
+    	se.path = args$covar_se_matrix
+	#se.path= gsub(args$covar_matrix, pattern="gcov_int.tab.csv", replacement = "gcov_int_se.tab.csv")
+    C_se <- readInCovariance(se.path, diag_enforce = NA)
+
+    diag(C_se) <- 0
     C_se <- C_se * sd.scaling
     C_se[covar == 0] <- 0
+
     offdiag <- covar; diag(offdiag) <- 0
-    gamma = sum(C_se^2) / sum(offdiag^2)
+    gamma = sum(C_se^2) / sum(offdiag^2) #squaring C_se since we want variance, not SE
+    args$WLgamma <- gamma
+    message("Selected gamma is:", gamma)
+    message("Norm prior to adjustment: ", norm(covar, "F"))
+    adjusted.C <- linearShrinkLWSimple(covar, gamma)
+   message("Norm following adjustment: ", norm(adjusted.C, "F"))
   }else if(toupper(args$WLgamma) == "MLE")
   {
+	  message("MLE version isn't implemented, don't use it.")
     adjusted.C <- covar #no change, adjust later
   }else
   {
