@@ -213,10 +213,21 @@ FitVGlobal <- function(X, W, W_c, U, option, formerV = NULL, reg.elements=NULL)
     #s <- max(lapply(all.pieces, function(x) x$norm.list))
     long.u <- long.u/s
   }else{
-    all.pieces <- mclapply(blocks, function(x) stackUs(x, M,K, joined.weights, U, norm = option$scale), mc.cores=avail.cores)
+    tictoc::tic()
+    all.pieces <- lapply(blocks, function(x) stackUs(x, M,K, joined.weights, U, norm = option$scale))
+    #all.pieces <- parallel:mclapply(blocks, function(x) stackUs(x, M,K, joined.weights, U, norm = option$scale), mc.cores=avail.cores)
     long.u <- do.call("rbind",all.pieces )
-    #combine
     # long.u <- do.call("rbind",lapply(blocks, function(x) stackUs(x, M,K, joined.weights, U, norm = option$scale)) )
+    tictoc::toc()
+    lobstr::mem_used()
+    #versus
+    tictoc::tic()
+    long.u.new <- completeUExpand(joined.weights, nrow(U),M,K,U)
+    stopifnot(all(long.u.new == long.u))
+    #combine
+    tictoc::toc()
+    lobstr::mem_used()
+
   }
   print(paste0("Joined matrices: ", pryr::mem_used()))
   nopen.cols <- sapply(1:ncol(long.u), function(x) x %% K)
@@ -270,8 +281,10 @@ FitVGlobal <- function(X, W, W_c, U, option, formerV = NULL, reg.elements=NULL)
  {
 
    #every first entry is 0
+   message("Fitting model")
    fit = glmnet::glmnet(x = long.u, y = long.x, family = "gaussian", alpha = 1,
                         intercept = FALSE, standardize = option$std_coef, penalty.factor = lasso.active.set) #lambda = option[['alpha1']],
+   message("fit complete")
    print(paste0("No set lambda: ", pryr::mem_used()))
    print(pryr::mem_used())
 
@@ -390,39 +403,31 @@ FitVWrapper <- function(X, W,W_c, U, option, formerV = NULL,...)
 stackUs <- function(nsnps, M, K, joined.weights, U, norm = FALSE)
 {
   if(norm){norm.list <- rep(0, M)}
-  global.stack <- list()
-  query.stack <- matrix(cbind(c(sapply(1:M, function(x) rep(x,K)),
-                                1:(M * K))),
-                        ncol = 2)
-  for(i in nsnps)
-  {
-    if(all(U[i,] == 0))
-    {
-      global.stack[[i]] <-  Matrix::Matrix(matrix(0, nrow = M, ncol = K*M))
-    }else
-    {
-      #curr.stack <- joined.weights[[i]] %*% do.call("cbind", lapply(1:M, function(j) {temp <- matrix(0, nrow = M, ncol = K); temp[j,] <- U[i,]; temp}))
-      #alternate approach
-      alt.stack <- matrix(0, nrow = M, ncol = K*M)
-      alt.stack[query.stack] <- rep(U[i,],M)
-      global.stack[[i]] <- Matrix::Matrix(joined.weights[[i]] %*% alt.stack)
-      #stopifnot(all(alt.version == curr.stack))
+  test <- do.call("rbind", lapply(0:(length(nsnps)-1), function(n) matrix(c(sapply(1:M, function(x) rep((x + n*M),K)),
+                                                                            1:(M * K),
+                                                                            rep(U[(n + min(nsnps)),],M)),
+                                                                          ncol = 3)))
 
-    }
 
-  }
-  ret.dat =  Matrix::Matrix(do.call("rbind", global.stack), sparse = TRUE)
 
-  #Alternative version
-
-  test <- do.call("rbind", lapply(0:(length(nsnps)-1), function(n) matrix(cbind(c(sapply(1:M, function(x) rep((x + n*M),K)),
-                                                          1:(M * K))),
-                                                  ncol = 2)))
-
+  ret.dat.alt <- Matrix::bdiag(joined.weights[nsnps]) %*% Matrix::sparseMatrix(i = test[,1], j = test[,2], x = test[,3], dims = c(length(nsnps) * M, M*K))
   if(norm)
   {
-    return(list("matrices"=ret.dat, "norm.list"=lapply(norm.list, sqrt)))
+    return(list("matrices"=ret.dat.alt, "norm.list"=lapply(norm.list, sqrt)))
   }
-  return(ret.dat)
-
+  return(ret.dat.alt)
 }
+
+#An alternative to compare
+completeUExpand <- function(joined.weights, N,M,K,U)
+{
+  test <- do.call("rbind", lapply(1:N, function(n) matrix(c(sapply(1:M, function(m) rep(m+(n-1)*M,K)),
+                                                            1:(M * K),
+                                                            rep(U[n,],M)),
+                                                          ncol = 3)))
+  ret.dat.alt <- Matrix::sparseMatrix(i = test[,1], j = test[,2], x = test[,3], dims = c(N * M, M*K))
+  Matrix::bdiag(joined.weights) %*% ret.dat.alt
+}
+
+
+
