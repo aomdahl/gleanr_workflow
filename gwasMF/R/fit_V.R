@@ -55,15 +55,9 @@ fit_V <- function(X, W, U, option, formerV = NULL){
         ## weight the equations on both sides
     if(option$gls)
     {
-      #TODO: simplify. Just need C, not both S and C here.
-      #adjusting for covariance structure.... here it is LD in U
-      #We need to make the covariance matrix is mostly empty...
+
       covar <- diag(1/w) %*% option$LD %*% diag(1/w) #rather than doing this for each SNP each time, we should just do it once for all SNPs
-      #TODO- implement this later
       u_inv_t <- buildWhiteningMatrix(covar, blockify = FALSE) #already blockifyied the matrix...
-      #this condition isn't necessarily reasonable, because adjustment might happen to force PD matrix.
-      #might need to enforce this directly
-      #stopifnot(all(diag(u_inv_t) == w)) #this isn't necessarily true. only if its a diagonal covar matri.
       xp <- adjustMatrixAsNeeded(x, covar, whitener=u_inv_t)
       Lp <- adjustMatrixAsNeeded(U, covar, whitener=u_inv_t)
     }else
@@ -175,34 +169,27 @@ fit_V <- function(X, W, U, option, formerV = NULL){
     return(list("V" = FactorM, "sparsity_space"=sparsity.est, "total.log.lik" = running.loglik))
 }
 
-FitVGlobal <- function(X, W, W_c, U, option, formerV = NULL)
+FitVGlobal <- function(X, W, W_c, U, option, formerV = NULL, reg.elements=NULL)
 {
+  avail.cores <- parallel::detectCores() -1
   K <- ncol(U)
   M = ncol(X)
   N=nrow(X)
    sparsity.est <- NA; penalty = NA; ll = NA; l = NA; FactorM = c(); penalty = NA
-  long.x <- c(t(W_c) %*% t(X*W)) #Stacked by SNP
-  if(option$std_y) { long.x <- mleStdVector(long.x)}
-  #long.x <- c(X*W)
-  #\weighted.copies <- lapply(1:ncol(X), function(i) diag(W[,i]) %*% U)
-  joined.weights <- lapply(1:nrow(X), function(i) t(W_c) %*% (diag(W[i,]))) #this is very fast
-  #long.u <- Matrix::bdiag(weighted.copies) #weight this ish too you silly man.
-  #REORDER approach- may be less expensive?
-  print(paste0("made joined weight: ", pryr::mem_used()))
+   if(is.null(reg.elements))
+   {
+     long.x <- c(t(W_c) %*% t(X*W)) #Stacked by SNP
+     if(option$std_y) { long.x <- mleStdVector(long.x)}
+     #Weights to multiple the reordered elements of U by
+     joined.weights <- lapply(1:nrow(X), function(i) t(W_c) %*% (diag(W[i,])))
+     print(paste0("made joined weight: ", pryr::mem_used()))
+   }else
+   {
+     long.x <- reg.elements$long.x
+     joined.weights <-  reg.elements$joined.weights
+   }
 
-  #old way- very slow
-  if(FALSE)
-  {
-    long.u <- NULL
-    long.u <- Matrix::Matrix(0, nrow = M*N, ncol= M*K,sparse = TRUE)
-    for(i in 1:nrow(U))
-    {
-      #MAKE THE LONG MATRIX VERSION of it
-      expanded.list <- t(W_c) %*% (diag(W[i,])%*% Matrix::bdiag(lapply(1:M, function(j) t(U[i,]))))
-      start.index <- ((i-1)*M)+1
-      long.u[start.index:(i*M),] <- expanded.list
-    }
-  }
+
   #New way- much faster:
   nsnps = min(1000, nrow(U))
   interval <- floor(nrow(X)/nsnps)
@@ -213,19 +200,23 @@ FitVGlobal <- function(X, W, W_c, U, option, formerV = NULL)
     blocks[[length(blocks) + 1]] <- (interval * nsnps + 1) : (interval * nsnps + extra.count)
   }
 
-  all.pieces <- lapply(blocks, function(x) stackUs(x, M,K, joined.weights, U, norm = option$scale))
+
   s = 1
   if(option$scale)
   {
     #s.tmp <- FrobScale(long.u)
     #s <- s.tmp$s; long.u <- s.tmp$m.scaled
     #add across all blocks
+    all.pieces <- lapply(blocks, function(x) stackUs(x, M,K, joined.weights, U, norm = option$scale))
     long.u <- do.call("rbind", lapply(all.pieces, function(x) x$matrices))
     s <- max(sapply(1:M, function(i) sum(sapply(all.pieces, function(x) x$norm.list[[i]]))))
     #s <- max(lapply(all.pieces, function(x) x$norm.list))
     long.u <- long.u/s
   }else{
-    long.u <- do.call("rbind", all.pieces)
+    all.pieces <- mclapply(blocks, function(x) stackUs(x, M,K, joined.weights, U, norm = option$scale), mc.cores=avail.cores)
+    long.u <- do.call("rbind",all.pieces )
+    #combine
+    # long.u <- do.call("rbind",lapply(blocks, function(x) stackUs(x, M,K, joined.weights, U, norm = option$scale)) )
   }
   print(paste0("Joined matrices: ", pryr::mem_used()))
   nopen.cols <- sapply(1:ncol(long.u), function(x) x %% K)
@@ -374,19 +365,19 @@ FitVGlobal <- function(X, W, W_c, U, option, formerV = NULL)
 #' @return List containing the new V ("V") and the sparsity upper limits for each regression steps ("sparsity_space")
 #' @export
 #'
-FitVWrapper <- function(X, W,W_c, U, option, formerV = NULL)
+FitVWrapper <- function(X, W,W_c, U, option, formerV = NULL,...)
 {
   #HERE?
   #fit_V(X, W, as.matrix(U), option, formerV = formerV)
-  FitVGlobal(X, W, W_c, as.matrix(U), option, formerV = formerV)
+  FitVGlobal(X, W, W_c, as.matrix(U), option, formerV = formerV,...)
 }
 
 
 
 
-##HELPER FUNCTION for quickly stakcing vs sparsely
+##HELPER FUNCTION for quickly stacking vs sparsely
 
-#' Stack weighted elements of U to learn v. Could be helpful for paralellizing
+#' Stack weighted elements of U to learn V. Could be helpful for paralellizing
 #'
 #' @param nsnps the chunk size to analyze
 #' @param M the number of studies
@@ -400,19 +391,34 @@ stackUs <- function(nsnps, M, K, joined.weights, U, norm = FALSE)
 {
   if(norm){norm.list <- rep(0, M)}
   global.stack <- list()
+  query.stack <- matrix(cbind(c(sapply(1:M, function(x) rep(x,K)),
+                                1:(M * K))),
+                        ncol = 2)
   for(i in nsnps)
   {
-    curr.stack <- matrix(0, nrow = M, ncol = K*M)
-    for(m in 1:M)
+    if(all(U[i,] == 0))
     {
-      prod.blank <- matrix(0, nrow = M, ncol = K)
-      prod.blank[m,] <- U[i,]
-      curr.stack[,(K*(m-1)+1):(m*K)] <- joined.weights[[i]] %*% prod.blank
-      if(norm){norm.list[m] <- norm.list[m] + Matrix::norm(curr.stack[,(K*(m-1)+1):(m*K)], type = "F")^2 }
+      global.stack[[i]] <-  Matrix::Matrix(matrix(0, nrow = M, ncol = K*M))
+    }else
+    {
+      #curr.stack <- joined.weights[[i]] %*% do.call("cbind", lapply(1:M, function(j) {temp <- matrix(0, nrow = M, ncol = K); temp[j,] <- U[i,]; temp}))
+      #alternate approach
+      alt.stack <- matrix(0, nrow = M, ncol = K*M)
+      alt.stack[query.stack] <- rep(U[i,],M)
+      global.stack[[i]] <- Matrix::Matrix(joined.weights[[i]] %*% alt.stack)
+      #stopifnot(all(alt.version == curr.stack))
+
     }
-    global.stack[[i]] <-curr.stack
+
   }
   ret.dat =  Matrix::Matrix(do.call("rbind", global.stack), sparse = TRUE)
+
+  #Alternative version
+
+  test <- do.call("rbind", lapply(0:(length(nsnps)-1), function(n) matrix(cbind(c(sapply(1:M, function(x) rep((x + n*M),K)),
+                                                          1:(M * K))),
+                                                  ncol = 2)))
+
   if(norm)
   {
     return(list("matrices"=ret.dat, "norm.list"=lapply(norm.list, sqrt)))
