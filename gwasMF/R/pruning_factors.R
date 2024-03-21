@@ -242,7 +242,7 @@ OrderEverythingByPVE <- function(ret,X,W)
 {
   return.dat <- ret
   pve=PercentVarEx(as.matrix(X)*as.matrix(W), v = ret$V)
-  pveo <- order(pve)
+  pveo <- order(pve, decreasing=TRUE)
   return.dat$V<- return.dat$V[,pveo]
   return.dat$U <- return.dat$U[,pveo]
   return.dat$PVE <- pve[pveo]
