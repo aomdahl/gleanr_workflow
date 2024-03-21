@@ -24,6 +24,7 @@ make_option(c("-v", "--verbosity"), type="integer", default= 0, help="How much o
 #These related to covariance matrix tweaks
 make_option(c("-s", "--sample_sd"), type="character", default= "", help="File containing the standard deviation of SNPs; if provided, used to scale LDSC gcov terms."),
 make_option(c("-b", "--block_covar"), type = "numeric", default= 0.2, help="Specify the degree to which a block structure is enforced, by cluster distance. Default is 0.2"),
+make_option(c("--covar_se_matrix"), type = "character", default="", help="Path to covar se matrix, needed if using Strimmer gamma specification."),
 make_option(c("-g", "--WLgamma"), type="character", default= "0", 
             help="Specify the extent of the WL shrinkage on the input covariance matrix.\nCan pass as a number (1 for no covariance adjustment, 0 for full adjustment), or to specify a method (either MLE or Strimmer)")
 )
@@ -50,34 +51,17 @@ t= c("--gwas_effects=/scratch16/abattle4/ashton/snp_networks/gwas_decomp_ldsc/gw
      "--sample_sd=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwas_extracts/ukbb_GWAS_h2-0.1_rg-0.9/sample_sd_report.tsv",
      "--WLgamma=0.7")
 
+#
+t=c("--uncertainty=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization//gwas_extracts/panUKBB_complete//panUKBB_complete.se.tsv",
+    "--gwas_effects=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization//gwas_extracts/panUKBB_complete//panUKBB_complete.beta.tsv",
+"--trait_names=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization//gwas_extracts/panUKBB_complete//panUKBB_complete.trait_list.tsv", 
+    "--covar_matrix=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization//ldsr_results/panUKBB_complete/summary_data/gcov_int.tab.SELECTED.csv",
+"--outdir=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization//results/panUKBB_complete/",
+"--sample_sd=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization//gwas_extracts/panUKBB_complete//sample_sd_report.SELECTED.tsv","--fixed_first", 
+"--WLgamma=Strimmer","--covar_se_matrix=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/ldsr_results/panUKBB_complete/summary_data/gcov_int_se.tab.SELECTED.csv",
+"--nfactors=KAISER")
+ 
 
-t=c("--sample_sd=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwas_extracts/ukbb_GWAS_h2-0.1_rg-0.9/sample_sd_report_by_name.tsv",
-    "--gwas_effects=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwas_extracts/ukbb_GWAS_h2-0.1_rg-0.9/B.tsv",
-"--uncertainty=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwas_extracts/ukbb_GWAS_h2-0.1_rg-0.9/SE.tsv",
-"--trait_names=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwas_extracts/ukbb_GWAS_h2-0.1_rg-0.9/pheno.names.txt", 
-    "--covar_matrix=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/ldsr_results/ukbb_GWAS_h2-0.1_rg-0.9/summary_data/gcov_int.tab.new_names.txt",
-"--outdir=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results/ukbb_GWAS_h2-0.1_rg-0.9/GLEANER_WL_0.7/no_lambda_correction/",
-"--drop_phenos=Lymphocyte_percentage","--fixed_first", "--WLgamma=0.7")
-
-#testing factorization without regularization:
-t= c("--gwas_effects=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwas_extracts/ukbb_benchmark//ukbb_benchmark.beta.tsv",
-     "--uncertainty=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwas_extracts/ukbb_benchmark//ukbb_benchmark.se.tsv",
-     "--trait_names=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwas_extracts/ukbb_benchmark//pheno.names.txt",
-     "--outdir=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results/ukbb_benchmark/comparative_analysis//sklearn_max_covar_manual", 
-     "--fixed_first",  "--nfactors=2", "--bic_var=NONE","--verbosity=1", 
-     "--covar_matrix=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/ldsr_results/finngen_benchmark/summary_data/gcov_int.tab.csv",
-     "--genomic_correction=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/ldsr_results/finngen_benchmark/summary_data/genomic_correction_intercept.tsv",
-     "--sample_sd=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwas_extracts/ukbb_benchmark/sample_sd_report.tsv")
-#No covar testing
-t= c("--gwas_effects=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwas_extracts/ukbb_benchmark//ukbb_benchmark.beta.tsv",
-     "--uncertainty=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwas_extracts/ukbb_benchmark//ukbb_benchmark.se.tsv",
-     "--trait_names=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwas_extracts/ukbb_benchmark//pheno.names.txt",
-     "--outdir=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results/ukbb_benchmark/comparative_analysis//sklearn_max_covar_manual", 
-     "--fixed_first",  "--nfactors=2", "--bic_var=sklearn_eBIC","--verbosity=1", 
-     "--genomic_correction=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/ldsr_results/finngen_benchmark/summary_data/genomic_correction_intercept.tsv",
-     "--sample_sd=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwas_extracts/ukbb_benchmark/sample_sd_report.tsv")
-
-#Debug run to verify the K parameter selection
 t= c("--gwas_effects=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwas_extracts/ukbb_benchmark_2/ukbb_benchmark_2_conservative.beta.tsv",
      "--uncertainty=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwas_extracts/ukbb_benchmark_2//ukbb_benchmark_2_conservative.se.tsv",
      "--trait_names=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwas_extracts/ukbb_benchmark_2//pheno.names.txt",
@@ -117,8 +101,17 @@ input.dat <- readInData(args)
 X <- input.dat$X; W <- input.dat$W; all_ids <- input.dat$ids; names <- input.dat$trait_names; W_c <- input.dat$W_c; C <- input.dat$C_block
 option$C <- C
 option$WLgamma <- args$WLgamma
+
+#Prep regression datasets (weights, x, etc.)
+#Keep these things in memory so not recreating each time
+reg.vect <- prepRegressionElements(X,W,W_c) #returns sparse matrices since that saves a ton of memory.
+#Loading that all in each time was slow...
+print("Data prepped for regression")
+lobstr::mem_used()
+#What I should do is initialize a GLEANER object, and have all these things in there....
+#Can I make the regvect elements sparse?
 #Perform sparsity selection,
-bic.dat <- getBICMatricesGLMNET(opath,option,X,W,W_c, all_ids, names)
+bic.dat <- getBICMatricesGLMNET(opath,option,X,W,W_c, all_ids, names,reg.elements=reg.vect)
  save(bic.dat,option, file = paste0(outdir, "_bic_dat.RData"))
 if(is.na(bic.dat$K))
 {
@@ -132,7 +125,7 @@ option$alpha1 <- bic.dat$alpha
 option$lambda1 <- bic.dat$lambda
 
 #Perform optimization
-ret <- gwasML_ALS_Routine(option, X, W, W_c, bic.dat$optimal.v, maxK=bic.dat$K) #I like this better
+ret <- gwasML_ALS_Routine(option, X, W, W_c, bic.dat$optimal.v, maxK=bic.dat$K,reg.elements=reg.vect) #I like this better
 ret[["snp.ids"]] <- all_ids
 ret[["trait.names"]] <- names
 save(ret,option, file = paste0(outdir, "_final_dat.RData"))

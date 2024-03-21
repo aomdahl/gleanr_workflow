@@ -90,7 +90,7 @@ DefineSparsitySpaceInit <- function(X, W,W_c, W_ld, option, burn.in = 5,...)
   {
     print(i)
     #U.dat <- FitUWrapper(Xint,Wint,V, new.options)
-    U.dat <- DefineSparsitySpace(Xint, Wint, W_c, V, "U", new.options, fit = "OLS")
+    U.dat <- DefineSparsitySpace(Xint, Wint, W_c, V, "U", new.options, fit = "OLS",reg.elements=reg.elements)
     new.options$K = ncol(U.dat$U) #Update if it has changed
     #If we have ones with NA, they need to get dropped
     #if we have columns with NAs here, we want them gone now so it doesn't jank up downstream stuff.
@@ -138,7 +138,7 @@ DefineSparsitySpaceInit <- function(X, W,W_c, W_ld, option, burn.in = 5,...)
 #' @return
 #' @export
 
-DefineSparsitySpace <- function(X,W,W_cov,fixed,learning, option, fit = "None")
+DefineSparsitySpace <- function(X,W,W_cov,fixed,learning, option, fit = "None",reg.elements=NULL)
 {
   new.options <- option
   new.options$regression_method <- fit
@@ -147,7 +147,7 @@ DefineSparsitySpace <- function(X,W,W_cov,fixed,learning, option, fit = "None")
   if(learning == "V")
   {
     #Not implemented W_cov adjustment for V at this time...
-    free.dat <- FitVWrapper(X, W, W_cov, fixed, new.options);
+    free.dat <- FitVWrapper(X, W, W_cov, fixed, new.options,reg.elements=reg.elements);
     #HERE
   }else #learning U
   {
@@ -158,7 +158,7 @@ DefineSparsitySpace <- function(X,W,W_cov,fixed,learning, option, fit = "None")
     while(!is.null(red.cols))
     {
 
-      free.dat <- FitUWrapper(X,W, W_cov, fixed, new.options)
+      free.dat <- FitUWrapper(X,W, W_cov, fixed, new.options,,reg.elements=reg.elements)
       red.cols <- free.dat$redundant_cols
       if(!is.null(red.cols)){
         message("capturing redundant columns...")
@@ -559,7 +559,7 @@ MatrixChange <- function(new, old)
 
 #Main workhorse function
 #1.26 changes- drop the burn in.
-Update_FL <- function(X, W, W_c, option, preV = NULL, preU = NULL, burn.in = FALSE){
+Update_FL <- function(X, W, W_c, option, preV = NULL, preU = NULL, burn.in = FALSE,reg.elements=NULL){
   # number of features - to avoid using T in R
   #Tracking data for debugging things...
   ll.tracker <- c()
@@ -605,7 +605,7 @@ Update_FL <- function(X, W, W_c, option, preV = NULL, preU = NULL, burn.in = FAL
   og_option <- option[['carry_coeffs']]
   option[['carry_coeffs']] <- FALSE
 
-  U.dat = FitUWrapper(X,W,W_c,V, option) #returns it scaled, with S  #CONFIRM
+  U.dat = FitUWrapper(X,W,W_c,V, option,reg.elements=reg.elements) #returns it scaled, with S  #CONFIRM
   U <- U.dat$U
   option[['carry_coeffs']] <- og_option
   #if(option$debug)
@@ -627,25 +627,37 @@ Update_FL <- function(X, W, W_c, option, preV = NULL, preU = NULL, burn.in = FAL
       print(iii)
       option <- UpdateSparsityMAPAutofit(iii, U,V, option)
     }
-
-    V.new = FitVWrapper(X, W,W_c, U, option)#, formerV = V);  #returns V scaled, with S  #CONFIRM
+    message("fitting V..")
+    V.new = FitVWrapper(X, W,W_c, U, option,reg.elements=reg.elements)#, formerV = V);  #returns V scaled, with S  #CONFIRM
+    message("V fit")
     iteration.ll.total <- V.new$total.log.lik
     ll.tracker <- c(ll.tracker, V.new$total.log.lik)
     penalty.tracker <- c(penalty.tracker, V.new$penalty)
     V.prev <- V
     V = V.new$V
     #The scaling term applied to U
+
     mse.tracker <- c(mse.tracker, norm(W*X-W*(U%*%t(V))/V.new$s, type = "F")/(nrow(X) * ncol(X)))
     iter.tracker <- c(iter.tracker, "V")
+
     easy.objective <- c(easy.objective, getQuickObj(V.new$SSE,nrow(X) * ncol(X), U,V,option))
+
     dev.score <- c(dev.score, V.new$SSE)
+
     #More crap to follow the objective
     #if(option$debug)
     #{
+    message("old problem child")
+    tictoc::tic()
       es.objective <- c(es.objective, GetStepWiseObjective(X,W,W_c,V.prev,V*V.new$s, U,"U",option));
+      tictoc::toc()
+      message("EM objective")
+      tictoc::tic()
       em.objective[[(i.c)]] <- compute_obj(X,W,W_c, U,V,option, globalLL=TRUE, decomp = TRUE, scalar=V.new$s)
+      tictoc::toc()
       s.weight.tracker[[i.c]] <- V.new$s
       i.c <- i.c + 1
+
     #}
     #Just get the matrix out.
     #get the factor specific variance....
@@ -659,11 +671,15 @@ Update_FL <- function(X, W, W_c, option, preV = NULL, preU = NULL, burn.in = FAL
     if(CheckVEmpty(V)) {message("V is empty; ending");  return(UpdateTrackingParams(tracking.data, X,W,W_c,U,V,option, loglik = iteration.ll.total,scalar=V.dat$s))}
     colnames(V) = seq(1, ncol(V));
 
-
+    message("Finished storing data, starting U fit.")
+    message("memory: ", lobstr::mem_used())
     ## update L
-    U.new <- FitUWrapper(X,W,W_c,V, option,r.v = trait.var[iii,])#, prevU = U) #returns U scaled, with S  #CONFIRM
+    U.new <- FitUWrapper(X,W,W_c,V, option,r.v = trait.var[iii,],reg.elements=reg.elements)#, prevU = U) #returns U scaled, with S  #CONFIRM
     U.prev <- U
     U = U.new$U #confirm- its unit norm?
+    message("Now calculating all tracking data after updating U, V...")
+    message("memory: ", lobstr::mem_used())
+    tictoc::tic()
     ll.tracker <- c(ll.tracker, U.new$total.log.lik)
     penalty.tracker <- c(penalty.tracker, U.new$penalty)
     mse.tracker <- c(mse.tracker, norm(W*X-W*(U %*%t(V))/U.new$s, type = "F")/(nrow(X) * ncol(X)))
@@ -696,7 +712,10 @@ Update_FL <- function(X, W, W_c, option, preV = NULL, preU = NULL, burn.in = FAL
     # Drop low PVE and align two matrices
     #V <- DropLowPVE(X,W,V)
     updated.mats <- AlignFactorMatrices(X,W,U, V); U <- updated.mats$U; V <- updated.mats$V
-
+    tictoc::toc()
+    message("Now checking convergence")
+    message("memory: ", lobstr::mem_used())
+    tictoc::tic()
     convergence.status <- ConvergenceConditionsMet(iii,X,W,W_c,U, V,
                                                    tracking.data, option, initV = is.null(preV),
                                                    loglik = iteration.ll.total, scalar = U.dat$s)
@@ -739,6 +758,9 @@ Update_FL <- function(X, W, W_c, option, preV = NULL, preU = NULL, burn.in = FAL
         EndIterStatement(iii, tracking.data, option)
         }
     }
+    message("Now ending or next iter")
+    message("memory:", lobstr::mem_used())
+    tictoc::toc()
   }
 }
 
@@ -754,3 +776,18 @@ EndIterStatement <- function(iter, td, option)
   cat('\n')
 }
 
+#' Generate regression explanatory variable and weighted elements
+#'
+#' @param X
+#' @param W
+#' @param W_c
+#'
+#' @return list containing the joined_weights (the per-snp weights, used in estimating V) and the weighted x Matrix
+#' @export
+#'
+#' @examples
+prepRegressionElements <- function(X,W,W_c)
+{
+  list("joined.weights" = lapply(1:nrow(X), function(i) Matrix::Matrix(t(W_c) %*% (diag(W[i,])))),
+       "long.x"=c(t(W_c) %*% t(X*W)))
+}
