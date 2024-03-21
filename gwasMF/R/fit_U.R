@@ -159,31 +159,28 @@
 
 
 #how can I test and compare this?
-  FitUGlobal <- function(X, W,W_c, V, option, formerU, r.v = NULL)
+  FitUGlobal <- function(X, W,W_c, V, option, formerU, r.v = NULL,reg.elements=NULL)
   {
     #it_U(X, W, W_c, initV, option)
     print(paste0("Starting global U fit: ", pryr::mem_used()))
     max.sparsity <- NA; penalty = NA; ll = NA; l = NA; sse=NA
-    long.x <- c(t(W_c) %*% t(X*W)) #stacks by SNP1, SNP2... #modify
+    if(is.null(reg.elements))
+    {
+      long.x <- c(t(W_c) %*% t(X*W)) #stacks by SNP1, SNP2... update so not needing to be passed each time.
+      if(option$std_y) { long.x <- mleStdVector(long.x)}
+    }else
+    {
+      long.x <- reg.elements$long.x
+    }
     if(option$std_y) { long.x <- mleStdVector(long.x)}
+
     #This multiplies each SNP row by the correction matrix
     #weighted.copies <- lapply(1:nrow(X), function(i) t(W_c) %*% diag(W[i,]) %*% V)
     #long.v <- Matrix::bdiag(weighted.copies) #weight this ish too you silly man.
-    long.v <- Matrix::bdiag(lapply(1:nrow(X), function(i) t(W_c) %*% diag(W[i,]) %*% V)) #weight this ish too you silly man.
+    long.v <- Matrix::bdiag(lapply(1:nrow(X), function(i) t(W_c) %*% diag(W[i,]) %*% V)) #this is quite fast actually
     print(paste0("Built sparse matrix: ", pryr::mem_used()))
     message("This matrix object takes up: ", object.size(long.v))
-    s = 1
-    if(option$scale)
-    {
-      #This version won't work because its repeted Vs! Maybe scale by the max single V?
-      #s.tmp <- FrobScale(long.v)
-      #s <- s.tmp$s; long.v <- s.tmp$m.scaled
-      #Scalingby max frob norm
-      message("don't use it")
-      #s <- max(sapply(weighted.copies, function(x) Matrix::norm(x, type = "F")))
-      #long.v <- long.v/s
-    }
-
+  s = 1
     if(!is.null(formerU))
     {
       #CONCLLUSION: this does nothing to help the objective
@@ -202,21 +199,11 @@
       l = matrix(l, nrow = nrow(X), ncol = ncol(V),byrow = TRUE)
     }else if( option$regression_method == "glmnet")
     {
-      #The alternative: glmnet:
-      #The developers warn against providing just 1 solution... maybe I should be doing CV here instead of my dumba BIC thing.
-      #arg.
-
-      if(is.na(option$alpha1)) #we are searching for params.
+      if(is.na(option$alpha1)) #we are searching for parameters, phase 1 of the work.
       {
         fit = glmnet::glmnet(x = long.v, y = long.x, family = "gaussian", alpha = 1,
                              intercept = FALSE, standardize = option$std_coef,nlambda = 200) #lambda = option[['alpha1']],
         print(paste0("Just fit the regression: ", pryr::mem_used()))
-        #coeffficnets always returned on the original scale.
-        #determine how to get teh lambda max
-        #look at the output, and process it
-        #OPTIMIZE THIS CODE, super inefficient.
-        #figure out what to return.
-        #make your life easy
         penalty <- fit$penalty
         alpha.list <- fit$lambda
         message("Using BIC to select out the best one...")
@@ -333,8 +320,10 @@
 
       }
       else{ #just fitting a single instance:
+        message("Fitting model")
         fit = glmnet::glmnet(x = long.v, y = long.x, family = "gaussian", alpha = 1,
                              intercept = FALSE, standardize = option$std_coef,lambda = option$alpha1)
+        message("Fitting complete")
         penalty <- fit$penalty
         u.ret = matrix(coef(fit, s = option$alpha1)[-1], nrow = nrow(X), ncol = ncol(V),byrow = TRUE)
         return(list("U" = u.ret, "sparsity_space"=u.ret, "total.log.lik" = NA, "penalty" = penalty, "s"=s, "SSE"=deviance(fit)))

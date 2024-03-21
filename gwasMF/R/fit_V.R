@@ -188,48 +188,45 @@ FitVGlobal <- function(X, W, W_c, U, option, formerV = NULL, reg.elements=NULL)
      long.x <- reg.elements$long.x
      joined.weights <-  reg.elements$joined.weights
    }
+   s = 1
+   if(FALSE) #Old way of building U
+   {
+     #Old way- new way is faster
+     nsnps = min(1000, nrow(U))
+     interval <- floor(nrow(X)/nsnps)
+     extra.count <- nrow(X) - interval * nsnps
+     blocks <- lapply(1:interval, function(i) ((i-1)*nsnps + 1):(i*nsnps))
+     if(extra.count != 0)
+     {
+       blocks[[length(blocks) + 1]] <- (interval * nsnps + 1) : (interval * nsnps + extra.count)
+     }
 
 
-  #New way- much faster:
-  nsnps = min(1000, nrow(U))
-  interval <- floor(nrow(X)/nsnps)
-  extra.count <- nrow(X) - interval * nsnps
-  blocks <- lapply(1:interval, function(i) ((i-1)*nsnps + 1):(i*nsnps))
-  if(extra.count != 0)
-  {
-    blocks[[length(blocks) + 1]] <- (interval * nsnps + 1) : (interval * nsnps + extra.count)
-  }
+     print("warning-old way....")
+     tictoc::tic()
+     all.pieces <- lapply(blocks, function(x) stackUs(x, M,K, joined.weights, U, norm = option$scale))
+     #all.pieces <- parallel:mclapply(blocks, function(x) stackUs(x, M,K, joined.weights, U, norm = option$scale), mc.cores=avail.cores)
+     long.u <- do.call("rbind",all.pieces )
+     # long.u <- do.call("rbind",lapply(blocks, function(x) stackUs(x, M,K, joined.weights, U, norm = option$scale)) )
+     tictoc::toc()
+     lobstr::mem_used()
+     if(option$scale)
+     {
+       #s.tmp <- FrobScale(long.u)
+       #s <- s.tmp$s; long.u <- s.tmp$m.scaled
+       #add across all blocks
+       all.pieces <- lapply(blocks, function(x) stackUs(x, M,K, joined.weights, U, norm = option$scale))
+       long.u <- do.call("rbind", lapply(all.pieces, function(x) x$matrices))
+       s <- max(sapply(1:M, function(i) sum(sapply(all.pieces, function(x) x$norm.list[[i]]))))
+       #s <- max(lapply(all.pieces, function(x) x$norm.list))
+       long.u <- long.u/s
+     }
 
+   }
 
-  s = 1
-  if(option$scale)
-  {
-    #s.tmp <- FrobScale(long.u)
-    #s <- s.tmp$s; long.u <- s.tmp$m.scaled
-    #add across all blocks
-    all.pieces <- lapply(blocks, function(x) stackUs(x, M,K, joined.weights, U, norm = option$scale))
-    long.u <- do.call("rbind", lapply(all.pieces, function(x) x$matrices))
-    s <- max(sapply(1:M, function(i) sum(sapply(all.pieces, function(x) x$norm.list[[i]]))))
-    #s <- max(lapply(all.pieces, function(x) x$norm.list))
-    long.u <- long.u/s
-  }else{
-    tictoc::tic()
-    all.pieces <- lapply(blocks, function(x) stackUs(x, M,K, joined.weights, U, norm = option$scale))
-    #all.pieces <- parallel:mclapply(blocks, function(x) stackUs(x, M,K, joined.weights, U, norm = option$scale), mc.cores=avail.cores)
-    long.u <- do.call("rbind",all.pieces )
-    # long.u <- do.call("rbind",lapply(blocks, function(x) stackUs(x, M,K, joined.weights, U, norm = option$scale)) )
-    tictoc::toc()
-    lobstr::mem_used()
-    #versus
-    tictoc::tic()
-    long.u.new <- completeUExpand(joined.weights, nrow(U),M,K,U)
-    stopifnot(all(long.u.new == long.u))
-    #combine
-    tictoc::toc()
-    lobstr::mem_used()
+  long.u <- completeUExpand(joined.weights, nrow(U),M,K,U)
+  message("New u added", lobstr::mem_used())
 
-  }
-  print(paste0("Joined matrices: ", pryr::mem_used()))
   nopen.cols <- sapply(1:ncol(long.u), function(x) x %% K)
 
   #special case this logic failes on
@@ -303,6 +300,7 @@ FitVGlobal <- function(X, W, W_c, U, option, formerV = NULL, reg.elements=NULL)
 
      }
    }
+   message("Estimating BIC... ", pryr::mem_used())
    bic.list <- calculateBIC(fit, long.u, long.x, option$bic.var)
 
       print(paste0("Calculated BIC: ", pryr::mem_used()))
@@ -334,11 +332,11 @@ FitVGlobal <- function(X, W, W_c, U, option, formerV = NULL, reg.elements=NULL)
 
 
    #every first entry is 0
-
+  message("Fitting")
    fit = glmnet::glmnet(x = long.u, y = long.x, family = "gaussian", alpha = 1,
                         intercept = FALSE, standardize = option$std_coef, penalty.factor = lasso.active.set,
                         lambda=option$lambda1)
-   print(paste0("Glmnet- every first entry is 0: ", pryr::mem_used()))
+   print(paste0("Fitting done- every first entry is 0: ", pryr::mem_used()))
    penalty <- fit$penalty
    v.curr = matrix(coef(fit, s = option$lambda1)[-1], nrow = ncol(X), ncol = ncol(U),byrow = TRUE)
    return(list("V" = v.curr, "sparsity_space"=max(fit$lambda), "total.log.lik" = NA, "penalty" = NA, "s"=s,"SSE"=deviance(fit)))

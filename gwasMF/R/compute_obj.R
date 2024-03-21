@@ -405,7 +405,7 @@ DropFactorsByObjective <- function(X,W,W_c,U,V, maxK, option, minK = 0)
 }
 
 #' Calculate the change in objective with each individual matrix update
-#'
+#' DEPRECATED- this doesn't make sense anymore, since we aren't updating one column or row at a time
 #' @param X data
 #' @param W uncertainty
 #' @param W_c decorrelation matrix
@@ -418,7 +418,9 @@ DropFactorsByObjective <- function(X,W,W_c,U,V, maxK, option, minK = 0)
 #' @export
 GetStepWiseObjective <- function(X,W,W_c,old.mat,new.mat, companion.mat,fixed.term, option)
 {
-  iteration.objectives <- c()
+  return(1)
+  if(FALSE){
+    iteration.objectives <- c()
     temp.mat <- old.mat
     if(ncol(old.mat) > ncol(new.mat))
     {
@@ -439,4 +441,6 @@ GetStepWiseObjective <- function(X,W,W_c,old.mat,new.mat, companion.mat,fixed.te
       }
     }
     iteration.objectives
+  }
+
   }
