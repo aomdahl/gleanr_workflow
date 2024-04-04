@@ -35,15 +35,15 @@ rule prepProjectionSpace:
         shell:
             """
    	#line bleow should be input 1
-            readlink -f {params[1]}/*.sumstats.gz | awk -F "." '{{print $0 "\t" $(NF-2)}}' > {params[0]}/ldsc_extract_order.tmp")
+            readlink -f {params[1]}/*.sumstats.gz | awk -F "." '{{print $0 "\t" $(NF-2)}}' > {params[0]}/ldsc_extract_order.tmp
             tail -n +2 {params[0]}/latent.factors.txt | cut -f 1 -d " " > {params[0]}/trait.order.tmp
 
             awk '(FNR == NR) {{arr[$2]=$1;next}} ($1 in arr) {{print arr[$1]"\t"$1}}' {params[0]}/ldsc_extract_order.tmp {params[0]}/trait.order.tmp > {output}
 
             rm {params[0]}/*.tmp
             """
-
-rule projectionSpace:
+#This should be replaced by a newer version of this rule
+rule projectionSpaceOLD:
         input:
                 "results/{identifier}/munged_paths_traits.txt"
         output:
@@ -57,12 +57,25 @@ rule projectionSpace:
 
             Rscript src/ldscToMatrix.R --filepathlist {input} --outdest {params}/full_hapmap3_snps --feature_list "Z,N"
             """
+rule projectionSpace:
+        input:
+               "gwas_extracts/{identifier}/missingness_report.tsv"
+        output:
+            "gwas_extracts/{identifier}/full_hapmap3_snps.z.tsv", "gwas_extracts/{identifier}/full_hapmap3_snps.n.tsv"
+        params:
+            "gwas_extracts/{identifier}/"
+        shell:
+            """
+            ml anaconda
+            conda activate std
 
+            python src/quickGWASIter.py  --type ldsc_custom --output {params[1]} --gwas_list {input.file_list} --snp_list "/data/abattle4/aomdahl1/reference_data/ldsc_tutorial_hm3.no_hla.snplist"  --extension .sumstats.gz --gwas_dir  {params[0]}
+            """
 rule project_F:
     input:
         #factors="factorization_data/{identifier}.factors.txt", #MAJOR CHANGE HERE. MOVING to be in results category
         factors="results/{identifier}/latent.factors.txt",
-        variants="gwas_extracts/{identifier}/full_hapmap3_snps.Z.tsv" #make a sym link if its in a common dir, so we don't have like a jillion copies of larege files.
+        variants="gwas_extracts/{identifier}/full_hapmap3_snps.z.tsv" #make a sym link if its in a common dir, so we don't have like a jillion copies of larege files.
     output:
         "results/{identifier}/projectedF_hapmap3_loadings.txt"
     params:
@@ -144,7 +157,7 @@ checkpoint prep_enrichment: #format the outputed factors for enrichment analysis
     input:
         hapmap_list="/data/abattle4/aomdahl1/reference_data/hapmap_chr_ids.txt",
         projections="results/{identifier}/projected{projection_style}_hapmap3_loadings.txt",
-        sample_counts="gwas_extracts/{identifier}/full_hapmap3_snps.N.tsv",
+        sample_counts="gwas_extracts/{identifier}/full_hapmap3_snps.n.tsv",
 	factors="results/{identifier}/latent.factors.txt"
     output:
         directory("results/{identifier}/loading_ss_files_{projection_style}/")
@@ -179,7 +192,7 @@ rule download_enrichment_refs:
 rule ldsc_enrichment: #just run for one, then call on the input.
     input:
         ss="results/{identifier}/loading_ss_files_{projection_style}/{factor}.sumstats.gz",
-	tiss_dir=LDSC_REF_DAT+"/{tis_ref}.ldcts"
+	tiss_dir=LDSC_REF_DAT + "/{tis_ref}.ldcts"
     output:
         "results/{identifier}/{projection_style}_ldsc_enrichment_{tis_ref}/{factor}.multi_tissue.cell_type_results.txt",
         "results/{identifier}/{projection_style}_ldsc_enrichment_{tis_ref}/{factor}.multi_tissue.log"
