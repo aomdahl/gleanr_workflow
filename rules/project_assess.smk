@@ -9,7 +9,12 @@ LDSC_REF_DAT="/data/abattle4/aomdahl1/reference_data/ldsc_reference"
 #For later:
 output_type =["loadings", "factors", "weights"]
 #make things better with the checkpoint tutorial:https://evodify.com/snakemake-checkpoint-tutorial/
-
+rule all:
+	input: 
+		expand("results/panUKBB_complete_61K/META_ldsc_enrichment_Multi_tissue_chromatin/F{num}.multi_tissue.log", num=list(range(1,52))),
+		
+		#expand("results/panUKBB_complete_61K/NONE_ldsc_enrichment_Multi_tissue_chromatin/F{num}.multi_tissue.log", num=list(range(1,52))),
+		#"results/panUKBB_complete_61K/NONE_ldsc_enrichment_Multi_tissue_chromatin/factor_global_fdr.heatmap.png"
 
 rule hapmap_reference: #get the list of hapmap snps for extraction, omitting HLA region
     input:
@@ -57,19 +62,21 @@ rule projectionSpaceOLD:
 
             Rscript src/ldscToMatrix.R --filepathlist {input} --outdest {params}/full_hapmap3_snps --feature_list "Z,N"
             """
+
 rule projectionSpace:
         input:
-               "gwas_extracts/{identifier}/missingness_report.tsv"
+             "gwas_extracts/{identifier}/missingness_report.tsv"
         output:
             "gwas_extracts/{identifier}/full_hapmap3_snps.z.tsv", "gwas_extracts/{identifier}/full_hapmap3_snps.n.tsv"
         params:
-            "gwas_extracts/{identifier}/"
+            "gwas_extracts/{identifier}/",
+	    "gwas_extracts/{identifier}/full_hapmap3_snps"
         shell:
             """
             ml anaconda
             conda activate std
 
-            python src/quickGWASIter.py  --type ldsc_custom --output {params[1]} --gwas_list {input.file_list} --snp_list "/data/abattle4/aomdahl1/reference_data/ldsc_tutorial_hm3.no_hla.snplist"  --extension .sumstats.gz --gwas_dir  {params[0]}
+            python src/quickGWASIter.py  --type ldsc_custom --output {params[1]} --gwas_list {input} --snp_list "/data/abattle4/aomdahl1/reference_data/ldsc_tutorial_hm3.no_hla.snplist"  --extension .sumstats.gz --gwas_dir  {params[0]}
             """
 rule project_F:
     input:
@@ -92,12 +99,12 @@ rule project_LMscaled:
     params:
     run:
         shell("Rscript {src_path}/projectSumStats.R --standardize --output {output} --factors {input.factors} --sumstats {input.variants} --id_type 'RSID' --proj_method std_lm")
-
+#TODO add the adjustment procedure
 rule project_META:
     input:
         #factors="factorization_data/{identifier}.factors.txt", #MAJOR CHANGE HERE. MOVING to be in results category
         factors="results/{identifier}/latent.factors.txt",
-        variants="gwas_extracts/{identifier}/full_hapmap3_snps.Z.tsv" #make a sym link if its in a common dir, so we don't have like a jillion copies of larege files.
+        variants="gwas_extracts/{identifier}/full_hapmap3_snps.z.tsv" #make a sym link if its in a common dir, so we don't have like a jillion copies of larege files.
     output:
         "results/{identifier}/projectedMETA_hapmap3_loadings.txt"
     params:
@@ -210,7 +217,34 @@ rule ldsc_enrichment: #just run for one, then call on the input.
         --ref-ld-chr 1000G_EUR_Phase3_baseline/baseline. \
         --out $CWD/{params[0]} \
         --ref-ld-chr-cts {input.tiss_dir} \
-        --w-ld-chr weights_hm3_no_hla/weights.
+        --w-ld-chr weights_hm3_no_hla/weights. #--n-blocks 5000
+        cd ../
+        """
+rule ldsc_enrichment_panUKBB_jacknife: #just run for one, then call on the input.
+    input:
+        ss="results/{identifier}/loading_ss_files_{projection_style}/{factor}.sumstats.gz",
+	tiss_dir=LDSC_REF_DAT + "/{tis_ref}.ldcts"
+    output:
+        "results/{identifier}/{projection_style}_ldsc_enrichment_{tis_ref}/{factor}.PanUKBB-ref.multi_tissue.cell_type_results.txt",
+        "results/{identifier}/{projection_style}_ldsc_enrichment_{tis_ref}/{factor}.PanUKBB-ref.multi_tissue.log"
+    params:
+        "results/{identifier}/{projection_style}_ldsc_enrichment_{tis_ref}/{factor}.PanUKBB-ref.multi_tissue",
+	LDSC_REF_DAT
+    shell:
+        """
+	ml anaconda
+	conda activate py27
+	CWD=`pwd`
+        cd {params[1]}
+        echo "We are in directory {params[1]}"
+	pwd
+	python /scratch16/abattle4/ashton/genomics_course_2020/project_2/ldsc/ldsc.py \
+        --h2-cts $CWD/{input.ss} \
+        --ref-ld-chr 1000G_EUR_Phase3_baseline/baseline. \
+        --out $CWD/{params[0]} \
+        --ref-ld-chr-cts {input.tiss_dir} \
+        --w-ld-chr UKBB.ALL.ldscore/UKBB.EUR \
+	--n-blocks 5000
         cd ../
         """
 

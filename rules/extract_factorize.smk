@@ -14,6 +14,7 @@ output_type =["loadings", "factors", "weights"]
 #We assume that you have a list of phenotypes already, and you've converted everything to a friendly LDSC format
 #config["pval_thresh"] from yamls files.
 pval_thresh=config["pval_thresh"]
+ruleorder: hapmap_extract > extract_sumstats
 
 rule all:
 	input: "gwas_extracts/saige_benchmark/saige_benchmark.union.1e-5.txt"
@@ -24,11 +25,11 @@ rule extract_snps: #finds the variants that meet our signal threshold. here just
        trait_list="gwas_extracts/{identifier}/missingness_report.tsv"
        #trait_list=config['filelist'] #this is NOT the right list if you've done the LDSC extraction. its quite different actually
     output:
-        "gwas_extracts/{identifier}/{handle}.union.{pval_thresh}.txt"
+        "gwas_extracts/{identifier}/{handle}.union.txt"
     shell:
         """
 	    conda activate std
-            python {src_path}/unionVariants.py --gwas_list {input.trait_list}  --output {output} --type ldsc_custom --pval {pval_thresh} --gwas_dir gwas_extracts/{wildcards.identifier}/
+            python src/unionVariants.py --gwas_list {input.trait_list}  --output {output} --type ldsc_custom --pval {pval_thresh} --gwas_dir gwas_extracts/{wildcards.identifier}/
             #python {src_path}/unionVariants.py --gwas_list {input.trait_list}  --output {output} --type ldsc --pval config["pval_thresh"] --extension config["file_ext"] --gwas_dir /work-zfs/abattle4/lab_data/UKBB/GWAS_Neale/highly_heritable_traits_2/ldsr_format/unzipped/
         """
 #add a quick check in here- how many predominantly zero? just need to warn aboutthis.... 
@@ -43,49 +44,67 @@ rule filter_1KG: #filter those lists for multi-allelic snps, indels, ambiguous s
         
     shell:
         """
+	echo "This step may be sub-optimal, but does okay. Recommend reviewing in your specific application"
         bash {src_path}/variant_lookup.sh {input} {output[0]}
-        bash {src_path}/snp_cleanup.sh {output[0]} {output[1]}
+        bash {src_path}/snp_cleanup.sh {wildcards.handle} {output[0]} {output[1]}
         """
 
 rule prune: #reduce it to a pruned list
     input:
         "gwas_extracts/{identifier}/{handle}.1000G.txt"
     output:
-        "gwas_extracts/{identifier}/500kb.0.04r2.prune.in"
+        "gwas_extracts/{identifier}/{handle}.250kb.0.2r2.prune.in"
     
-    params: "gwas_extracts/{identifier}/500kb.0.04r2"
+    params: "gwas_extracts/{identifier}/{handle}.250kb.0.2r2"
 
     shell:
       """
-      plink2 --bfile /work-zfs/abattle4/ashton/prs_dev/1000genomes_refLD/ref --indep-pairwise 500kb 0.04 --extract {input} --out {params};
+       ~/.bin/plink-ng/plink2 --bfile /scratch16/abattle4/ashton/prs_dev/1000genomes_refLD/ref --indep-pairwise 250kb 0.2 --extract {input} --out {params};
       """
 
 rule ids_to_rsids:
     input:
-        "gwas_extracts/{identifier}/500kb.0.04r2.prune.in",
+        "gwas_extracts/{identifier}/{handle}.250kb.0.2r2.prune.in",
+	"gwas_extracts/{identifier}/{handle}.union.txt"
 
     output:
-        "gwas_extracts/{identifier}/{handle}.pruned_rsids.txt"
+        "gwas_extracts/{identifier}/{handle}.pruned_rsids.intermediate.txt",
+        "gwas_extracts/{identifier}/{handle}.pruned_rsids.txt",
+	
     shell: 
         """
-        bash {src_path}/variant_to_rsid.sh {input} {output}
-        """
+        bash {src_path}/variant_to_rsid.sh {input[0]} {output[0]}
+        #make sure they are the same length
+	LEN_I=`wc -l {input} | cut -f 1 -d " " `
+	LEN_O=`wc -l {output} | cut -f 1 -d " " `
+	if [ $LEN_O -gt $LEN_I ]
+		then
+		echo "Warning: different lengths..."
+		#exit 1
+	fi
+	#MAP RSIDs back to the original list:
+	conda activate renv
+	Rscript src/map_rsid_to_original_list.R {output[0]} {input[1]} {output[1]}
+	"""
 
 rule extract_sumstats: #get out the z-scores
+    #we also need the summary stats, but not accounting for that here in input
     input:
         "gwas_extracts/{identifier}/{handle}.pruned_rsids.txt",        
-        "trait_selections/{handle}.studies.tsv"
+        #"trait_selections/{handle}.studies.tsv"
+        "gwas_extracts/{identifier}/missingness_report.tsv"
     output:
         "gwas_extracts/{identifier}/{handle}.se.tsv",
         "gwas_extracts/{identifier}/{handle}.n.tsv",
         "gwas_extracts/{identifier}/{handle}.beta.tsv"
     params:
         outfile="gwas_extracts/{identifier}/{handle}",
-        type="std"
+	gwas_dir="gwas_extracts/{identifier}/",
+        type="ldsc_custom"
     shell: 
         """
-        ml python/3.7-anaconda;
-        python {src_path}/quickGWASIter.py  --type {params.type} --output {params.outfile} --gwas_list {input[1]} --snp_list {input[0]} --extension config['file_ext'] --gwas_dir config['gwas_cleaned']
+        conda activate std
+	python src/quickGWASIter.py  --type {params.type} --output {params.outfile} --gwas_list {input[1]} --snp_list {input[0]} --extension {config[file_ext]} --gwas_dir {params.gwas_dir}
         """
 rule hapmap_reference: #get the list of hapmap snps for extraction, omitting HLA region
     input:
@@ -98,23 +117,28 @@ rule hapmap_reference: #get the list of hapmap snps for extraction, omitting HLA
         for i in "factorization_data/{identifier}.factors.txt"{{1..22}}; do zcat data/weights_hm3_no_hla/weights.${{i}}.l2.ldscore.gz | tail -n +2 | awk '{{print $1":"$3"\t"$2}}' >> {output}; done
         """
 
+#This is probably overkill- I think everything we need is in the existing LDSC file already, since we subsetted to HM3 at the start.
+#can probably do without this.
 rule hapmap_extract: #Pull the hapmap3 snps from the LDSC summary stats. This step takes a bit more memory, 10 GB at least.
     input:
         "data/hm3_no_hla.txt",
-        "trait_selections/{identifier}.studies.tsv"
+        #"trait_selections/{identifier}.studies.tsv"
+        "gwas_extracts/{identifier}/missingness_report.tsv",
+	"gwas_extracts/{identifier}/{handle}.beta.tsv"
     output:
-        "gwas_extracts/{identifier}/full_hapmap3_snps.z.tsv",
-        "gwas_extracts/{identifier}/full_hapmap3_snps.n.tsv"
+        #"gwas_extracts/{identifier}/full_hapmap3_snps.z.tsv",
+        "gwas_extracts/{identifier}/{handle}.full_hapmap3_snps.n.tsv"
     params:
-        "/work-zfs/abattle4/lab_data/UKBB/GWAS_Neale/highly_heritable_traits_2/ldsr_format/unzipped/",
-        "gwas_extracts/{identifier}/full_hapmap3_snps"
+        outfile="gwas_extracts/{identifier}/{handle}.full_hapmap3_snps",
+        gwas_dir="gwas_extracts/{identifier}/",
+        type="ldsc_custom"
     shell: 
         """
-        ml python/3.7-anaconda;
-        python {src_path}/quickGWASIter.py  --type ldsc --output {params[1]} --gwas_list {input[1]} --snp_list {input[0]} --extension config['file_ext'] --gwas_dir {params[0]}
+        conda activate std
+	    python src/quickGWASIter.py  --type {params.type} --output {params.outfile} --gwas_list {input[1]} --snp_list {input[0]} --extension {config[file_ext]} --gwas_dir {params.gwas_dir} 
         """
         
-#this will be th elast big change
+#this will be the last big change
 rule factorize:
     input:
         input_gwas="gwas_extracts/{identifier}/{identifier}.z.tsv", 

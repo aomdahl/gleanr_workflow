@@ -11,7 +11,7 @@ filelist=config["filelist"]
 #filelist="/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/trait_selections/ukbb_seed2_fall2022.txt"
 shell.prefix("ml anaconda;")
 #prep the summary stats for LDSC analysis.
-
+ldsc_dat_path=config["ldscref"]
 #Split the calls and run separately for each trait so we get the sum stats the way we want it...
 def getTraitNames(fl):
     traits = list()
@@ -52,7 +52,7 @@ rule all:
         #study_list="/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/trait_selections/ukbb_seed2_fall2022.txt", #this file has format filepath pheno_name genome_build sample_count cohort_name
 
 rule mungeCommands:
-    input: study_ref = "trait_selections/{identifier}.studies.txt", snp_ref = "/data/abattle4/aomdahl1/reference_data/hm3_snps_ldsc_ukbb.tsv"
+    input: study_ref = "trait_selections/{identifier}.studies.tsv", snp_ref = "/data/abattle4/aomdahl1/reference_data/hm3_snps_ldsc_ukbb.tsv"
 
     output: "gwas_extracts/{identifier}/munge_sumstats.all.sh"
     params:
@@ -92,7 +92,7 @@ rule splitMungeCommands:
                     print(txt)
                     print("Error with REGEX- debug")
 
-
+#do some kind of step to clean up all the intermediate files...
 #use the expand to get through the entire list?
 #th4 names basically come from the full file name less the extension. Not sure this is the way we want to do it...
 #NEed to test this out...
@@ -114,7 +114,7 @@ full_study_ids = [gwas_list[i] + "." + trait_list[i] for i in range(0,len(gwas_l
 rule checkMissingness:
 	input: 
 		studies=expand("gwas_extracts/{{identifier}}/{study_id}.sumstats.gz",study_id=full_study_ids),
-		order="trait_selections/{identifier}.studies.txt"
+		order="trait_selections/{identifier}.studies.tsv"
 	output: "gwas_extracts/{identifier}/missingness_report.tsv", "gwas_extracts/{identifier}/sample_sd_report.tsv"
 	params:
 		"gwas_extracts/{identifier}/"
@@ -150,7 +150,7 @@ rule pairwiseCommands:
 	    """
 	     fp=`pwd` 
 	     mkdir -p $fp/ldsr_results/{wildcards.identifier}/rg_ldsr/
-	     bash src/all_pairwise_r2g.sh {input[0]}  $fp/ldsr_results/{wildcards.identifier}/rg_ldsr/
+	     bash src/all_pairwise_r2g.sh {input[0]}  $fp/ldsr_results/{wildcards.identifier}/rg_ldsr/ {ldsc_dat_path}
 	    """
 
 #This actually runs the LDSC that is needed. Allows us to just run single ones as needed.
