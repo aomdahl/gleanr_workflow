@@ -36,8 +36,16 @@ rm -f runames.tmp
 #echo $N
 
 for ((i=1;i<=$N;i++)); do
-     #drop the current one we want
-     sed -e "${i}d" $FILE | tr '\n' ',' | sed 's/,$//g' >> runames.tmp
+     #drop the current one we want and all the preceeding ones so we don't repeat work.
+     if [ $i == 1 ]
+     then
+      sed -e "${i}d" $FILE | tr '\n' ',' | sed 's/,$//g' >> runames.tmp
+     elif [ $i == $N ]
+     then 
+      sed -e "2,${i}d" $FILE | tr '\n' ',' | sed 's/,$//g' >> runames.tmp
+    else
+      sed -e "1,${i}d" $FILE | tr '\n' ',' | sed 's/,$//g' >> runames.tmp
+    fi
      echo "" >> runames.tmp
 done
 paste $FILE runames.tmp | tr '\t' ',' > commandnames.tmp

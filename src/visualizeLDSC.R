@@ -32,27 +32,19 @@ make_option("--fdr", type = 'numeric', default = 0.05, help = "FDR threshold for
 make_option("--orientation", type = 'character', default = "vertical", help= "Specify if you want a vertical or horizontal plot."),
 make_option("--include_factors", type = "character", default = "ALL", help = "Specify which factors to include, comma separated, if only interested in some. Note that this does affect FDR calculation.")
 )
+
+test=c("--output=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results/panUKBB_complete_61K/NONE_ldsc_enrichment_Multi_tissue_chromatin/",
+       "--input_dir=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results/panUKBB_complete_61K/NONE_ldsc_enrichment_Multi_tissue_chromatin/",
+       "--plot_type=data_tab")
+
 args <- parse_args(OptionParser(option_list=option_list))
 
 dir <- args$input_dir
 ext <- args$extension
-if(FALSE)
-{
-  args <- list()
-  dir <- "/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results/bic_nov22.test/F_ldsc_enrichment_Multi_tissue_chromatin/"
-  #Sanity test- what does it look like with LM?
-  #dir <- "/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results/infertility/p0.001_FULL/flash_backfit_zscores/LM_projection/LM_ldsc_enrichment_Multi_tissue_chromatin/"
-  
-  args$dir <- dir
-  args$output <-paste0(dir, "/updated")
-  args$fdr <- 0.05
-  #dir <- "/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results/sparsePCA_alpha0.001.8-10//ldsc_enrichment_Multi_tissue_chromatin/"
-  ext <- "*.cell_type_results.txt"
-  args$tissue_db="Multi_tissue_chromatin"
-  args$include_factors <- "ALL"
-  args$plot_type <- "global_tissue_FDR"
-}
 
+message("Code needs to be cleaned-up")
+substitution_regex = "__"
+substitution_regex_to = "-"
 if(args$plot_type == "baseline")
 {
     ldsc_output <- fread(args$input_file)
@@ -115,6 +107,7 @@ todos <- plyr::rbind.fill(all) %>% mutate("-log10(P)" =-log10(Coefficient_P_valu
 
         labels <- labelsPrep()
     }
+
 for_plotting <- todos %>% mutate("Name" = gsub(x = Name, pattern = "liver", replacement = "Liver")) %>% 
                                    left_join(., labels, by  = "Name") %>% arrange(new_category) 
 
@@ -153,18 +146,28 @@ for_plotting_strict <- for_plotting %>%
 
 #If we want a tissue-specific factor or global correction:
 fdr_thresh = as.character(args$fdr)
-
+if(args$plot_type == "data_tab")
+{
+  for_plotting <- for_plotting  %>% mutate("global_fdr"=p.adjust(Coefficient_P_value, method="fdr")) %>%
+    group_by(Source) %>% mutate("Factor_specific_fdr"=p.adjust(Coefficient_P_value, method="fdr")) %>% ungroup() %>%
+    group_by(tissue, Source) %>% mutate("ts_bonfp" = p.adjust(Coefficient_P_value, method = "bonferroni")) %>% 
+    slice_min(ts_bonfp, n = 1, with_ties = FALSE)  %>% ungroup() %>% group_by(Source) %>%
+    mutate("factor_tissue_fdr" = p.adjust(ts_bonfp, method = "fdr")) %>% ungroup()
+  write.csv(for_plotting,file=args$output,quote = FALSE, row.names = FALSE)
+  quit()
+}
 
 print(args$plot_type)
 if(args$plot_type == "factor_tissue_FDR" | args$plot_type == "global_tissue_FDR"){ 
-  wid = 13
-  ht = 12
+  wid = 21
+  ht = 14
   if(args$plot_type == "factor_tissue_FDR"){
     for_plotting_strict <- for_plotting %>% group_by(tissue, Source) %>% 
       mutate("ts_bonfp" = p.adjust(Coefficient_P_value, method = "bonferroni")) %>% 
       slice_min(ts_bonfp, n = 1, with_ties = FALSE)  %>% ungroup() %>% group_by(Source) %>%
       mutate("fdr" = p.adjust(ts_bonfp, method = "fdr")) %>% 
-      ungroup() %>% mutate("fdrpass" = ifelse(fdr < args$fdr, 1, 0))
+      ungroup() %>% mutate("fdrpass" = ifelse(fdr < args$fdr, 1, 0)) %>%
+      mutate("color_code"=ifelse(fdr < 0.05, color_code,"#FFFFFF"))
     title_ = paste0("Tissue-specific enrichment,\nfactor tissue adjusted FDR < ", fdr_thresh)
     #args$plot_type = "fdr_sig"
   }
@@ -175,7 +178,8 @@ if(args$plot_type == "factor_tissue_FDR" | args$plot_type == "global_tissue_FDR"
       mutate("ts_bonfp" = p.adjust(Coefficient_P_value, method = "bonferroni")) %>% 
       slice_min(ts_bonfp, n = 1, with_ties = FALSE) %>% ungroup() %>%
       mutate("fdr" = p.adjust(ts_bonfp, method = "fdr")) %>% 
-      mutate("fdrpass" = ifelse(fdr < args$fdr, 1, 0))
+      mutate("fdrpass" = ifelse(fdr < args$fdr, 1, 0)) %>%
+      mutate("color_code"=ifelse(fdr < 0.05, color_code,"#FFFFFF"))
     title_ = paste0("Tissue-specific enrichment,\nglobal tissue adjusted FDR < ", fdr_thresh)
     
     #args$plot_type = "fdr_sig"
@@ -185,13 +189,13 @@ if(args$plot_type == "factor_tissue_FDR" | args$plot_type == "global_tissue_FDR"
   pass_tissues <- unique((for_plotting_strict %>% filter(fdr < args$fdr))$tissue)
   pass_cat_names <- unique((for_plotting_strict %>% arrange(color_code) %>% filter(fdr < args$fdr))$new_category)
   pass <- for_plotting_strict %>% filter(tissue %in% pass_tissues) %>% mutate("coef_out" = ifelse(fdrpass == 1, z_score, 0 ))
-  
+ save(pass, pass_tissues, pass_cat_names, file = "/scratch16/abattle4/ashton/snp_networks/presentation_figures/ashg_2023/tissue_enrich.MAY_VERSION_0.05.RData")
   p = ggplot(pass, aes(x= factor(Source, level = factor_order), y =factor(p_tissue, level = tissue.order), 
                    fill = color_code, alpha = coef_out)) + 
     geom_tile(color = "gray")  + scale_fill_identity(guide = "legend", labels =pass_cat_names) + 
     scale_y_discrete(label=function(x) abbreviate(gsub(x,pattern = "_", replacement = " "), minlength = 20)) + 
     ylab("Tissue type") + xlab("Factor Number") + ggtitle(title_) +
-    guides(fill=guide_legend(title="Tissue Category")) + theme_classic(17) + labs("alpha" = "Z-score")
+    guides(fill=guide_legend(title="Tissue Category")) + theme_classic(17) + labs("alpha" = "Z-score") 
   
   if(args$orientation == "horizontal")
   {
@@ -308,7 +312,7 @@ if(args$plot_type == "factor_tissue_FDR" | args$plot_type == "global_tissue_FDR"
 }
 
 ggsave(args$output, plot = p, width = wid, height = ht)
-
+save(p, file=paste0(args$output, ".RData"))
 #Bonus material- compare factors and tissue enrichment?
 if(FALSE)
 {

@@ -1,28 +1,7 @@
-""" 
-for f in files
-    read in first few lines
-        identify headers, and each assignment
-        if is chr:00 and hg37:
-            read in, do conversion lookup
-        if effect/alt is lowercase, make uppercase
-        call to mung 
-"""
+
 #NOTE that using effectivee sample size isn't recommended for Ldsc, but whatever.
-n_options =["N_SAMPLES", "EFFSAMPLESIZE", "N_COMPLETE_SAMPLES", "NEFF", "TOTALSAMPLESIZE"]
-n_options_LDSC=['N','NCASE','CASES_N','N_CASE', 'N_CASES','N_CONTROLS','N_CAS','N_CON','N_CASE','NCONTROL','CONTROLS_N','N_CONTROL', "NSTUDY", "N_STUDY", "NSTUDIES", "N_STUDIES"] #These are ones in LDSC
-snp_options = ["MARKER",  "VARIANT_ID", "SNP-ID", "RSIDS", "ID"] 
-a1_options = ["RISK_ALLELE", "ALT", "effectAllele".upper()] #effect allele
-a2_options = ["OTHER_ALLELE", "REF", "BASELINE", "referenceAllele".upper()] #non-effect allele
-sum_stats = ["MAINEFFECTS", "ESTIMATE", "ODDS_RATIO" "beta_EUR".upper()]
-maf_options = ["MINOR_AF", "REF_ALLELE_FREQUENCY", "FREQ1", "AF", "af_EUR".upper()]
-se_options = ["MAINSE","SDE", "SE_estimate".upper(), "se_EUR".upper()]
-pval_options = ["MAINP", "P_GC","neglog10_pval_EUR".upper()]
-case_control_afs =["AF_CASES", "AF_CONTROLS"]
-PVAL_FULL=["MAINP", "P_GC", "P", "PVALUE", "P_VALUE", "PVAL", "P_VAL", "GC_PVALUE"]
-IDM={"chr_opts" : ["CHR", "CHROMOSOME"], "pos_opts" :["POS", "base_pair_location".upper(), "BP", "POSITION"], "snpid_opts":["VARIANT_ID", "VARIANT", "SNP", "NAME", "MARKERNAME"], "a1_opts" : ["RISK_ALLELE", "ALT", "A1", "EFFECT_ALLELE","EA", "ALLELE_1", "ALLELE1", "INC_ALLELE"], "a2_opts": ["OTHER_ALLELE", "REF", "BASELINE","A2", "ALLELE2", "ALLELE_2", "OTHER_ALLELE", "NEA", "NON_EFFECT_ALLELE"]}
-#chromosome	base_pair_location
-#se only matters in the modified version, really does nothing here oh well.
-labels = {"n" : n_options, "snp" : snp_options, "maf" : maf_options, "a1" : a1_options, "a2" :a2_options, "ss" : sum_stats, "se" :se_options, "p" : pval_options, "n_existing" : n_options_LDSC}
+case_maf_options = ["AF_CASES_EUR","AF_CASES"]
+control_maf_options = ["AF_CONTROLS_EUR","AF_CONTROLS"]
 import sys
 import argparse
 import gzip
@@ -98,6 +77,19 @@ def processN(intext):
     else:
         return " --N " + str(intext)
 
+
+def getAFIndices(dat_tab,case_names, control_names):
+    case_i = -1
+    control_i=-1
+    for i, term in enumerate(dat_tab):
+        if term.upper() in case_names:
+            case_i=i
+        if term.upper() in control_names:
+            control_i = i
+        if case_i != -1 and control_i != -1:
+            print("Found the c/c af columns")
+            break
+    return case_i, control_i
 
 def labelSpecify(header, checkfor, labels):
     """
@@ -623,71 +615,63 @@ def buildReferenceList(argsin):
 
 parser = argparse.ArgumentParser(description = "Quick script to get many GWAS summary stats converted into an LDSC-friendly format. A nice wrapper for ldsc's munge script.")
 parser.add_argument("--study_list", help = "list of studies to work on. Columns are study path, phenotype name, genome build, N samples. Last 2 columns not required, in which case we assume hg37 and that N is in the data. Note that if N is in the data, that is prioritized above a specified N.")
-parser.add_argument("--rsid_ref", help = "path to the RSID reference", default = "/data/abattle4/aomdahl1/reference_data/hm3_nohla.snpids")
-parser.add_argument("--ldsc_path", help = "path to LDSC code", default="~/.bin/ldsc/")
-parser.add_argument("--merge_alleles", help = "Path to set up a predefined allele reference; if is empty string, then none used", default = "/data/abattle4/aomdahl1/reference_data/hm3_snps_ldsc_ukbb.tsv")
-parser.add_argument("--keep_maf", help = "Use this to get the MAF from files.", default = False, action = "store_true")
-parser.add_argument("--force_update", help = "Specify this if you want to force all intermediate files to be re-created. If intermediate files exist already and are a reasonable length, they aren't recreated.", default = False, action = "store_true")
-parser.add_argument("--mod", help = "Specify this if you want to run the modified version of LDSC that lets you extract B, SE, etc.", default = False, action = "store_true")
-parser.add_argument("--calls_only", help = "Use this if you want only to generate the commands, not run the actual correction.", default = False, action = "store_true")
-
 parser.add_argument("--output", help = "output path")
 args = parser.parse_args()
-print("Important TODO: update to use RSIDs over chr:pos in the event of hg38 as reference.")
-#get the hg37 build dict in memory....
-build_list = buildReferenceList(args)
-allele_reference_dict = readInRefDict(args.merge_alleles)
 
-snp_list_pval_opt = dict()
+#Pick out all the files to edit
+files_to_update = list()
+ncase=None
+ncontrol = None
+
 with open(args.study_list ,'r') as istream:
-    with open(args.output + "munge_sumstats.all.sh", 'w') as ostream:
-        for line in istream:
-            CONVERT_GENOME_BUILD=False
-            dat = line.strip().split()
-            print("Currently processing file ", dat[0], "(", dat[1], ")")
-            """
-            if args.pval_filter == "":
-                #peek and determine which column actually has the pvalue
-                #filter by the corresponding threshold, return just the list of snps you desire as RSIDs for passage into the next phase.
-                add_snps = pvalPeekAndClean(dat) #get the RSIDs of all snps that pass threshold thank you very much.
-                snp_list_pval_opt = updatePvalSNPs(add_snps,snp_list_pval_opt)
-                #Or run fastAsset instead...
-                #write this out to output.
-
-                sys.exit()
-            """
-            #Check the first lines of the file, see if its UKBB template, if it has N, etc.
-            #Check to see if its got RSIDs or now...
-            fix_instructions, fixed_labels = filePeek(dat, args)
-            #detect the genome build if needed....
-            if (len(dat) > 2) and (dat[2] != "" )and ("TO_RSID" in fix_instructions):
-                print("Input specifies", dat[2], "build.")
-                if(dat[2] == "hg36"):
-                    print("not yet implemented")
-                    continue
+    for line in istream:
+        CONVERT_GENOME_BUILD=False
+        dat = line.strip().split()
+        if "/" in dat[3]:
+            print("Will process file: ", dat[0], "(", dat[1], ")", "with case/control of sample size ", dat[3])
+            files_to_update.append(dat)
+            ncase = float(dat[3].split("/")[0])
+            ncontrol = float(dat[3].split("/")[1])
+            print(ncase, ncontrol)
+print("Processing a total of ", len(files_to_update), " files")
+#Edit them if possible
+for file_dat in files_to_update:
+    tmp_file_name = args.output + file_dat[0] + ".tmp.gz"
+    fpath = file_dat[0]
+    existing_intermediate_file = os.path.splitext(fpath)[0] + ".INTERMEDIATE" + os.path.splitext(fpath)[1]
+    if os.path.exists(existing_intermediate_file):
+        fpath = existing_intermediate_file
+    with openFileContext(fpath) as istream:
+        with outFileContext(tmp_file_name) as ostream:
+            for i, line in enumerate(istream):
+                line = fh(line.strip(), fpath)
+                if i ==0:
+                    #Get the indices, if its there
+                    case_i, control_i = getAFIndices(line.split(), case_maf_options, control_maf_options)
+                    if case_i != -1 and control_i != -1:
+                        print("Found both, proceeding with edit")
+                        ostream.write(line + '\t' + "FRQ" + "\n")
+                    else:
+                        print("AF data is unavailable, not going to edit file")
+                        break
                 else:
-                    build_dict = build_list[dat[2]]
-                    if dat[2] not in ["hg37", "hg19"]:
-                            CONVERT_GENOME_BUILD = True
-            else:
-                print("Assuming hg37 build, using hapmap3 SNPS only...")
-                build_dict = build_list["hg37"]
-            intermediate_file = doCleanup(dat, fix_instructions,build_dict, args.calls_only, allele_reference_dict, force_update = args.force_update)
-            #build commands for it
-            if fix_instructions and fix_instructions != "ERROR":
-                call = " munge_sumstats.py "
-                if args.mod:
-                    call = "munge_sumstats_MOD.py "
-                lc = "python2 " + args.ldsc_path + call + "--sumstats " + intermediate_file + " --out " + buildOutName(args.output, dat[0], dat[1]) + "".join(fixed_labels) + mergeAlleles(args.merge_alleles)
-                if args.keep_maf:
-                    lc = lc + " --keep-maf "
-                if "TO_RSID" in fix_instructions:
-                    lc = lc + " --snp SNP_"
-                ostream.write(lc + '\n')
-            else:
-                print("Skipping for incorrect file path,", fixed_labels[0])
-                with open(args.output +"_errorlog.txt",'w') as ostream:
-                    ostream.write("File could not be found: " + fixed_labels[0] + '\n')
-            print()
-        
+                    dat=line.split()
+                    if dat[case_i] == "NA" or dat[control_i] == "NA":
+                        frq="NA"
+                    else:
+                        frq= round(((ncase*float(dat[case_i])) + (ncontrol*float(dat[control_i])))/(ncase + ncontrol), 5)
+                    #print("frq", str(frq))
+                    #print("Ncase", str(ncase))
+                    #print("Ncontrol", str(ncontrol))
+                    #print("AF_case", str(dat[case_i]))
+                    #print("AF_control", str(dat[control_i]))
+                    #print(line + '\t' + str(frq) + "\n")
+                    #input()
+                    ostream.write(line + '\t' + str(frq) + "\n")
+    print("Finished processing", fpath)
+    #mov intermediate_file_name into fpath
+    os.rename(tmp_file_name, fpath)
+    print("Moved into current INTERMEDIATE file")
+
+
 

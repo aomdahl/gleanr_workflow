@@ -41,11 +41,14 @@ weightEffects <- function(X,W, decorrelate, z_score = FALSE, precalc.U = NULL)
 #This function from YUAN, with tweaks
 #Read in a factor matrix, and return a vector of trait names, and the composition per factor.
 #readInFactors(args$factors,args$scale_factors, trait_names=colnames(combined))
+#factor.dat <- readInFactors(args$factors,args$scale_factors, trait_names=colnames(combined))
+#  factor.dat <- readInFactors(args$factors,args$scale_factors, trait_names=colnames(combined),)
+#factors <- factor.dat[[1]] 
 readInFactors <- function(input_file, scale, trait_names=NA,thresh = 0.01){
   ### read in the factor matrix
   ## if there are multiple runs, use the one whose factors being the most independent
   #OMitted that paart
-  factors <- fread(input_file)
+  factors <- fread(input_file,header = TRUE)
   traits <- unlist(factors[,1])
   
   #Make sure the names are right
@@ -57,6 +60,9 @@ readInFactors <- function(input_file, scale, trait_names=NA,thresh = 0.01){
     #ensure the factor names and rownames are in the right order....
     if(!all(trait_names == factors[,1]))
     {
+      message("Mismatch between names in file and name list provided.")
+      message("Please review the input file and make sure it works...")
+      quit()
       factors$n <- factor(unlist(factors[,1]), levels = trait_names)
       factors <- factors %>% arrange(n) %>% select(-n)
       traits <- unlist(factors[,1])
@@ -65,6 +71,8 @@ readInFactors <- function(input_file, scale, trait_names=NA,thresh = 0.01){
     #after fixing, check again
     name_check <- any(unlist(factors[,1]) != trait_names)
     if(name_check) {
+      #Try to recover it first
+      which(gsub(x=trait_names,pattern = "^_", replacement = 'X_') %>% gsub(., pattern = "-", replacement = ".") != unlist(factors[,1]))
       print("Error in names; please check input data")
       print(factors[,1])
       print(trait_names)

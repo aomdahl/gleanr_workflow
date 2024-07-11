@@ -46,7 +46,8 @@ estimateS_noSigmaG <- function(nonzero.betas, snp.mafs, sigma.g.fixed=1)
 
 #' Negative log-liklihood of normally distributed data, with variance accounting for MAF, selective pressure, and study-wide variance
 #'
-#' @param par includes (s:a float reflecting relationship between MAF and effect size, sigma_g:scaling variance term)
+#' @param par includes (s:a float reflecting relationship between MAF and effect size, sigma_g:scaling variance term; Note that we exponentiate sigma_g
+#' to ensure its positive, assuming the input was log-transformed).
 #' @param effects GWAS or latent GWAS snp effects (non-zero effects only)
 #' @param mafs cooresponding vector of minor allele frequencies
 #'
@@ -55,13 +56,13 @@ estimateS_noSigmaG <- function(nonzero.betas, snp.mafs, sigma.g.fixed=1)
 neglogLik <- function(par, effects, mafs)
 {
   s <- par[1]
-  sigma_g <- par[2]
+  sigma_g <- exp(par[2])
   n <- length(effects)
   mafs.prod <- 2*mafs*(1-mafs)
   -(-(n/2)* log(sigma_g) - (s/2)*sum(log(mafs.prod)) - sum((1/((mafs.prod)^s * sigma_g*2)) * effects^2))
 }
 
-#' Learn S and sigma_g^2 sing optim
+#' Learn S and sigma_g^2 sing optim. To force sigma_g^2 to be positive, we are exponentiating it and passing in the log.
 #'
 #' @param nonzero.betas vector of beta effect sizes, (non-zero effects only)
 #' @param snp.mafs MAfs of those snps
@@ -70,10 +71,43 @@ neglogLik <- function(par, effects, mafs)
 #' 
 #' @return optim output based on negative log liklihood
 #' @export
-estimateS_SigmaG <- function(nonzero.betas, snp.mafs, init.s = -0.001, init.sigma=0.01)
+#' 
+#' df.u$U1[df.u$U1 != 0], df.u$maf[df.u$U1 != 0]
+estimateS_SigmaG <- function(nonzero.betas, snp.mafs, init.s = -0.001, init.sigma=log(0.01))
 {
-  optim(c(init.s, init.sigma), fn = neglogLik,effects = nonzero.betas, mafs = snp.mafs)
+  ret.dat <- optim(c(init.s, init.sigma), fn = neglogLik,effects = nonzero.betas, mafs = snp.mafs)#, lower = c(-Inf, 0))
+  ret.dat$par[2] <- exp(ret.dat$par[2])
+  ret.dat
 }
+
+#' Create a simple null distribution of S scores assuming the MAF-Beta relationship has been disrupted
+#'
+#' @param seed to sample from for random shuffling
+#' @param np number of permuations to perform
+#' @param nonzero.betas vector of effect sizes
+#' @param snp.mafs 
+#' @param ... may include init.s and init.sigma to pass on 
+#'
+#' @return a matrix of parameters S and sigma_g estimated for each permutation
+#' @export
+permuteNullDistS <- function(seed,np, nonzero.betas, snp.mafs,...)
+{
+  message("Performing a strict-version permutation, only shuffling on the non-zero effects")
+  library(svMisc)
+  set.seed(seed)
+  count <- length(snp.mafs)
+  shuf.list <- 1:count
+  stat.results <- matrix(0, nrow=np, ncol = 2)
+  for(i in 1:np)
+  {
+    progress(i, np,progress.bar=TRUE)
+    mafs.shuffled <- snp.mafs[sample(shuf.list, count, replace = FALSE)]
+    stat.results[i,] <- estimateS_SigmaG(nonzero.betas, mafs.shuffled,...)$par
+  }
+  return(stat.results)
+}
+
+
 
 #################################################### Spike-and-slab case with unknown sparsity ########################################### 
 ## Harder case- learn S, sigma_g^2, and sparsity parameter pi
@@ -154,7 +188,7 @@ testSOnlyVersion <- function(seed)
   #This doesn't look right.
   print(plot(s.options, log(find.val)))
   
- optim(-0.001, fn = neglogLikFixedSigma,effects = sim.dat, mafs = mafs, sigma_g = sigma_g, method = "Brent", lower = -100, upper = 0 )
+ optim(-0.001, fn = neglogLikFixedSigma,effects = sim.dat, mafs = mafs, sigma_g = sigma_g, method = "Brent", lower = -100, upper = 10 )
   
 }
 
@@ -178,4 +212,31 @@ testS_SigmaVersion <- function(seed)
 
 
                
-
+#############Visualizing how this works:
+plotPatterns <- function()
+{
+  #As S gets closer to 0, the variance of the effect size shrinks
+  maf = 0.5
+  sigma=1
+  s = seq(0.001,-3, by=-0.01)
+  vars <- sigma * (maf * (1-maf)*2)^s
+  plot(s,vars)
+  
+  #How does MAF play into this?
+  maf = seq(0.01,0.5,by=0.001)
+  sigma=1
+  s = -0.9
+  vars.maf <- sigma * (maf * (1-maf)*2)^s
+  plot(maf,vars.maf)
+  #as maf gets bigger, the variance shrinks down as well
+  
+  #Now both at once:
+  maf = seq(0.001,0.5,by=0.001)
+  s_all = seq(0.001,-3, by=-0.01)
+  vars.all <- as.vector(sapply(maf, function(f) sapply(s_all, function(s) sigma * (f * (1-f)*2)^s )))
+  mafs.all <- as.vector(sapply(maf, function(f) sapply(s_all, function(s) f )))
+  ss.all <- as.vector(sapply(maf, function(f) sapply(s_all, function(s) s )))
+  plot.df <- data.frame("MAF"=mafs.all, "S"=ss.all, "var" = vars.all)
+  ggplot(plot.df, aes(x = MAF, y = S, color = log10(var))) + geom_point() + theme_bw() + 
+    scale_color_gradient2(low = "white", high="red") + ggtitle("Low MAF and very negative S means large variance on effect sizees")
+}

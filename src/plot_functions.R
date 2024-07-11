@@ -47,7 +47,7 @@ plotFactorsBarplot <- function(F, trait_names, title, cluster = TRUE, t_order = 
 
 
 
-plotFactors <- function(Fmat, trait_names, title, cluster = TRUE, t_order = NA, scale.cols = FALSE)
+plotFactors <- function(Fmat, trait_names, title, cluster = TRUE, t_order = NA, scale.cols = FALSE, ret.order = FALSE)
 {
   if(dim(Fmat)[2] == 0)
     {
@@ -75,7 +75,10 @@ plotFactors <- function(Fmat, trait_names, title, cluster = TRUE, t_order = NA, 
   nn$x <- as.factor(as.numeric(nn$x))
   p <- ggplot(nn, aes(x, trait, fill= value)) + geom_tile(color = "gray") +  scale_fill_gradient2(low = "blue", mid = "white", high = "red") + 
     xlab("Factors") + theme_minimal(15) + ggtitle(title)
-  
+  if(ret.order)
+  {
+    p <- list("plot"=p, "order"=ordering)
+  }
   return(p)
 }
 

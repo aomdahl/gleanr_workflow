@@ -60,6 +60,17 @@ t=c("--uncertainty=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorizati
 "--sample_sd=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization//gwas_extracts/panUKBB_complete//sample_sd_report.SELECTED.tsv","--fixed_first", 
 "--WLgamma=Strimmer","--covar_se_matrix=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/ldsr_results/panUKBB_complete/summary_data/gcov_int_se.tab.SELECTED.csv",
 "--nfactors=KAISER")
+
+t=c("--uncertainty=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization//gwas_extracts/panUKBB_complete//panUKBB_complete_clumped_r2-0.2.se.tsv",
+    "--gwas_effects=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization//gwas_extracts/panUKBB_complete//panUKBB_complete_clumped_r2-0.2.beta.tsv",
+    "--trait_names=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization//gwas_extracts/panUKBB_complete//panUKBB_complete.trait_list.tsv", 
+    "--covar_matrix=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization//ldsr_results/panUKBB_complete/summary_data/gcov_int.tab.csv",
+    "--outdir=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization//results/panUKBB_complete_MAX/",
+    "--sample_sd=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization//gwas_extracts/panUKBB_complete//sample_sd_report.tsv","--fixed_first", 
+    "--WLgamma=Strimmer","--covar_se_matrix=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/ldsr_results/panUKBB_complete/summary_data/gcov_int_se.tab.csv",
+    "--nfactors=MAX")
+
+
  
 
 t= c("--gwas_effects=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwas_extracts/ukbb_benchmark_2/ukbb_benchmark_2_conservative.beta.tsv",
@@ -104,7 +115,7 @@ option$WLgamma <- args$WLgamma
 
 #Prep regression datasets (weights, x, etc.)
 #Keep these things in memory so not recreating each time
-reg.vect <- prepRegressionElements(X,W,W_c) #returns sparse matrices since that saves a ton of memory.
+reg.vect <- prepRegressionElements(X,W,W_c) #returns sparse matrices since that saves a ton of memory by doing this once up front
 #Loading that all in each time was slow...
 print("Data prepped for regression")
 lobstr::mem_used()
@@ -121,15 +132,24 @@ if(is.na(bic.dat$K))
 #Transition over to the full run:
 option <- bic.dat$options
 option$K <- bic.dat$K
-option$alpha1 <- bic.dat$alpha
-option$lambda1 <- bic.dat$lambda
+option$alpha1 <- bic.dat$alpha #This is applied to U
+option$lambda1 <- bic.dat$lambda #This is applied to V
 
 #Perform optimization
 ret <- gwasML_ALS_Routine(option, X, W, W_c, bic.dat$optimal.v, maxK=bic.dat$K,reg.elements=reg.vect) #I like this better
+#Next, try it with them swapped......
+#Testing init with u: ret.u <- gwasML_ALS_Routine(option, X, W, W_c, bic.dat$optimal.v, maxK=bic.dat$K,reg.elements=reg.vect, preU=bic.dat$optimal.u)
 ret[["snp.ids"]] <- all_ids
 ret[["trait.names"]] <- names
 save(ret,option, file = paste0(outdir, "_final_dat.RData"))
 
 #Write output files
-write.table(ret$V, file = paste0(outdir, "latent.factors.txt"), quote = FALSE, row.names = ret$trait.names, sep = " ")
-write.table(ret$U, file = paste0(outdir, "latent.loadings.txt"), quote = FALSE, row.names = ret$snp.ids, sep = " ")
+#For write out- this will disrupt pipelines, but is for the best:
+V.df <- data.frame(ret$trait.names, ret$V) %>% magrittr::set_colnames(c("Study", paste0("V", 1:ncol(ret$V))))
+write.table(V.df, file = paste0(outdir, "latent.factors.txt"), quote = FALSE, row.names = FALSE, sep = " ")
+#write.table(ret$V, file = paste0(outdir, "latent.factors.txt"), quote = FALSE, row.names = ret$trait.names, sep = " ")
+U.df <- data.frame(ret$snp.ids, ret$U) %>% magrittr::set_colnames(c("SNP", paste0("U", 1:ncol(ret$V))))
+write.table(U.df, file = paste0(outdir, "latent.loadings.txt"), quote = FALSE, row.names = FALSE, sep = " ")
+
+#write.table(ret$U, file = paste0(outdir, "latent.loadings.txt"), quote = FALSE, row.names = ret$snp.ids, sep = " ")
+write.table(ret$trait.names, file =paste0(outdir, "trait_out_order.txt"), quote = FALSE, row.names = FALSE,col.names = FALSE)

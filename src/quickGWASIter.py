@@ -37,7 +37,7 @@ def readInSNPs(snp_list, ind):
 
 def learnHeaders(tl):
     ret_dict = dict()
-    header_map = {"SIGNED_SUMSTAT":"beta","SE":"se","P":"p", "N":"n","Z":"z", "FRQ":"maf"}
+    header_map = {"SIGNED_SUMSTAT":"beta","SE":"se","P":"p", "N":"n","Z":"z", "FRQ":"maf", "SNP":"SNP"}
     for i,entry in enumerate(tl):
         if(entry in header_map): #just the headers we care about
             ret_dict[header_map[entry]] = i
@@ -52,6 +52,7 @@ parser.add_argument("--gwas_dir", help = "gwas directory to look in.")
 parser.add_argument("--type", help = "if its ldsc or not", default = "NOT")
 parser.add_argument("--keep_dump", help = "Should we keep a backup dump file as we go?", default =False, action = "store_true")
 parser.add_argument("--extension", help = "File extension to grab")
+parser.add_argument("--file_search", help = "File extension to grab", default = False)
 parser.add_argument("--file_order", help = "File extension to grab",default = "")
 args = parser.parse_args()
 
@@ -104,12 +105,10 @@ key = {11:cont, 12:disc, 5:ldsc, 8:ldsc_custom, 9:ldsc_custom}
 snp_ids = list()
 first = True
 print("Reading through files")
-print(file_list)
 for f_line in file_list:
     #its possible its a list, so clean up
     #f = f_line.split()[0]
     f= os.path.basename(f_line.split()[0])
-    print(f)
     fname = f.split("/")[-1].split(".")[0]
     fname = args.gwas_dir + "/" + fname + "*" + args.extension
     if args.pickle != "" and ret_dat["z"][f][1] != 0:
@@ -117,7 +116,10 @@ for f_line in file_list:
         print("we have", f)
         continue 
     try:
-        open_file = glob.glob(fname)[0]
+        if args.file_search:
+          open_file = glob.glob(fname)[0]
+        else:
+          open_file=args.gwas_dir + "/" +f
     except: #cannot find the specified file.
         print('cannot find specified file')
         print(fname)
@@ -128,7 +130,7 @@ for f_line in file_list:
       file_obj = gzip.open(open_file, 'rt')
     else:
       file_obj = open(open_file, 'r')
-      
+    print("Currently parsing file,", open_file)  
     with file_obj as istream:
         line_num = 0
         #print(open_file)
@@ -143,13 +145,14 @@ for f_line in file_list:
                 fid=tab[0]
             else:
               k = key[len(tab)] #if its ldsc, continuous, or binary
-            if tab[0] == "variant" or tab[0] == "SNP":
+            if "VARIANT" in line.upper() or "SNP" in line.upper() :
                 if "ldsc" in args.type:
                     key[len(tab)] = learnHeaders(tab) #extend this to all types?
                     k = key[len(tab)]
+                    var_i = k["SNP"]
                 continue 
             if args.type == "ldsc" or args.type == "ldsc_custom":
-                fid = tab[0]
+                fid = tab[var_i]
             else:
                 id = tab[0].split(":")
                 try:
@@ -166,6 +169,7 @@ for f_line in file_list:
                     else:
                       try:
                           ret_dat[dt][f][snp_ref_index] = float(tab[k[dt]])
+                            
                       except:
                           print("dt", dt)
                           print("f",f)
@@ -176,6 +180,7 @@ for f_line in file_list:
                           print(len(ret_dat[dt][f][snp_ref_index]))
                           input() 
                line_num += 1
+    file_obj.close()           
     #Store a local backup so you aren't working everything over and over and over
     if args.keep_dump:
         dbfile = open(args.output + 'tmp_results.dump', 'wb')

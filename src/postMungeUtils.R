@@ -46,9 +46,10 @@ snpDistsFromLDSC <- function(l, col.out, feature_list="ALL", snp.list = "", save
   snp.stats <- matrix(NA, nrow = length(snp.list), ncol =length(feature_list) )
   for(i in 1:nrow(lin))
   {
-    curr <- fread(lin$V1[i]) %>% select(SNP, !!sym(col.out))
     print(i)
-    if(all(curr$SNP == snp.list))
+	  curr <- fread(lin$V1[i]) %>% select(SNP, !!sym(col.out))
+  print("Loaded into memory")  
+  if(all(curr$SNP == snp.list))
     {
       snp.stats[,i] <- unlist(curr[,2])
     }
@@ -84,6 +85,7 @@ listReadInHelper <- function(l, feature_list = "ALL", snp.list = "")
   {
     message("No SNPs given- going by first entry in the list")
     snp.list <- fread(lin$V1[1])$SNP
+    print(head(snp.list))
   }
   
   snp.list <- data.frame("SNP" = snp.list)
@@ -98,10 +100,24 @@ getDataFromLDSC <- function(l, col.out, feature_list="ALL", snp.list = "", fill.
   d <- listReadInHelper(l, feature_list, snp.list)
   nums <- list()
   lin <- d$file.list
-  snp.list <- d$snps
+  snp.list <- arrange(d$snps, SNP)
   feature_list = d$traits
+ #its possible these files are very big, and a left_join operation is too slow.
+ #If these files came from LDSC, all of their orders and SNPs should be the same. Can we leverage this? 
+  #nums <- lapply(1:nrow(lin), function(x) fread(lin$V1[x]) %>% left_join(snp.list, ., by = "SNP") %>% select(!!sym(col.out)))
+  #doing this in a for loop so we can actually see progress?
+  #Or should we do it with  mcapply to speed things up?
+  nums <- list()
+  for(i in 1:nrow(lin)){
+	  print(lin$V1[i])
+	
+	  nums[[i]] <- fread(lin$V1[i]) %>% dplyr::left_join(snp.list,.,by="SNP") %>% select(!!sym(col.out))
+	  #AAttempted to speed this up with data.table, but it appears to be slower
+	  #nums[[i]] <- snp.list[fread(lin$V1[i]), on ="SNP"] %>% select(!!sym(col.out))
+  }
+
+
   
-  nums <- lapply(1:nrow(lin), function(x) fread(lin$V1[x]) %>% left_join(snp.list, ., by = "SNP") %>% select(!!sym(col.out)))
   tot <- as.matrix(do.call("cbind", nums))
   #Mean impute the sample size for SNPs with no specified N.....
   if(fill.nas)
@@ -128,7 +144,7 @@ getDataFromLDSC <- function(l, col.out, feature_list="ALL", snp.list = "", fill.
 
 
 #pacman::p_load(data.table, tidyr, dplyr, ggplot2, stringr,stats, cowplot)
-snp.list <- fread("/scratch16/abattle4/ashton/snp_networks/scratch/udler_td2/variant_lists/hm3.pruned.N.txt")$SNP
+#snp.list <- fread("/scratch16/abattle4/ashton/snp_networks/scratch/udler_td2/variant_lists/hm3.pruned.N.txt")$SNP
 ##Tool for processing the results from LDSC for weights....
 #This requires having run pairwise LDSC already
 #ldsc.path- where the ldsc output files are from my pipeline
@@ -323,12 +339,13 @@ ldscGCOVIntoMatrix <- function(look_path = "/scratch16/abattle4/ashton/snp_netwo
     select(p1, p2, rg, se, z, p, h2_obs, h2_obs_se, h2_int, h2_int_se, gcov_int, gcov_int_se,Source.x, snp_overlap) %>% 
     rename("Source" = Source.x)
   joined.main <- all.dat
-  
+  matrix.diag <-1
   if(which.col == "rg_se")
   {
     #ldscTableToMatrix(joined.main,"se", null_scores = 1)
     ns = 0
     which.col = "se"
+    matrix.diag <-NA
     
   }
   
@@ -387,7 +404,7 @@ ldscGCOVIntoMatrix <- function(look_path = "/scratch16/abattle4/ashton/snp_netwo
   {
     ns = 1
   }
-  ldscTableToMatrix(joined.main,which.col, null_scores = ns)
+  ldscTableToMatrix(joined.main,which.col, null_scores = ns, diag_scores = matrix.diag)
 }
 
 #which.col doesn't matter.

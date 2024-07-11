@@ -61,10 +61,10 @@ for f in file_list:
               snp_i = 0
               if "SNP" in line.upper(): snp_i = line_.index("SNP")
               if "VARIANT" in line.upper(): snp_i = line_.index("variant")
-              print("Found the snp index", snp_i)
+              #print("Found the snp index", snp_i)
               if args.type == "ldsc_custom": #The header names vary here
                 pval_i=line_.index("P")
-                print("found the pvalue index,",pval_i)
+                #print("found the pvalue index,",pval_i)
                 if "FRQ" in line_:
                     maf_i=line_.index("FRQ")
                 else:
@@ -98,7 +98,11 @@ for f in file_list:
                 if float(line_[pval_i]) < args.pval: #looking at a zscore
                     if line_[snp_i] not in count_set: #Update- track the number of times it hits.
                         count_set[line_[snp_i]] = 0
-                    if (maf_i is not None) and (float(line_[maf_i]) < args.maf):
+                    if "rs28463616" in line_[snp_i]:
+                        print(line_)
+                        print("Found the error")
+                        input()
+                    if (maf_i is not None) and (float(line_[maf_i]) < args.maf): #Omit by MAF
                         continue
                     else:
                         if matchlist and line_[snp_i] in snp_set: #we want to filter and there is the filter

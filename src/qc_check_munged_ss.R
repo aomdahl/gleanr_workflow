@@ -11,16 +11,17 @@ option_list <- list(
   make_option("--output", type = "character", help = "where to write output file and name", default ="pheno_report")
 )
 
-t=c("--gwas_dir=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwas_extracts/ukbb_benchmark/",
+t=c("--gwas_dir=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwas_extracts/panUKBB_complete/",
     "--gwas_ext=.sumstats.gz",
-    "--trait_order=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/trait_selections/ukbb_benchmark.studies.txt",
-    "--output=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwas_extracts/ukbb_benchmark/")
+    "--trait_order=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/trait_selections/panUKBB_complete.studies.tsv",
+    "--output=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwas_extracts/panUKBB_complete/",
+    "--missing_thresh=0.1")
 #args <- parse_args(OptionParser(option_list=option_list),args=t)
 args <- parse_args(OptionParser(option_list=option_list))
 
 inpath <-args$gwas_dir
 inext <- args$gwas_ext
-
+#Another change- just read in what you need to, don't read in everything...
 files.all <- list.files(path = inpath,pattern = inext )
 thresh = args$missing_thresh
 missing.count <- c()
@@ -58,7 +59,11 @@ if(args$trait_order != "")
 {
   to = fread(args$trait_order, header = F)
   index.order = c()
-  file.names.split = missingness$file %>% gsub(x=., pattern=".sumstats.gz", replacement="") %>% str_split(., pattern = "\\.")
+  
+  #file.names.split = missingness$file %>% gsub(x=., pattern=".sumstats.gz", replacement="") %>% str_split(., pattern = "\\.")
+  file.names.split = basename(missingness$file) %>% gsub(x=., pattern=".sumstats.gz", replacement="") %>% 
+    str_split(., pattern = "\\.") %>% sapply(., function(x) x[length(x)])
+  #The above doesn't work with some ICD codes that have periods in it. More nuanced approach
   for(i in 1:nrow(to))
   {
     pheno = to[i,2]
@@ -69,7 +74,10 @@ if(args$trait_order != "")
     }
     else if(sum(match) > 1)
     {
-      message("ERROR: files have duplicate names")
+      message("ERROR: files have duplicate names. Output will NOT be in order")
+      message("Pipeline may not proceed because 2 studies in the input directory are assigned the same identifying name.")
+      print(file.names.split[which(match)])
+      #break
       quit()
     }else
     {

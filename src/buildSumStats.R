@@ -7,29 +7,35 @@
 pacman::p_load(data.table, tidyr, dplyr, ggplot2, stringr, optparse, magrittr)
 source("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/src/formatting_functs.R")
 option_list <- list(
-make_option("--projected_loadings", type = 'character', help = "projected_loadings file. First column is ecpected to be snp ids,  in form chr:pos or "),
-make_option("--factors", type = 'character', help = "factor matrix; needed for good estimate fo sample sizes."),
+make_option("--projected_loadings", type = 'character', help = "projected_loadings file. First column is ecpected to be snp ids,  in form chr:pos or RSID"),
+make_option("--factors", type = 'character', help = "factor matrix; needed for good estimate of sample sizes."),
 make_option("--output", type = "character", help = "Path to output location."),
 make_option("--hapmap_list", type = "character", help = "Path SNP list to use, default given.", 
             default = "/data/abattle4/aomdahl1/reference_data/hapmap_chr_ids.txt"),  
 make_option("--samp_counts", type = "character", help = "Number of samples across the studies- give as an average.", default = "avg"),
 make_option("--samp_file", type = "character", help = "Option to read in a file that contains the sample counts"),
+#make_option("--no_file_headers", type = "logical", help = "Should we read in a file header", default = FALSE, action="store_true"),
 make_option("--normal_transform", type = "character", help = "Put these on the scale of regular z-scores, so mean is 0, variance is 1", action = "store_true", default = FALSE)
 )
+#args <- parse_args(OptionParser(option_list=option_list),args=t)
 args <- parse_args(OptionParser(option_list=option_list))
-#DEBUG:
 
+#DEBUG:
+t <- c("--projected_loadings=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results/panUKBB_complete_61K/latent.loadings.txt",
+       "--factors=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results/panUKBB_complete_61K/latent.factors.txt",
+       "--output=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results/panUKBB_complete_61K/loading_ss_files/",
+       "--samp_file=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwas_extracts/panUKBB_complete/panUKBB_complete_clumped_r2-0.1.n.tsv")
 if (FALSE)
 {
   args <- list()
-  args$projected_loadings <- "/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results/infertility/p0.001_FULL/flash_backfit_zscores/LMwht_projection/projected_hapmap3_loadings.txt"
-  args$samp_file <- "/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwas_extracts//infertility/p0.001_FULL/flash_backfit_zscores/LMwht_projection//full_hapmap3_snps.N.tsv"
+  args$projected_loadings <- "/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results//ukbb_GWAS_h2-0.1_rg-0.9/GLEANER_WL_0.7/no_lambda_correction-K2/projectedMETA_hapmap3_loadings.txt"
+  args$samp_file <- "/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results//ukbb_GWAS_h2-0.1_rg-0.9/full_hapmap3_snps.N.tsv"
   args$hapmap_list <- "/data/abattle4/aomdahl1/reference_data/hapmap_chr_ids.txt"
   #Ah, we need the full hapmap list because it has the ref/alt alleles. This is what we are
   args$hapmap_list <- "/data/abattle4/aomdahl1/reference_data/hapmap_chr_ids.txt"
   args$samp_counts <- -1
-  args$factors <- "/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results/infertility/p0.001_FULL/flash_backfit_zscores/LMwht_projection/latent.factors.txt"
-  args$output <- "/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results/infertility/p0.001_FULL/flash_backfit_zscores/LMwht_projection//loading_ss_files/"
+  args$factors <- "/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results//ukbb_GWAS_h2-0.1_rg-0.9/GLEANER_WL_0.7/no_lambda_correction-K2/latent.factors.SUB.txt"
+  args$output <- "/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results//ukbb_GWAS_h2-0.1_rg-0.9/GLEANER_WL_0.7/loading_ss_files_META/"
   factor_names <- c("test1", "test2")
 }
 
@@ -87,7 +93,7 @@ if(args$samp_counts == "avg" | args$samp_counts == "weighted")
   if(args$samp_counts == "weighted")
   {
 	  #12/02- better heuristic for weighting...
-	  
+	  #Need to make sure the names align. That's the point...
 	  factors <- fread(args$factors) %>% mutate("rownames" = factor(rownames, level=nn)) %>% arrange(rownames)
 	  stopifnot(all(nn[-1] == factors$rownames))
 	  #order rows 
