@@ -1595,6 +1595,22 @@ gleaner <- function(X,W, snp.ids, trait.names, C = NULL, K=0, gwasmfiter =5, rep
 
 #####
 #Version optimized for glmnet
+#####MAJOR TODO:
+## IMPLEMENT  better convergence response 
+## At present, it drops out when its been at least 3 iterations and then picks the overall iteration that minimizes BIC.
+## However, every step is a pair (one alpha, one lambda), and so things shouldn't just be considered in a single iteration (i.e. update V at the end, update U in the next)
+## The reason current implementation is potentially dangerous- if at the end of one iteration everything is zeroed out and that minimized teh BIC, then we get nothing. But perhaps that savme V
+## with the previous iterations's U (an unscored matchup) would have made it non-zero.
+## Proposed approach:
+## After each fitting STEP (U, or V), make a call to "storeMinBICDat"
+## When convergence is acheived, return optimalU, optimalV, lambda, alpha returned from the most recent call to storeMinBicDat
+## pseudocode storeMinBicDat
+## input arguments: min.so.far, bic.a, bic.l, curr_v, curr_u
+## if bic.a + bic.l < min.so.far$bic_tot:
+    ## update min.so.far with new minimum
+    ## store current u and v in min.so.far,
+    ## return updated min.so.far
+## else: return min.so.far
 #bic.dat <- getBICMatricesGLMNET(opath,option,X,W,W_c, all_ids, names)
 getBICMatricesGLMNET <- function(opath,option,X,W,W_c, all_ids, names, min.iter = 2, max.iter = 100, burn.in.iter = 0,
                                  init.mat = NULL, rg_ref=NULL,reg.elements=NULL)
