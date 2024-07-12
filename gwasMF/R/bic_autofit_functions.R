@@ -1011,7 +1011,7 @@ getBICMatrices <- function(opath,option,X,W,W_c, all_ids, names, min.iter = 2,
   #things to record
   rec.dat <- list("alphas"=c(), "lambdas"=c(), "bic.a" = c(), "bic.l"=c(), "obj"=c(),
                   "v.sparsity" = c(), "u.sparsity"=c(), "iter"=c(), "sd.sparsity.u" = c(), "sd.sparsity.v" = c(),
-                  "alpha.s" = c(), "lambda.s" = c(), "Ks" = c(), "Vs" = list(), "X_hat" = c(), "sparsity.obj" <- list())
+                  "alpha.s" = c(), "lambda.s" = c(), "Ks" = c(), "Vs" = list(),"Us" = list(), "X_hat" = c(), "sparsity.obj" <- list())
   #kick things off
   lambdas <- consider.params$lambdas
   alphas <- consider.params$alphas
@@ -1053,7 +1053,9 @@ getBICMatrices <- function(opath,option,X,W,W_c, all_ids, names, min.iter = 2,
       message('getting down to it....')
     }
     #now fit U:
+    #Record these both
     rec.dat$Vs[[i]] <- optimal.v
+    rec.dat$Us[[i]] <- optimal.u
 
     #Now fit U!
     if(use.optim)
@@ -1496,7 +1498,6 @@ gleaner <- function(X,W, snp.ids, trait.names, C = NULL, K=0, gwasmfiter =5, rep
   d <- initializeGwasMF(X,W,C, snp.ids, trait.names, K=ifelse(use.init.k, K, 0),
                         init.mat=init.mat, covar_shrinkage=shrinkWL,covar_se=covar_se,...) #Either use specified, or prune down as we
   option <- d$options; args <- d$args; hp <- d$hp; all_ids <- d$all_ids; names <- d$namesl; W_c <- d$W_c
-  print(W_c)
   #pick up here.
   option$block_covar <- 0.2
   #option$WLgamma <- 0.6
@@ -1583,22 +1584,12 @@ gleaner <- function(X,W, snp.ids, trait.names, C = NULL, K=0, gwasmfiter =5, rep
     ret <- all.runs[[best]][[1]]
   } else
   {
-    #test 1: 6 in, drops 1 CHECK
-    #test 2: 2 in, drops none CHECK
-    #test3: 8 in, drops 3
     ret <- gwasML_ALS_Routine(option, X, W, W_c, bic.dat$optimal.v, maxK=K.cap)
     if(is.sim)
     {
       save(ret, file = paste0(save.path, "global.fit.als.RData"))
     }
-    #Try with 1st params
-    #option$alpha1 <- bic.dat$alpha.path[1] #this is used to regularize U
-    #option$lambda1 <- bic.dat$lambda.path[1] #This is used to regularize V
   }
-   #randomly initialize here...
-  #ret.std <- gwasML_ALS_Routine(opath, option, X, W, NULL, maxK=initk)
-  #ret2 <- gwasML_ALS_Routine(opath, option, X, W, NULL, maxK=initk) #randomly initialize here...
-  #ret3 <- gwasML_ALS_Routine(opath, option, X, W, NULL, maxK=initk) #randomly initialize here...
   ret
 }
 
@@ -1613,7 +1604,7 @@ getBICMatricesGLMNET <- function(opath,option,X,W,W_c, all_ids, names, min.iter 
   #Data to track
   rec.dat <- list("alphas"=c(), "lambdas"=c(), "bic.a" = c(), "bic.l"=c(), "obj"=c(),
                   "v.sparsity" = c(), "u.sparsity"=c(), "iter"=c(), "sd.sparsity.u" = c(), "sd.sparsity.v" = c(),
-                  "alpha.s" = c(), "lambda.s" = c(), "Ks" = c(), "Vs" = list(), "X_hat" = c(), "sparsity.obj" <- list())
+                  "alpha.s" = c(), "lambda.s" = c(), "Ks" = c(), "Vs" = list(),"Us"=list(), "X_hat" = c(), "sparsity.obj" <- list())
   #If we get columns with NA at this stage, we want to reset and drop those columns at the beginning.
   #Currently, just using NULL for W_ld
   #In the case we don't want any sparsity, just terminate early.
@@ -1630,7 +1621,9 @@ getBICMatricesGLMNET <- function(opath,option,X,W,W_c, all_ids, names, min.iter 
       #We don't need U passed in unless it is request to innitialize U, but not considering for th emoment.
     }
 
-
+  #CHANGE JUly- specify early here.
+  optimal.u <- NA
+  optimal.v <- NA
   if(option$u_init != "")
   {
     optimal.u <- burn.in.sparsity$U_burn
@@ -1671,7 +1664,10 @@ getBICMatricesGLMNET <- function(opath,option,X,W,W_c, all_ids, names, min.iter 
       alphas <- SelectCoarseSparsityParamsGlobal(u.sparsity, n.points = 15)
     }
     #now fit U:
+    #note that this can't end early because of the condition on convergence, implemented below. Let's condense this logic for simplicity
     rec.dat$Vs[[i]] <- optimal.v
+    rec.dat$Us[[i]] <- optimal.u
+
     bic.var = option$bic.var
     option$alpha1 <- NA # Important
     option$lambda1 <- NA #important.
@@ -1753,211 +1749,22 @@ getBICMatricesGLMNET <- function(opath,option,X,W,W_c, all_ids, names, min.iter 
   if(CONV.MODE == "BIC.change")
   {
     #we want to release the previous iteration, not the next
+    #V,U reflect the value at the START of the iteration.
     rec.dat$Vs[[i]] <- optimal.v
-    final.index <- i-2 #Why are we doing this?
-    #final.index <- getBICOptimalIndex(rec.dat)
-    optimal.v <- rec.dat$Vs[[final.index]]
+    rec.dat$Us[[i]] <- optimal.u
+    #final.index <- i-2 #Why are we doing this?
+    final.index <- getBICOptimalIndex(rec.dat)
+    optimal.v <- rec.dat$Vs[[final.index + 1]] #VERIFY?
+    optimal.u <- rec.dat$Us[[final.index + 1]] #VERIFY?
+    #Align with optimal.u for the final readout.
   }
 
   if(ncol(optimal.u) != ncol(optimal.v))
   {
     message("Warning: final matrices weren't aligned. Aligning now. Note to developer: check this logical condition.")
+    #This could happen if we aren't picking the exact most recent version of optimal.u
     aligned <- AlignFactorMatrices(X,W,optimal.u,optimal.v); optimal.u <- aligned$U; optimal.v<- aligned$V
   }
-  #This returns all the data from the last iteration
-  #TODO: clean this up. This is very confusing.
-  return(list("optimal.v" = optimal.v,"resid.var" = u.fit$resid_var,
-              "rec.dat" = rec.dat, "lambda"=rec.dat$lambda.s[final.index], "alpha"=rec.dat$alpha.s[final.index], "options" = option,
-              "K"= ncol(optimal.v), "alpha.path" = rec.dat$alpha.s, "lambda.path" = rec.dat$lambda.s, "optimal.u" = optimal.u, "convergence.options" = conv.options))
-}
-
-#OLD version. Above is for cleanup.
-getBICMatricesGLMNET_DEPRECATED <- function(opath,option,X,W,W_c, all_ids, names, min.iter = 2, max.iter = 100, burn.in.iter = 0,
-                                 init.mat = NULL, rg_ref=NULL,reg.elements=NULL)
-{
-  bic.type = 4
-  W_ld = NULL
-  conv.options <- list()
-  #Data to track
-  rec.dat <- list("alphas"=c(), "lambdas"=c(), "bic.a" = c(), "bic.l"=c(), "obj"=c(),
-                  "v.sparsity" = c(), "u.sparsity"=c(), "iter"=c(), "sd.sparsity.u" = c(), "sd.sparsity.v" = c(),
-                  "alpha.s" = c(), "lambda.s" = c(), "Ks" = c(), "Vs" = list(), "X_hat" = c(), "sparsity.obj" <- list())
-  #If we get columns with NA at this stage, we want to reset and drop those columns at the beginning.
-  #Currently, just using NULL for W_ld
-  #In the case we don't want any sparsity, just terminate early.
-  #print(pryr::mem_used())
-  print("Define sparsity space")
-  burn.in.sparsity <- DefineSparsitySpaceInit(X, W, W_c, NULL, option, burn.in = burn.in.iter, rg_ref = rg_ref,reg.elements=reg.elements) #If this finds one with NA, cut them out here, and reset K; we want to check pve here too.
-  #print(paste0("Current memory usage:", pryr::mem_used()))
-  if(option$bic.var == "NONE")
-  {
-    return(list("optimal.v" = burn.in.sparsity$V_burn,"resid.var" = NA,
-                "rec.dat" = rec.dat, "lambda"=1e-20, "alpha"=1e-20, "options" = option,
-                "K"= burn.in.sparsity$new.k, "alpha.path" = NA, "lambda.path" = NA, "optimal.u" = NA, "convergence.options" = NA))
-    #We don't need U passed in unless it is request to innitialize U, but not considering for th emoment.
-  }
-
-
-  if(option$u_init != "")
-  {
-    optimal.u <- burn.in.sparsity$U_burn
-    option$K <- burn.in.sparsity$new.k
-    message("initializing with U")
-  }else if(!is.null(init.mat))
-  {
-    optimal.v <- init.mat
-    option$K <- ncol(optimal.v)
-  }else
-  {
-    optimal.v <- burn.in.sparsity$V_burn
-    #Doesn't appear the order makes a big difference.
-    #u.sparsity <- DefineSparsitySpace(X,W,as.matrix(optimal.v),"U", option)
-    option$K <- ncol(optimal.v)
-  }
-  consider.params <- SelectCoarseSparsityParams(burn.in.sparsity, burn.in.iter, n.points = 15)
-
-  #things to record
-
-  INCR.LIMIT=3
-  NOT.CONVERGED <- TRUE; i = 1
-  #CONV.MODE = "any"
-  CONV.MODE <- option$param_conv_criteria
-  #CONV.MODE = "BIC.change"
-  message("Convergence mode: ", CONV.MODE)
-  option$regression_method = "glmnet"
-  while(i < max.iter & NOT.CONVERGED){
-    #TEST version
-    #if(i == 1 & args$WLgamma == "MLE")
-    if(FALSE)
-    {
-      message("Using the iterative update version to estimate gamma. Not recommended.")
-      gamma.list <- c(option$WLgamma)
-      option$alpha1 <- 1e-20
-      option$lambda1 <- 1e-20
-      for(j in 1:5)
-      {
-        u.fit <- FitUWrapper(X, W, W_c, optimal.v, option,reg.elements=reg.elements)
-        #Fit V
-        v.fits <- FitVWrapper(X,W,W_c, u.fit$U,option,reg.elements=reg.elements)
-        #Update Wc
-        option$WLgamma <- updateGammaShrinkage(X,W,option$C,u.fit$U,v.fits$V)
-        gamma.list <- c(gamma.list, option$WLgamma)
-        #apply shrinkage
-        new.C <- linearShrinkLWSimple(option$C, option$WLgamma)
-        #Update Wc
-        W_c <- buildWhiteningMatrix(new.C, dim, blockify = -1)$W_c
-
-        #Repat a few times
-      }
-
-    }
-
-    if(option$u_init != "")
-    {
-      v.fits <- FitVWrapper(X,W,W_c, optimal.u,option,reg.elements=reg.elements)
-      rec.dat$lambda.s <- c(rec.dat$lambda.s,v.fits$lambda.sel)
-      optimal.v <- v.fits$V
-      optimal.v <- DropEmptyColumns(optimal.v)
-      rec.dat$Ks <- c(rec.dat$Ks, ncol(optimal.v)) #this is based on the previous model?, we haven't pruned out empty columns yet?
-
-
-      #Record new data
-      rec.dat$V_sparsities = c(rec.dat$V_sparsities, matrixSparsity(optimal.v, ncol(X)));
-      rec.dat$bic.l <- c(rec.dat$bic.l,unlist(v.fits$BIC[,bic.type]))
-      #update the parameters for U based on the new V
-      u.sparsity <- DefineSparsitySpace(X,W,W_c, optimal.v, "U", option,reg.elements=reg.elements) #Here in case we hit the max.
-      alphas <- SelectCoarseSparsityParamsGlobal(u.sparsity, n.points = 15)
-    }
-    #now fit U:
-    rec.dat$Vs[[i]] <- optimal.v
-    bic.var = option$bic.var
-    option$alpha1 <- NA # Important
-    option$lambda1 <- NA #important.
-    print(paste0("Fitting U, iteration ", i))
-    u.fit <- FitUWrapper(X, W, W_c, optimal.v, option,reg.elements=reg.elements)
-    #print(pryr::mem_used())
-
-    rec.dat$alphas <- UpdateAndCheckSparsityParam(rec.dat$alphas, u.fit$alpha.sel, errorReport = TRUE)
-    rec.dat$bic.a <- c(rec.dat$bic.a,u.fit$bic)
-    #Pick the best choice from here, using threshold.
-    optimal.u <- u.fit$U
-    rec.dat$alpha.s <- c(rec.dat$alpha.s,u.fit$alpha.sel)
-    rec.dat$U_sparsities = c(rec.dat$U_sparsities, matrixSparsity(optimal.u, ncol(X)));
-    #TODO: drop empty columns here, now.
-    optimal.u <- DropEmptyColumns(optimal.u)
-    #Do a check- is it empty?
-    if(CheckUEmpty(optimal.u)) {message("U has no signal; ending model selection phase");
-      return(list("optimal.v" = matrix(0, ncol = ncol(optimal.u), nrow = ncol(optimal.v)),"resid.var" = u.fit$resid_var,
-                  "rec.dat" = rec.dat, "lambda"=rec.dat$lambda.s[i], "alpha"=rec.dat$alpha.s[i], "options" = option,
-                  "K"= NA, "alpha.path" = rec.dat$alpha.s, "lambda.path" = rec.dat$lambda.s, "optimal.u" = optimal.u, "convergence.options" = conv.options))
-    }
-
-
-    #fit V now
-    print(paste0("Fitting V, iteration ", i))
-    v.fits <- FitVWrapper(X,W,W_c, optimal.u,option,reg.elements=reg.elements)
-    #print(pryr::mem_used())
-    rec.dat$lambda.s <- c(rec.dat$lambda.s,v.fits$lambda.sel)
-    rec.dat$Ks <- c(rec.dat$Ks, ncol(optimal.v)) #this is based on the previous model?, we haven't pruned out empty columns yet?
-    optimal.v <- v.fits$V
-    optimal.v <- DropEmptyColumns(optimal.v)
-    #Record new data
-    rec.dat$V_sparsities = c(rec.dat$V_sparsities, matrixSparsity(optimal.v, ncol(X)));
-    rec.dat$lambdas <- UpdateAndCheckSparsityParam(rec.dat$lambdas, v.fits$lambda.sel, errorReport = TRUE)
-    rec.dat$bic.l <- c(rec.dat$bic.l,v.fits$bic)
-    if(CheckVEmpty(optimal.v)) {message("V has no signal; ending model selection phase");
-      return( list("optimal.v" = optimal.v, nrow = ncol(optimal.v),"resid.var" = u.fit$resid_var,
-                   "rec.dat" = rec.dat, "lambda"=rec.dat$lambda.s[i], "alpha"=rec.dat$alpha.s[i], "options" = option,
-                   "K"= NA, "alpha.path" = rec.dat$alpha.s, "lambda.path" = rec.dat$lambda.s,
-                   "optimal.u" =  matrix(0, ncol = ncol(optimal.v), nrow = ncol(optimal.u)), "convergence.options" = conv.options))
-    }
-
-    if(ncol(optimal.u) == ncol(optimal.v))
-
-    {
-      rec.dat$X_hat <- c(rec.dat$X_hat, norm(optimal.u %*% t(optimal.v), type = 'F'))
-    }else
-    {
-      rec.dat$X_hat <- c(rec.dat$X_hat, NA)
-    }
-
-    #update the parameters for U based on the new V
-    u.sparsity <- DefineSparsitySpace(X,W,W_c, optimal.v, "U", option,reg.elements=reg.elements) #Here in case we hit the max.
-    if(i > min.iter){
-
-      NOT.CONVERGED <- !checkConvergenceBICSearch(i, rec.dat, conv.mode = CONV.MODE,conv.perc.thresh = 0.05) #returns true if convergence is reached
-
-      message("ongoing objective")
-
-    }
-    #record the ongoing optimization information.
-    #NOTHING BELOW changed, can use same as othr versions of code.
-    jk <- NA
-    if(ncol(optimal.u) == ncol(optimal.v))
-    {
-      jk <- compute_obj(X, W,W_c, optimal.u, optimal.v, option, decomp = TRUE, loglik = TRUE) #this is giving issues.
-    }
-
-    rec.dat$sparsity.obj[[i]] <- jk
-
-    aligned <- AlignFactorMatrices(X,W,optimal.u,optimal.v); optimal.u <- aligned$U; optimal.v<- aligned$V
-    #Check convergence
-    conv.options[[i]] <- trackAlternativeConvergences(X,W,W_c, optimal.u,optimal.v, i, rec.dat, u.fit$sparsity_space, v.fits$sparsity_space, option)
-    #Will this break something?
-    i = i+1
-  }
-  final.index <- i-1
-  if(CONV.MODE == "BIC.change")
-  {
-    #we want to release the previous iteration, not the next
-    rec.dat$Vs[[i]] <- optimal.v
-    final.index <- i-2
-
-    optimal.v <- rec.dat$Vs[[final.index]]
-  }
-  #u.norms <- sapply(1:length(conv.options), function(i) conv.options[[i]]$U.norm)
-  #v.norms <- sapply(1:length(conv.options), function(i) conv.options[[i]]$V.norm)
-  #TODO: add in drops for pve
   #This returns all the data from the last iteration
   #TODO: clean this up. This is very confusing.
   return(list("optimal.v" = optimal.v,"resid.var" = u.fit$resid_var,
