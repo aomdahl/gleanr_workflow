@@ -85,9 +85,11 @@ updateLog <- function(text, options = NULL)
     message(text)
   }else if (verbosity == 1)
   {
-    logr::log_print(text,console = TRUE, file = ofile)
+    #logr::log_print(text,console = TRUE, file = ofile)
+    message(text)
   } else{
-    logr::log_print(text,console = FALSE, file = ofile)
+    #logr::log_print(text,console = FALSE, file = ofile)
+    message(text)
   }
 
 }

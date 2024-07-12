@@ -182,7 +182,7 @@ FitVGlobal <- function(X, W, W_c, U, option, formerV = NULL, reg.elements=NULL)
      if(option$std_y) { long.x <- mleStdVector(long.x)}
      #Weights to multiple the reordered elements of U by
      joined.weights <- lapply(1:nrow(X), function(i) t(W_c) %*% (diag(W[i,])))
-     print(paste0("made joined weight: ", pryr::mem_used()))
+     #print(paste0("made joined weight: ", pryr::mem_used()))
    }else
    {
      long.x <- reg.elements$long.x
@@ -209,7 +209,6 @@ FitVGlobal <- function(X, W, W_c, U, option, formerV = NULL, reg.elements=NULL)
      long.u <- do.call("rbind",all.pieces )
      # long.u <- do.call("rbind",lapply(blocks, function(x) stackUs(x, M,K, joined.weights, U, norm = option$scale)) )
      tictoc::toc()
-     lobstr::mem_used()
      if(option$scale)
      {
        #s.tmp <- FrobScale(long.u)
@@ -225,7 +224,7 @@ FitVGlobal <- function(X, W, W_c, U, option, formerV = NULL, reg.elements=NULL)
    }
 
   long.u <- completeUExpand(joined.weights, nrow(U),M,K,U)
-  message("New u added", lobstr::mem_used())
+  message("New u added: ", lobstr::mem_used())
 
   nopen.cols <- sapply(1:ncol(long.u), function(x) x %% K)
 
@@ -279,11 +278,12 @@ FitVGlobal <- function(X, W, W_c, U, option, formerV = NULL, reg.elements=NULL)
 
    #every first entry is 0
    message("Fitting model")
-   fit = glmnet::glmnet(x = long.u, y = long.x, family = "gaussian", alpha = 1,
-                        intercept = FALSE, standardize = option$std_coef, penalty.factor = lasso.active.set) #lambda = option[['alpha1']],
+   print(pryr::mem_change(fit <- glmnet::glmnet(x = long.u, y = long.x, family = "gaussian", alpha = 1,
+                        intercept = FALSE, standardize = option$std_coef,
+                        penalty.factor = lasso.active.set,  trace.it=1))) #lambda = option[['alpha1']],
    message("fit complete")
-   print(paste0("No set lambda: ", pryr::mem_used()))
-   print(pryr::mem_used())
+   #print(paste0("No set lambda: ", pryr::mem_used()))
+   #print(pryr::mem_used())
 
    lambda.list <- fit$lambda
    penalty <- fit$penalty
@@ -300,11 +300,11 @@ FitVGlobal <- function(X, W, W_c, U, option, formerV = NULL, reg.elements=NULL)
 
      }
    }
-   message("Estimating BIC... ", pryr::mem_used())
+   #message("Estimating BIC... ", pryr::mem_used())
    bic.list <- calculateBIC(fit, long.u, long.x, option$bic.var)
 
-      print(paste0("Calculated BIC: ", pryr::mem_used()))
-   print(pryr::mem_used())
+  #print(paste0("Calculated BIC: ", pryr::mem_used()))
+   #print(pryr::mem_used())
    #bic.list <- BICglm(fit, option$bic.var)
    #bic.list <- sklearnBIC(fit,long.u,long.x, bic.mode =  option$bic.var)
    #bic.list <- ZouBIC(fit, long.u, long.x)
@@ -333,9 +333,9 @@ FitVGlobal <- function(X, W, W_c, U, option, formerV = NULL, reg.elements=NULL)
 
    #every first entry is 0
   message("Fitting")
-   fit = glmnet::glmnet(x = long.u, y = long.x, family = "gaussian", alpha = 1,
+   pryr::mem_change(fit <- glmnet::glmnet(x = long.u, y = long.x, family = "gaussian", alpha = 1,
                         intercept = FALSE, standardize = option$std_coef, penalty.factor = lasso.active.set,
-                        lambda=option$lambda1)
+                        lambda=option$lambda1, trace.it=1))
    print(paste0("Fitting done- every first entry is 0: ", pryr::mem_used()))
    penalty <- fit$penalty
    v.curr = matrix(coef(fit, s = option$lambda1)[-1], nrow = ncol(X), ncol = ncol(U),byrow = TRUE)

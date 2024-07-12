@@ -59,7 +59,7 @@ cleanUp <- function(matin, type = "beta")
 #Zero out NA and extreme chi2
 #Param X, W
 #Return list with cleanX, cleanW
-matrixGWASQC <- function(X, W, id.list, na_thres = 0.5, is.sim = FALSE)
+matrixGWASQC <- function(X, W, id.list, na_thres = 0.5, is.sim = FALSE, na.threshold=0.7)
 {
   #Now that we have the SE and the B, go ahead and filter out bad snps....
   #Clean up NAs, etc.
@@ -68,22 +68,26 @@ matrixGWASQC <- function(X, W, id.list, na_thres = 0.5, is.sim = FALSE)
   tnames = colnames(X)
   drop.nas.rows <- apply(X*W, 1, function(x) sum(is.na(x)))
   drops = c()
-  if(any(drop.nas.rows == ncol(X)))
+  #if(any(drop.nas.rows == ncol(X)))
+  if(any(drop.nas.rows > ncol(X)*na.threshold))
   {
-    drops = which(drop.nas.rows == ncol(X))
+    drops = which(drop.nas.rows > (ncol(X)*na.threshold))
     X <- X[-drops,]
     W <- W[-drops,]
     id.list <- id.list[-drops]
 
-    updateLog(paste0("Removed ",sum(drop.nas.rows == ncol(X)), " variants where all entries were NA..."))
+    updateLog(paste0("Removed ", sum(drop.nas.rows > ncol(X)*na.threshold), " variants where ", na.threshold, " of all entries were NA..."))
   }
   X <- as.matrix(X)
   W <- as.matrix(W)
   drop.nas <- apply(X*W,2, function(x) is.na(x))
-  chi.thresh = 300
+  #We aren't including this anymore
+  #chi.thresh = 300
+  chi.thresh = max(X*W^2, na.rm=TRUE)+10
   drop.chi2 <- apply(X*W,2, function(x) x^2 > chi.thresh)
   drop.chi2[drop.nas] <- FALSE
   all.drops <- drop.chi2 | drop.nas
+  #all.drops <- drop.nas
   #do we just zero those ones out or drop them all together?
   #if more than 15% of SNPs for a particular trait are in this category, drop the trait instead
   too.many.drops <- unlist(lapply(1:ncol(drop.chi2), function(i) sum(drop.chi2[,i]) + sum(drop.nas[,i])))
@@ -104,7 +108,7 @@ matrixGWASQC <- function(X, W, id.list, na_thres = 0.5, is.sim = FALSE)
   updateLog("Cells with invalid entries (NA, or excessive Chi^2 stat) will be given a weight of 0.")
   removed.cols <- length(drop.cols) * nrow(X)
   updateLog(paste0(sum(all.drops), " out of ", (nrow(all.drops) * ncol(all.drops)), " total cells are invalid and will be 0'd."))
-  updateLog(paste0("   Zeroing out ", sum(drop.chi2), " entries with extreme chi^2 stats > ", chi.thresh))
+  updateLog(paste0("  DEPRECATED: Zeroing out ", sum(drop.chi2), " entries with extreme chi^2 stats > ", chi.thresh))
   updateLog(paste0("   Zeroing out ", sum(drop.nas), " entries with NA"))
   W[all.drops] <- 0
   X[drop.nas] <- 0 #technically we don't need to drop them here, if they are being given a weight of 0. But if they are NAs we need to give them a value so they don't killus.
@@ -139,7 +143,8 @@ readInBetas <- function(fpath, option)
 #Function to read in a covariance matrix.
 #This code was copied from "projection_regression_helper.R", but belongs here
 # readInCovariance(args$covar_matrix, names)
-readInCovariance <- function(p, name_order, diag_enforce = 1)
+#readInCovariance(args$covar_mat, trait.list, diag_enforce = 1)
+readInCovariance <- function(p, name_order, diag_enforce = 1, coerce_threshold=1)
 {
   if(p == "" | is.null(p)) {return(NULL)}
   else
@@ -154,12 +159,12 @@ readInCovariance <- function(p, name_order, diag_enforce = 1)
       stopifnot(all(diag(as.matrix(w.in)) == diag_enforce))
     }
 
-    if(any(abs(w.in) > 1))
+    if(any(abs(w.in) > coerce_threshold))
     {
-	     message("Some entries in this matrix are greater than 1. This is possible b/c LDSC is not constrained so can yield estimates that exceed.")
-    	     message("Default behavior is to set these values to +/-0.95. Modify the matrix directly if you want different behavior")
+	     message("Some entries in this matrix are greater than ",  coerce_threshold,". This is possible b/c LDSC is not constrained so can yield estimates that exceed.")
+    	     message("Default behavior is to set these values to +/-0.98. Modify the matrix directly if you want different behavior")
 	     s <- sign(w.in)
-	     w.in[abs(w.in) > 1] <- 0.95 #set all values above 1 to 0.95
+	     w.in[abs(w.in) > 1] <- 0.98#Previosly set to 0.95, here to 0.98
 	     w.in <- w.in * s #and then return the sign
     }
     if(!isSymmetric(w.in, tol = 1e-3))
@@ -480,17 +485,7 @@ SampleOverlapCovarHandler <- function(args, names, X)
     	se.path = args$covar_se_matrix
 	#se.path= gsub(args$covar_matrix, pattern="gcov_int.tab.csv", replacement = "gcov_int_se.tab.csv")
     C_se <- readInCovariance(se.path, diag_enforce = NA)
-
-    diag(C_se) <- 0
-    C_se <- C_se * sd.scaling
-    C_se[covar == 0] <- 0
-
-    offdiag <- covar; diag(offdiag) <- 0
-    gamma = sum(C_se^2) / sum(offdiag^2) #squaring C_se since we want variance, not SE
-    args$WLgamma <- gamma
-    message("Selected gamma is:", gamma)
-    message("Norm prior to adjustment: ", norm(covar, "F"))
-    adjusted.C <- linearShrinkLWSimple(covar, gamma)
+    adjusted.C <- strimmerCovShrinkage(args, covar,C_se, sd.scaling)
    message("Norm following adjustment: ", norm(adjusted.C, "F"))
   }else if(toupper(args$WLgamma) == "MLE")
   {
@@ -502,6 +497,7 @@ SampleOverlapCovarHandler <- function(args, names, X)
   }
 
   whitening.dat <- buildWhiteningMatrix(adjusted.C, ncol(X),blockify = -1)
+  write.table(adjusted.C, file = paste0(args$output, "_scaledShrunkBlockCovarMatrix.txt"), quote = FALSE, row.names = FALSE)
   return(list("W_c" =  whitening.dat$W_c, "C_block"=whitening.dat$C_block,"C" = adjusted.C))
 }
 
@@ -648,7 +644,7 @@ readInSettings <- function(args)
 #####
 ## Setting defaults helpful for running elsewhere
 
-defaultSettings <- function(K=0, init.mat = "V")
+defaultSettings <- function(K=0, init.mat = "V", fixed_ubiq= TRUE, conv_objective = 0.001)
 {
   args <- UdlerArgs()
   args$niter <- 200
@@ -661,14 +657,15 @@ defaultSettings <- function(K=0, init.mat = "V")
   opath <- "gwasMF"
   args$simulation <- TRUE
   args$sort <- FALSE #b/c default for sims.
-  args$converged_obj_change <- 0.001
+  args$converged_obj_change <- conv_objective
+  message("set convergence objective to ",args$converged_obj_change)
   args$std_coef <- FALSE
   args$std_y <- FALSE
   if(init.mat == "U")
   {
     args$init_L <- "std"
   }
-  args$fixed_first <- TRUE #trying to see if this help- IT DOENS'T really appear to matter very much.
+  args$fixed_first <- fixed_ubiq #trying to see if this help- IT DOENS'T really appear to matter very much.
   args
 }
 
@@ -853,7 +850,6 @@ writeRunReport <- function(argsin)
   message("Cohort overlap adjustment: ", basename(argsin$covar_matrix))
   message("       Block distance: ", as.character(argsin$block_covar))
   message("       Shrinkage factor: ", as.character(argsin$WLgamma))
-
   message("Genomic correction terms: ", basename(argsin$genomic_correction))
   message("Z-score sample standard deviation: ", basename(argsin$sample_sd))
   message("")
@@ -862,4 +858,10 @@ writeRunReport <- function(argsin)
   message("BIC convergence criteria: ", argsin$param_conv_criteria)
   message("BIC method: ", argsin$bic_var)
   message("K init: ", argsin$nfactors)
+
+
+  message("--------------- OUTPUT SETTINGS ---------------")
+  message("Output directory: ", argsin$output)
+  message("")
+  message("--------------------------------------------")
 }

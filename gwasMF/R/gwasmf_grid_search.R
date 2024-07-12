@@ -25,30 +25,37 @@ quickSort <- function(tab, col = 1)
 updateStatement  <- function(l,a,l_og, a_og, run,time)
 {
 
-  logr::log_print(paste0("Run complete. (Time: ", time, " min)"))
-  logr::log_print(paste0("Sparsity params: F ", l, ", L ", a))
-  logr::log_print(paste0("Sparsity scale: F ", l_og, ", L ", a_og))
-  logr::log_print(paste0("Current F sparsity: ", run$V_sparsity), console = FALSE)
-  logr::log_print(paste0("Current L sparsity: ", run$U_sparsity), console = FALSE)
-  logr::log_print(paste0("Number of active factors: ", ncol(run$V)))
+  #logr::log_print(paste0("Run complete. (Time: ", time, " min)"))
+  #logr::log_print(paste0("Sparsity params: F ", l, ", L ", a))
+  #logr::log_print(paste0("Sparsity scale: F ", l_og, ", L ", a_og))
+  #logr::log_print(paste0("Current F sparsity: ", run$V_sparsity), console = FALSE)
+  #logr::log_print(paste0("Current L sparsity: ", run$U_sparsity), console = FALSE)
+  #logr::log_print(paste0("Number of active factors: ", ncol(run$V)))
+
+  message(paste0("Run complete. (Time: ", time, " min)"))
+  message(paste0("Sparsity params: F ", l, ", L ", a))
+  message(paste0("Sparsity scale: F ", l_og, ", L ", a_og))
+  message(paste0("Current F sparsity: ", run$V_sparsity), console = FALSE)
+  message(paste0("Current L sparsity: ", run$U_sparsity), console = FALSE)
+  message(paste0("Number of active factors: ", ncol(run$V)))
 }
 
 
-initializeGwasMF <- function(X,W,C,snp.ids, trait.names, K=0, init.mat = "V", covar_shrinkage=-1)
+initializeGwasMF <- function(X,W,C,snp.ids, trait.names, K=0, init.mat = "V", covar_shrinkage=-1,enforce_blocks=TRUE,covar_se=NULL, ...)
 {
   #SourcePackages()
   message("This is an archaic initialization; recommend doing away with this...")
-  args <- defaultSettings(K=K,init.mat = init.mat)
+  args <- defaultSettings(K=K,init.mat = init.mat,...)
   args$pve_init <- FALSE
   option <- readInSettings(args)
   option$swap <- FALSE
   option$alpha1 <- 1e-10
   option$lambda1 <- 1e-10
   output <- args$output
-  log.path <- paste0(args$output, "gwasMF_log.", Sys.Date(), ".txt")
-  lf <- logr::log_open(log.path, show_notes = FALSE)
-  options("logr.compact" = TRUE)
-  options("logr.notes" = FALSE)
+  #log.path <- paste0(args$output, "gwasMF_log.", Sys.Date(), ".txt")
+  #lf <- logr::log_open(log.path, show_notes = FALSE)
+  #options("logr.compact" = TRUE)
+  #options("logr.notes" = FALSE)
   #Read in the hyperparameters to explore
   hp <- readInParamterSpace(args)
   all_ids <-snp.ids; names <- trait.names
@@ -63,19 +70,36 @@ initializeGwasMF <- function(X,W,C,snp.ids, trait.names, K=0, init.mat = "V", co
   option$V <- FALSE
   option$fixed_ubiqs <- TRUE
 
-  #Adjusted blocking approach- block first, then shrinkg
+  #Adjusted blocking approach- block first, then shrinkge
+  #this isn't needed in simulations, so I think we droop this
+  if(enforce_blocks)
+  {
     blocks <- create_blocks(C,cor_thr=0.2)
-  covar <- blockifyCovarianceMatrix(blocks, C)
+    covar <- blockifyCovarianceMatrix(blocks, C)
+  }else
+  {
+    message("Not enforcing a block structure")
+    covar <- C
+  }
+
   #if specified, srhink
-  if(covar_shrinkage > -1)
+  #WHAT IS THE ORDER
+  if(covar_shrinkage == "strimmer" | covar_shrinkage == "STRIMMER")
+  {
+    covar <- strimmerCovShrinkage(args, covar, covar_se, sd.scaling=1)
+  }
+  else if(covar_shrinkage > -1)
   {
     message("Performing WL shrinkage, as desired")
 
   covar <- linearShrinkLWSimple(covar, args$WLgamma)
 
   }
+  else{
+    message("Not applying shrinkage on covar")
+  }
  W_c_dat <- buildWhiteningMatrix(covar, ncol(X),blockify = -1)
-  
+
  # W_c_dat <- buildWhiteningMatrix(C, blockify = 0.2)
   W_c = W_c_dat$W_c
   #(list("W_c" = solve((chol(covar))),"C_block"=covar))
@@ -212,7 +236,8 @@ gwasMFGrid <- function(X,W, snp_ids, trait_names, C=NULL, K=0, Kmax = -1, subsam
   check_stats = max(sapply(grid.solutions, length))
   if(check_stats == 1)
   {
-    log_print("No runs completed. Terminating")
+    #logr::log_print("No runs completed. Terminating")
+    message("No runs completed. Terminating")
     quit()
   }
 

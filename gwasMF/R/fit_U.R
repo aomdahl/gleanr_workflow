@@ -110,7 +110,7 @@
       {
       penalties <- c(0, rep(1, (ncol(FactorMp) - 1)))
       fit <- glmnet::glmnet(x = dat_i[,paste0('F', seq(1,ncol(FactorMp)))], y = xp, alpha = 1, lambda = option[['alpha1']],
-                    intercept = FALSE, penalty.factor = penalties)
+                    intercept = FALSE, penalty.factor = penalties, trace.it=1)
       #l = coef(fit, 'all')[,1][-1];
       l = glmnet::glmnetLASSO(dat_i, xp, ncol(FactorMp), option[['alpha1']], penalties)
       ll = loglik(fit)
@@ -162,24 +162,31 @@
   FitUGlobal <- function(X, W,W_c, V, option, formerU, r.v = NULL,reg.elements=NULL)
   {
     #it_U(X, W, W_c, initV, option)
-    print(paste0("Starting global U fit: ", pryr::mem_used()))
+    #print(paste0("Starting global U fit: ", pryr::mem_used()))
     max.sparsity <- NA; penalty = NA; ll = NA; l = NA; sse=NA
     if(is.null(reg.elements))
     {
       long.x <- c(t(W_c) %*% t(X*W)) #stacks by SNP1, SNP2... update so not needing to be passed each time.
+      joined.weights <- lapply(1:nrow(X), function(i) Matrix::Matrix(t(W_c) %*% (diag(W[i,]))))
       if(option$std_y) { long.x <- mleStdVector(long.x)}
     }else
     {
       long.x <- reg.elements$long.x
+      joined.weights <- reg.elements$joined.weights
     }
     if(option$std_y) { long.x <- mleStdVector(long.x)}
 
     #This multiplies each SNP row by the correction matrix
     #weighted.copies <- lapply(1:nrow(X), function(i) t(W_c) %*% diag(W[i,]) %*% V)
     #long.v <- Matrix::bdiag(weighted.copies) #weight this ish too you silly man.
-    long.v <- Matrix::bdiag(lapply(1:nrow(X), function(i) t(W_c) %*% diag(W[i,]) %*% V)) #this is quite fast actually
-    print(paste0("Built sparse matrix: ", pryr::mem_used()))
-    message("This matrix object takes up: ", object.size(long.v))
+    #TODO- use the data in reg.elements so we aren't repeating work here- multiply all sparse elemnts of regg.elements$mat by V
+    #fastest is 3rd one. ya boi.
+    #long.v <- Matrix::bdiag(lapply(1:nrow(X), function(i) t(W_c) %*% diag(W[i,]) %*% V)) #this is quite fast actually
+    #long.v <- Matrix::bdiag(reg.elements$joined.weights) %*% Matrix::bdiag(replicate(nrow(X),V, simplify=FALSE))
+    long.v <- Matrix::bdiag(lapply(joined.weights, function(x) x %*% V))
+    #see which of the 3 above is faster and more memory efficient for use going forward.
+    #print(paste0("Built sparse matrix: ", pryr::mem_used()))
+    #message("This matrix object takes up: ", object.size(long.v))
   s = 1
     if(!is.null(formerU))
     {
@@ -201,9 +208,10 @@
     {
       if(is.na(option$alpha1)) #we are searching for parameters, phase 1 of the work.
       {
-        fit = glmnet::glmnet(x = long.v, y = long.x, family = "gaussian", alpha = 1,
-                             intercept = FALSE, standardize = option$std_coef,nlambda = 200) #lambda = option[['alpha1']],
-        print(paste0("Just fit the regression: ", pryr::mem_used()))
+	message("Fitting a regression")
+        print(pryr::mem_change(fit <- glmnet::glmnet(x = long.v, y = long.x, family = "gaussian", alpha = 1,
+                             intercept = FALSE, standardize = option$std_coef,nlambda = 100, trace.it=1))) #lambda = option[['alpha1']],
+        #print(paste0("Just fit the regression: ", pryr::mem_used()))
         penalty <- fit$penalty
         alpha.list <- fit$lambda
         message("Using BIC to select out the best one...")
@@ -256,8 +264,8 @@
 
         #bic.list <- BICglm(fit, option$bic.var)
         bic.list <- calculateBIC(fit, long.v, long.x, option$bic.var)
-        print(paste0("Calculated BIC: ", pryr::mem_used()))
-        print(pryr::mem_used())
+        #print(paste0("Calculated BIC: ", pryr::mem_used()))
+        #print(pryr::mem_used())
         #sklearn extended was default previously?
         #bic.list <- sklearnBIC(fit,long.v,long.x, bic.mode =  option$bic.var)
         #save(bic.list.complete, fit, long.x, long.v,file="/scratch16/abattle4/ashton/snp_networks/scratch/testing_gwasMF_code/real_data/udler_bic_evaluation.stdized.CORRECTED.RData" )
@@ -280,7 +288,7 @@
         {
           is <- sample(1:length(long.x), floor((0.9 * length(long.x))));
           subs[[i]] <- glmnet::glmnet(x = long.v[is,], y = long.x[is], family = "gaussian", alpha = 1,
-                                      intercept = FALSE, standardize = TRUE,nlambda = 100)
+                                      intercept = FALSE, standardize = TRUE,nlambda = 100, trace.it=1)
         }
         z.counts <- lapply(subs, function(x) x$beta !=0)
         per.setting <- do.call("sum", lapply(subs, function(x) x$beta !=0)) #assuming same lambda each time, dubious
@@ -321,8 +329,8 @@
       }
       else{ #just fitting a single instance:
         message("Fitting model")
-        fit = glmnet::glmnet(x = long.v, y = long.x, family = "gaussian", alpha = 1,
-                             intercept = FALSE, standardize = option$std_coef,lambda = option$alpha1)
+        pryr::mem_change(fit <- glmnet::glmnet(x = long.v, y = long.x, family = "gaussian", alpha = 1,
+                             intercept = FALSE, standardize = option$std_coef,lambda = option$alpha1,trace.it=1))
         message("Fitting complete")
         penalty <- fit$penalty
         u.ret = matrix(coef(fit, s = option$alpha1)[-1], nrow = nrow(X), ncol = ncol(V),byrow = TRUE)
@@ -494,7 +502,6 @@
   {
     if(option[['ncores']] > 1) #This is not working at all. Can't tell you why. But its not. Need to spend some time debugging at some point.
     {
-      log_print("Fitting L in parallel")
       U = fitUParallel(X, W,W_c, V, option, formerU = prevU); #preL is by default Null, unless yo specify!
 
     }else

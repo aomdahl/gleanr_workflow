@@ -31,10 +31,15 @@ create_blocks <- function(cormat, cor_thr=0.2){
 }
 
 #Test each block
+
+getPDStatus <- function(blocks, covar)
+{
+  unlist(lapply(blocks, function(n) matrixcalc::is.positive.definite(covar[n,n])))
+}
 containsBadBlocks <- function(blocks,covar)
 {
   i=1
-  pd.status <- unlist(lapply(blocks, function(n) matrixcalc::is.positive.definite(covar[n,n])))
+  pd.status <- getPDStatus(blocks,covar)
   if(length(pd.status) < 1) {return(FALSE)}
   for(bad.blocks in which(!pd.status))
   {
@@ -77,9 +82,9 @@ blockify <- function(cormat, blocks)
 # W_c <- buildWhiteningMatrix(C, ncol(X), blockfiy = TRUE)
 buildWhiteningMatrix<- function(covar, dim, blockify = 0.2,...)
 {
-  if(is.null(covar)){
-    message("buildWhiteningMatrix- decorrelating with an identity matrix.")
-    return(diag((dim))) #Just return an identity matrix, we aren't going to do anything....
+  if(is.null(covar) | all(covar == diag(dim))){
+    #return(diag((dim))) #Just return an identity matrix, we aren't going to do anything....
+    return(list("W_c" = diag((dim)),"C_block"=covar))
   }
   blocks <- create_blocks(covar,cor_thr=blockify,...)
   if(blockify > 0)
@@ -135,7 +140,8 @@ adjustMatrixAsNeeded <- function(X, covar, whitener = NULL)
   {
     if(is.null(whitener))
     {
-      U_t_inv <- buildWhiteningMatrix(covar, ncol(X))
+      decor.dat <- buildWhiteningMatrix(covar, ncol(X))
+      U_t_inv <- decor.dat$W_c
     }else
     {
       U_t_inv <- whitener
@@ -147,9 +153,9 @@ adjustMatrixAsNeeded <- function(X, covar, whitener = NULL)
       Xin <- U_t_inv %*% (X)
     }else #this is the joined matrix case, some transposition here to make it work.
     {
-      message("NEeding to transposes")
-      print(head(U_t_inv))
-      print(head(X))
+      #message("NEeding to transposes")
+      #print(head(U_t_inv))
+      #print(head(X))
       Xin <- t(U_t_inv %*% t(X))
       #Sanity check
       C2 <- var(X)
@@ -204,6 +210,38 @@ linearShrinkLWSimple <- function(sample_cov_mat, gamma)
     (1-gamma) * sample_cov_mat
 
   return(estimate)
+}
+
+#'Implementation of the covarinage shrinkage proposed by Schaefer and Strimmer in 2005,
+#' "A shrinkage approach to large-scale covariance matrix estimation and implications for functional genomics"
+#' (2005 "Statistical Applications in Genetics and Molecular Biology")
+#' @param covar- covariance matrix, M x M
+#' @param covar_se- SE for covariance estimates, M x M
+#' @param sd.scaling- Scaling matrix based on standard deviation of Z-scores
+#'
+#' @return
+#' @export
+#'
+#' @examples
+#' strimmerCovShrinkage(list(), ldsc.mat,C_se, "STRIMMER")
+strimmerCovShrinkage <- function(args, covar, covar_se, sd.scaling=1)
+{
+  if(all(covar == diag(nrow(covar))))
+  {
+    message("No covariance structure detected.")
+    return(covar)
+  }
+  diag(covar_se) <- 0
+  covar_se <- covar_se * sd.scaling
+  covar_se[covar == 0] <- 0
+
+  offdiag <- covar; diag(offdiag) <- 0
+  gamma = sum(covar_se^2) / sum(offdiag^2) #squaring covar_se since we want variance, not SE
+  print(gamma)
+  args$WLgamma <- gamma
+  message("Selected gamma is:", gamma)
+  message("Norm prior to adjustment: ", norm(covar, "F"))
+  linearShrinkLWSimple(covar, gamma)
 }
 
 #test

@@ -39,7 +39,7 @@ cor2 <- function(x) {
 #@return U_burn: the burn-in estimate of U
 #@return max_sparsity_params: a list indexed by iteration containing the list of max alphas and lambdas (i.e. list[[i]]$alpha))
 #DefineSparsitySpaceInit(X, W, option, burn.in = burn.in.iter)
-DefineSparsitySpaceInit <- function(X, W,W_c, W_ld, option, burn.in = 5,...)
+DefineSparsitySpaceInit <- function(X, W,W_c, W_ld, option, burn.in = 5,reg.elements=NULL, rg_ref = NULL)
 {
   #Perform burn.in # of iterations with no sparsity (OLS) and calculate the maximum sparsity value at each step.
   new.options <- option
@@ -50,7 +50,10 @@ DefineSparsitySpaceInit <- function(X, W,W_c, W_ld, option, burn.in = 5,...)
   #for testing purposes
   Xint <- as.matrix(X)
   Wint <-as.matrix(W)
-  V.dat <- initV(Xint,Wint, new.options, ...)
+  message("initializing v")
+  message("dropped arguments, so can't pass rg")
+  V.dat <- initV(Xint,Wint,option)
+  message("here")
   V<-V.dat$V
 
   if(burn.in < 1)
@@ -59,7 +62,7 @@ DefineSparsitySpaceInit <- function(X, W,W_c, W_ld, option, burn.in = 5,...)
     {
       message("initializing with U")
       U <- initU(Xint, Wint, new.options)
-      V.dat <- DefineSparsitySpace(Xint, Wint, W_c, U, "V", new.options, fit = "None")
+      V.dat <- DefineSparsitySpace(Xint, Wint, W_c, U, "V", new.options, fit = "None",reg.elements=reg.elements)
       new.options$K = ncol(U)
       param.space[[1]] <- list("alpha" = NULL, "lambda"= V.dat)
       return(list("V_burn" =NULL , "U_burn"=U, "max_sparsity_params"=param.space, "new.k" =new.options$K))
@@ -72,7 +75,7 @@ DefineSparsitySpaceInit <- function(X, W,W_c, W_ld, option, burn.in = 5,...)
       #  U.dat <- DefineSparsitySpace(Xint, Wint, V[,-1], "U", new.options, fit = "None") #this is associated with alpha
       #}else
       #{
-        U.dat <- DefineSparsitySpace(Xint, Wint,W_c, V, "U", new.options, fit = "None")
+        U.dat <- DefineSparsitySpace(Xint, Wint,W_c, V, "U", new.options, fit = "None",reg.elements=reg.elements)
       #}
       new.options$K = ncol(V)
       param.space[[1]] <- list("alpha" = U.dat, "lambda"= NULL)
@@ -95,7 +98,7 @@ DefineSparsitySpaceInit <- function(X, W,W_c, W_ld, option, burn.in = 5,...)
     #If we have ones with NA, they need to get dropped
     #if we have columns with NAs here, we want them gone now so it doesn't jank up downstream stuff.
     #V.dat <- FitVWrapper(Xint, Wint, U.dat$U, new.options, V);
-    V.dat <- DefineSparsitySpace(Xint, Wint,W_c,U.dat$U, "V", new.options, fit = "OLS")
+    V.dat <- DefineSparsitySpace(Xint, Wint,W_c,U.dat$U, "V", new.options, fit = "OLS",reg.elements=reg.elements)
     if(i > 3)
     {
       #this might be high but oh well...
@@ -107,7 +110,7 @@ DefineSparsitySpaceInit <- function(X, W,W_c, W_ld, option, burn.in = 5,...)
         n <- DropSpecificColumns(drops, U.dat$U, V.dat$V)
         U.dat$U <- n$U
         new.options$K <- ncol(U.dat$U)
-        V.dat <- DefineSparsitySpace(Xint, Wint,W_c,U.dat$U, "V", new.options, fit = "OLS")
+        V.dat <- DefineSparsitySpace(Xint, Wint,W_c,U.dat$U, "V", new.options, fit = "OLS",reg.elements=reg.elements)
       }
 
     }
@@ -182,16 +185,15 @@ DefineSparsitySpace <- function(X,W,W_cov,fixed,learning, option, fit = "None",r
 #Function to initialize V as desired
 initV <- function(X,W,option, preV = NULL, rg_ref = NULL)
 {
-  D = ncol(X)
-  cor_struct <- cor2(X)
+	D = ncol(X)
+	cor_struct <- cor2(X)
   #svd.r <- svd(cor_struct, nu = option$K)
   svd.corr <- svd(cor_struct)
-  svd.dat <- svd(X)
+  svd.dat <- corpcor::fast.svd(X)
   message("Wastefully calculating all SVs now, change this later.")
   setK = selectInitK(option,X,W,svs = svd.dat$d)
   if(!option[['preinitialize']])
   {
-    message("TODO: initializing only positive for now.")
     V = matrix(runif(D*(setK - 1), min = -1, max = 1), nrow = D);
 
     if(option[['f_init']] == 'ones_plain')
@@ -293,7 +295,10 @@ UpdateTrackingParams <- function(sto.obj, X,W,W_c,U,V,option, sparsity.thresh = 
                      "V_change" = c(), "U_change" = c(), "decomp_obj" ="", "model.loglik" = c(), "Vs"=list(), "Us"=list())
   }
     # collect sparsity in L and F
-
+  if(all(U==0) | all(V==0))
+  {
+    return(sto.obj)
+  }
   #sto.obj$U_sparsities = c(sto.obj$U_sparsities, sum(abs(U) < sparsity.thresh) / (ncol(U) * nrow(U)));
   #sto.obj$V_sparsities = c(sto.obj$V_sparsities, sum(abs(V) < sparsity.thresh) / (ncol(V) * nrow(V)));
   sto.obj$U_sparsities = c(sto.obj$U_sparsities, matrixSparsity(U, option$K)); #The sparsity count should be with respect to the initial value..
@@ -482,7 +487,7 @@ AlignFactorMatrices <- function(X,W,U, V)
   non_empty = intersect(non_empty_u,non_empty_v);
   if(length(non_empty) < ncol(U))
   {
-    message("dropping now...")
+    message("Dropping down to, ", length(non_empty), " factors")
   }
   U = as.matrix(as.data.frame(U[, non_empty]));
   V  = as.matrix(as.data.frame(V[, non_empty]));
@@ -520,6 +525,8 @@ ConvergenceConditionsMet <- function(iter,X,W,W_c, U,V,tracker,option, initV = F
   }
  #If we have completed at least 1 iteration and we go up, end it.
   #First iteration has objective change of 0.
+  print("Currnet objective change:")
+  print(obj.change.percent)
   if(objective_change < 0 & option[['conv0']] > 0) #& length(tracker$obj) > 2)
   {
     message("warning: negative objective")
@@ -576,26 +583,29 @@ Update_FL <- function(X, W, W_c, option, preV = NULL, preU = NULL, burn.in = FAL
   dev.score<- c()
   V = NULL
   #Random initialization of F
-  if(!is.null(preV))
+  if(!is.null(preV) & option$u_init == "")
   {
     V = preV
   }
   else if(option$u_init != "")
   {
-    U <- initU(X,W,option,preU=preU)
+    #U <- initU(X,W,option,preU=preU)
     message("initializing with U")
-    V.dat =  fit_V(X, W, L, option)
-    V <- V.dat$V/V.dat$s
+    V.new = FitVWrapper(X, W,W_c, preU, option,reg.elements=reg.elements)
+    #V.dat =  fit_V(X, W, L, option)
+    #V <- V.dat$V/V.dat$s
+    V.prev <- V
+    V = V.new$V
 
   } else if(burn.in)
   {
-    burn.in.sparsity <- DefineSparsitySpaceInit(X, W,W_c,NULL, option, burn.in = 4)
+    burn.in.sparsity <- DefineSparsitySpaceInit(X, W,W_c,NULL, option, burn.in = 4,reg.elements=reg.elements)
     V <- burn.in.sparsity$V_burn
   }
   else{ #initialize by F as normal.
 
     V.dat <- initV(X,W,option,preV=preV) #returns scalar and V at unit norm length, #CONFIRM
-    V <- V$V
+    V <- V$V.dat
   }
   message(""); message('Start optimization ...')
   message(paste0('K = ', (option[['K']]), '; alpha1 = ', round(option[['alpha1']], digits =  4),
@@ -646,15 +656,9 @@ Update_FL <- function(X, W, W_c, option, preV = NULL, preU = NULL, burn.in = FAL
 
     #More crap to follow the objective
     #if(option$debug)
-    #{
-    message("old problem child")
-    tictoc::tic()
+  message("updating inter run stuff")
       es.objective <- c(es.objective, GetStepWiseObjective(X,W,W_c,V.prev,V*V.new$s, U,"U",option));
-      tictoc::toc()
-      message("EM objective")
-      tictoc::tic()
       em.objective[[(i.c)]] <- compute_obj(X,W,W_c, U,V,option, globalLL=TRUE, decomp = TRUE, scalar=V.new$s)
-      tictoc::toc()
       s.weight.tracker[[i.c]] <- V.new$s
       i.c <- i.c + 1
 
@@ -679,7 +683,7 @@ Update_FL <- function(X, W, W_c, option, preV = NULL, preU = NULL, burn.in = FAL
     U = U.new$U #confirm- its unit norm?
     message("Now calculating all tracking data after updating U, V...")
     message("memory: ", lobstr::mem_used())
-    tictoc::tic()
+
     ll.tracker <- c(ll.tracker, U.new$total.log.lik)
     penalty.tracker <- c(penalty.tracker, U.new$penalty)
     mse.tracker <- c(mse.tracker, norm(W*X-W*(U %*%t(V))/U.new$s, type = "F")/(nrow(X) * ncol(X)))
@@ -712,10 +716,9 @@ Update_FL <- function(X, W, W_c, option, preV = NULL, preU = NULL, burn.in = FAL
     # Drop low PVE and align two matrices
     #V <- DropLowPVE(X,W,V)
     updated.mats <- AlignFactorMatrices(X,W,U, V); U <- updated.mats$U; V <- updated.mats$V
-    tictoc::toc()
+
     message("Now checking convergence")
     message("memory: ", lobstr::mem_used())
-    tictoc::tic()
     convergence.status <- ConvergenceConditionsMet(iii,X,W,W_c,U, V,
                                                    tracking.data, option, initV = is.null(preV),
                                                    loglik = iteration.ll.total, scalar = U.dat$s)
@@ -760,7 +763,7 @@ Update_FL <- function(X, W, W_c, option, preV = NULL, preU = NULL, burn.in = FAL
     }
     message("Now ending or next iter")
     message("memory:", lobstr::mem_used())
-    tictoc::toc()
+
   }
 }
 

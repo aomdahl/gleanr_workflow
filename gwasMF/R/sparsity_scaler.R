@@ -249,7 +249,9 @@ if(option$K == 0 | option$K == "kaiser" | option$K == "CnG" | option$K == "avg")
   decomp <- svd(Z)
   if(option$K == 0 | option$K == "avg")
   {
-    log_print("Approximating number of factors based on SVD PVE >  average PVE")
+    #logr::log_print("Approximating number of factors based on SVD PVE >  average PVE")
+    message("Approximating number of factors based on SVD PVE >  average PVE")
+
     pve <- decomp$d^2 / sum(decomp$d^2)
     option$K <- sum(pve >= (mean(pve)))
 
@@ -264,10 +266,12 @@ if(option$K == 0 | option$K == "kaiser" | option$K == "CnG" | option$K == "avg")
     option$K <- ops$Components[4]
 
   }else{
-    log_print("Using pre-specified number of components.")
+    #logr::log_print("Using pre-specified number of components.")
+    message("Using pre-specified number of components.")
 
   }
- log_print(paste0("Proceeding with ", option$K, " latent factors"))
+ #logr::log_print(paste0("Proceeding with ", option$K, " latent factors"))
+ message(paste0("Proceeding with ", option$K, " latent factors"))
 
 
 }else{
