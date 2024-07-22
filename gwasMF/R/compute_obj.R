@@ -444,3 +444,34 @@ GetStepWiseObjective <- function(X,W,W_c,old.mat,new.mat, companion.mat,fixed.te
   }
 
   }
+
+
+
+##Wrapper on objective update, for in between each iteration.
+#' Title
+#'
+#' @param X 
+#' @param W 
+#' @param W_c 
+#' @param U 
+#' @param V 
+#' @param option 
+#' @param alpha 
+#' @param lambda 
+#' @param ... 
+#'
+#' @return
+#' @export
+#'
+#' @examples
+computeObjIntermediate <- function(X,W,W_c,U,V,option,alpha,lambda,...)
+{
+  if(ncol(optimal.u) != ncol(optimal.v))
+  {
+    message("Calculating objective when the matrices haven't been aligned yet. This should not happen")
+    quit()
+  }
+  option$lambda1 <- lambda
+  option$alpha1 <- alpha
+  compute_obj(X, W,W_c, optimal.u, optimal.v, option, ...) 
+}
