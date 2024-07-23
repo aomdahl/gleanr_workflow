@@ -55,21 +55,25 @@ UpdateAndCheckSparsityParam <-  function(prev.list, new, errorReport = FALSE)
 #' @param alpha setting minimizing BIC_alpha at iteration `iter_tag`
 #' @param lambda setting minimizing BIC_lambda at iteration `iter_tag`
 #' @param bic_a minimal score at iteration `iter_tag`
-#' @param bic_l 
+#' @param bic_l
 #' @param iter_tag
 #'
 #' @return a list containing the optimal learned parameters (U,V,alpha,lambda) and the associated BIC
 #' @export
 #'
 #' @examples
-trackMinParam <- function(min.dat,U,V,alpha,lambda,bic_a,bic_l, iter_tag)
+trackMinParam <- function(min.dat,U,V,alpha,lambda,bic_a,bic_l, iter_tag, init=FALSE)
 {
-  if(is.na(min.dat))
+  if(init)
+  {
+    message("Initializing parameter tracking")
+    return(list("optimal.u"=NA, "optimal.v"=NA,
+                "alpha"=NA, "lambda"=NA, "bic_a"=Inf,
+                "bic_l"=Inf, min_sum=Inf, iter=""))
+  } else if(length(min.dat)==1)
      {
-       message("Initializing parameter tracking")
-       return(list("optimal.u"=NA, "optimal.v"=NA,
-                   "alpha"=NA, "lambda"=NA, "bic_a"=Inf,
-                   "bic_l"=Inf, min_sum=Inf, iter=""))
+        message("Error- should not occur")
+    quit()
   }
   else
   {
@@ -80,7 +84,7 @@ trackMinParam <- function(min.dat,U,V,alpha,lambda,bic_a,bic_l, iter_tag)
       return(list("optimal.u"=U, "optimal.v"=V,
                   "alpha"=alpha, "lambda"=lambda, "bic_a"=bic_a,
                   "bic_l"=bic_l, "min_sum"=new_bic, "iter"=iter_tag))
-      
+
     }else
     {
       return(min.dat)
@@ -93,22 +97,23 @@ trackMinParam <- function(min.dat,U,V,alpha,lambda,bic_a,bic_l, iter_tag)
 #'
 #' @param min.dat tracker for minimal/optimal data
 #' @param rec.dat record data from iteration to iteratino
-#' @param u.fit u.fit data object
+#' @param mat.fit u.fit data object
 #' @param conv.options record of convergence data
+#' @param general.options list of program options.
 #'
 #' @return list with optimal U and V, optimal lambda and alpha, and some other helpful stuff.
 #' @export
 #'
 #' @examples
-returnCompletionDat <- function(min.dat, rec.dat, u.fit, conv.options)
+returnCompletionDat <- function(min.dat, rec.dat, mat.fit, conv.options, general.options)
 {
-  if(is.null(u.fit) | is.na(u.fit))
+  if(is.null(mat.fit) | length(mat.fit) == 1) #may need to check these conditions
   {
-    u.fit <- list()
-    u.fit$resid_var <- NA
+    mat.fit <- list()
+    mat.fit$resid_var <- NA
   }
-  list("optimal.v" = min.dat$optimal.v,"resid.var" = u.fit$resid_var,
-       "rec.dat" = rec.dat, "lambda"=min.dat$lambda, "alpha"=min.dat$alpha, "options" = option,
+  list("optimal.v" = min.dat$optimal.v,"resid.var" = mat.fit$resid_var,
+       "rec.dat" = rec.dat, "lambda"=min.dat$lambda, "alpha"=min.dat$alpha, "options" = general.options,
        "K"= ncol(min.dat$optimal.v), "alpha.path" = rec.dat$alpha.s, "lambda.path" = rec.dat$lambda.s, "optimal.u" = min.dat$optimal.u, "convergence.options" = conv.options,
        "min.dat"=min.dat)
 }
@@ -120,11 +125,11 @@ returnCompletionDat <- function(min.dat, rec.dat, u.fit, conv.options)
 #' @param mat.fit the fit of the most recent step, either u.fit or v.fit
 #' @param matrix_on which matrix you just updated, either "U" or "V"
 #' @param iter which iteration you're on
-#' @param X 
-#' @param W 
-#' @param W_c 
+#' @param X
+#' @param W
+#' @param W_c
 #' @param optimal_complement the opposite matrix of matrix_on (actual matrix object)
-#' @param option 
+#' @param option
 #'
 #' @return updated rec.dat
 #' @export
@@ -134,20 +139,23 @@ updateRecDat <- function(rec.dat, mat.fit, matrix_on, iter,X,W,W_c, optimal_comp
 {
   if(matrix_on == "U")
   {
+    curr.lambda <- rec.dat$lambda.s[length(rec.dat$lambda.s)]
     rec.dat$alphas <- UpdateAndCheckSparsityParam(rec.dat$alphas, mat.fit$alpha.sel, errorReport = TRUE)
     rec.dat$bic.a <- c(rec.dat$bic.a,mat.fit$bic); rec.dat$alpha.s <- c(rec.dat$alpha.s,mat.fit$alpha.sel)
     rec.dat$U_sparsities = c(rec.dat$U_sparsities, matrixSparsity(mat.fit$U, ncol(X)));
-    rec.dat$sparsity.obj[[paste0("U_", iter)]] <- computeObjIntermediate(X, W,W_c, mat.fit$U, optimal_complement, option, decomp = TRUE, loglik = TRUE) #should happen before drop empty colums
+    rec.dat$sparsity.obj[[paste0("U_", iter)]] <- computeObjIntermediate(X, W,W_c, mat.fit$U, optimal_complement, option,mat.fit$alpha.sel,curr.lambda, decomp = TRUE, loglik = TRUE) #should happen before drop empty colums
   }
   if(matrix_on == "V")
   {
+    curr.alpha <- rec.dat$alpha.s[length(rec.dat$alpha.s)]
     rec.dat$lambda.s <- c(rec.dat$lambda.s,mat.fit$lambda.sel) #selected lambda to path
     rec.dat$V_sparsities = c(rec.dat$V_sparsities, matrixSparsity(mat.fit$V, ncol(X))); #Sparsity of V
     rec.dat$lambdas <- UpdateAndCheckSparsityParam(rec.dat$lambdas, mat.fit$lambda.sel, errorReport = TRUE); rec.dat$bic.l <- c(rec.dat$bic.l,mat.fit$bic) #lambdas and bic scores
-    rec.dat$sparsity.obj[[paste0("V_", iter)]] <- computeObjIntermediate(X, W,W_c, optimal_complement, mat.fit$V, option, decomp = TRUE, loglik = TRUE) #Objective calculation
+    #computeObjIntermediate <- function(X,W,W_c,U,V,option,alpha,lambda,...)computeObjIntermediate <- function(X,W,W_c,U,V,option,alpha,lambda,...)
+    rec.dat$sparsity.obj[[paste0("V_", iter)]] <- computeObjIntermediate(X, W,W_c, optimal_complement, mat.fit$V,option,curr.alpha,mat.fit$lambda.sel, decomp = TRUE, loglik = TRUE) #Objective calculation
     rec.dat$Ks <- c(rec.dat$Ks, ncol(DropEmptyColumns(mat.fit$V))) #Track K
   }
-  
+
   return(rec.dat)
 }
 
@@ -1699,7 +1707,7 @@ gleaner <- function(X,W, snp.ids, trait.names, C = NULL, K=0, gwasmfiter =5, rep
 #####
 #Version optimized for glmnet
 #####MAJOR TODO:
-## IMPLEMENT  better convergence response 
+## IMPLEMENT  better convergence response
 ## At present, it drops out when its been at least 3 iterations and then picks the overall iteration that minimizes BIC.
 ## However, every step is a pair (one alpha, one lambda), and so things shouldn't just be considered in a single iteration (i.e. update V at the end, update U in the next)
 ## The reason current implementation is potentially dangerous- if at the end of one iteration everything is zeroed out and that minimized teh BIC, then we get nothing. But perhaps that savme V
@@ -1728,7 +1736,7 @@ getBICMatricesGLMNET <- function(opath,option,X,W,W_c, all_ids, names, min.iter 
 
   burn.in.sparsity <- DefineSparsitySpaceInit(X, W, W_c, NULL, option, burn.in = burn.in.iter, rg_ref = rg_ref,reg.elements=reg.elements) #If this finds one with NA, cut them out here, and reset K; we want to check pve here too.
   option$regression_method = "glmnet" #Just in case it wasn't set earlier
-  
+
   if(option$bic.var == "NONE") #This is no longer used- tweaking settings on the variance in BIC since there isn't agreement on this in practice
     {
       return(list("optimal.v" = burn.in.sparsity$V_burn,"resid.var" = NA,
@@ -1741,7 +1749,7 @@ getBICMatricesGLMNET <- function(opath,option,X,W,W_c, all_ids, names, min.iter 
   optimal.u <- NA; optimal.v <- NA
   curr.alpha <- NA; curr.lambda <- NA
   curr.bic.a <- Inf; curr.bic.l <- Inf
-  min.dat <- NA
+  min.dat <- trackMinParam(init=TRUE)
   #If we wish to initialize with U rather than V
   if(option$u_init != "")
   {
@@ -1761,13 +1769,13 @@ getBICMatricesGLMNET <- function(opath,option,X,W,W_c, all_ids, names, min.iter 
   #things to record
   NOT.CONVERGED <- TRUE; i = 1
   while(i < max.iter & NOT.CONVERGED){
-    
+
     #Tracking all the Us and Vs, for downstream debugging
     rec.dat$Vs[[i]] <- optimal.v
     rec.dat$Us[[i]] <- optimal.u
     #Set settings so it knows to search for alpha, lambda
     option$alpha1 <- NA; option$lambda1 <- NA #important.
-    
+
     #If we want to initialize with U, start here
     if(option$u_init != "")
     {
@@ -1776,7 +1784,7 @@ getBICMatricesGLMNET <- function(opath,option,X,W,W_c, all_ids, names, min.iter 
       optimal.v <- v.fits$V
       optimal.v <- DropEmptyColumns(optimal.v)
       rec.dat$Ks <- c(rec.dat$Ks, ncol(optimal.v)) #this is based on the previous model?, we haven't pruned out empty columns yet?
-      
+
       #Record new data
       rec.dat$V_sparsities = c(rec.dat$V_sparsities, matrixSparsity(optimal.v, ncol(X)));
       rec.dat$bic.l <- c(rec.dat$bic.l,unlist(v.fits$BIC[,bic.type]))
@@ -1788,10 +1796,9 @@ getBICMatricesGLMNET <- function(opath,option,X,W,W_c, all_ids, names, min.iter 
 
     print(paste0("Fitting U, iteration ", i))
     u.fit <- FitUWrapper(X, W, W_c, optimal.v, option,reg.elements=reg.elements)
-    
+
     #Update the tracking data for downstream debugging
-    rec.dat <- updateRecDat(rec.dat, u.fit, "U", i, X,W,W_c, optimal.v, option)
-    message("verify this update takes place as expected.")
+
     #rec.dat$alphas <- UpdateAndCheckSparsityParam(rec.dat$alphas, u.fit$alpha.sel, errorReport = TRUE)
     #rec.dat$bic.a <- c(rec.dat$bic.a,u.fit$bic); rec.dat$alpha.s <- c(rec.dat$alpha.s,u.fit$alpha.sel)
     #rec.dat$U_sparsities = c(rec.dat$U_sparsities, matrixSparsity(u.fit$U, ncol(X)));
@@ -1799,13 +1806,15 @@ getBICMatricesGLMNET <- function(opath,option,X,W,W_c, all_ids, names, min.iter 
 
     #Update tracking data for convergence detection
     curr.alpha <- u.fit$alpha.sel; curr.bic.a <- u.fit$bic
+    rec.dat <- updateRecDat(rec.dat, u.fit, "U", i, X,W,W_c, optimal.v, option)
+    message("verify this update takes place as expected.")
     optimal.u <- DropEmptyColumns(u.fit$U)
     min.dat <- trackMinParam(min.dat,optimal.u,optimal.v,curr.alpha,curr.lambda,curr.bic.a,curr.bic.l, paste0("U_", i))
-    
+
     #Do a check- is it empty?
     if(CheckUEmpty(optimal.u)) {
       message("U has no signal; ending model selection phase");
-        return(returnCompletionDat(min.dat, rec.dat, u.fit,conv.options))
+        return(returnCompletionDat(min.dat, rec.dat, u.fit,conv.options, option))
       }
 
     #fit V now
@@ -1813,21 +1822,21 @@ getBICMatricesGLMNET <- function(opath,option,X,W,W_c, all_ids, names, min.iter 
     v.fits <- FitVWrapper(X,W,W_c, optimal.u,option,reg.elements=reg.elements)
 
     #Update the tracking data for downstream debugging
-    rec.dat <- updateRecDat(rec.dat, v.fit, "V", i, X,W,W_c, optimal.u, option)
+    rec.dat <- updateRecDat(rec.dat, v.fits, "V", i, X,W,W_c, optimal.u, option)
     #rec.dat$lambda.s <- c(rec.dat$lambda.s,v.fits$lambda.sel) #selected lambda to path
     #rec.dat$V_sparsities = c(rec.dat$V_sparsities, matrixSparsity(v.fits$V, ncol(X))); #Sparsity of V
     #rec.dat$lambdas <- UpdateAndCheckSparsityParam(rec.dat$lambdas, v.fits$lambda.sel, errorReport = TRUE); rec.dat$bic.l <- c(rec.dat$bic.l,v.fits$bic) #lambdas and bic scores
     #rec.dat$sparsity.obj[[paste0("V_", i)]] <- computeObjIntermediate(X, W,W_c, optimal.u, v.fits$V, option, decomp = TRUE, loglik = TRUE) #Objective calculation
-    optimal.v <- DropEmptyColumns(v.fits$V) #Drop empty columns
+
     #rec.dat$Ks <- c(rec.dat$Ks, ncol(optimal.v)) #Track K
-    
+
     #Update tracking data for convergence detection
     curr.lambda <- v.fits$lambda.sel; curr.bic.l <- v.fits$bic
     min.dat <- trackMinParam(min.dat,optimal.u,optimal.v,curr.alpha,curr.lambda,curr.bic.a,curr.bic.l, paste0("V_", i))
-    
+
     if(CheckVEmpty(optimal.v)) {
       message("V has no signal; ending model selection phase");
-      return(returnCompletionDat(min.dat, rec.dat, u.fit,conv.options))
+      return(returnCompletionDat(min.dat, rec.dat, u.fit,conv.options, option))
     }
     if(ncol(optimal.u) == ncol(optimal.v))
     {
@@ -1843,9 +1852,10 @@ getBICMatricesGLMNET <- function(opath,option,X,W,W_c, all_ids, names, min.iter 
 
       NOT.CONVERGED <- !checkConvergenceBICSearch(i, rec.dat, conv.mode = CONV.MODE) #returns true if convergence is reached  #Default CONV.MODE is BIC.change
     }
-    
+
     #Store some convergence details, for debugging
     conv.options[[i]] <- trackAlternativeConvergences(X,W,W_c, optimal.u,optimal.v, i, rec.dat, u.fit$sparsity_space, v.fits$sparsity_space, option)
+    optimal.v <- DropEmptyColumns(v.fits$V) #Drop empty columns- this must happen before next U iteration so we don't have an empty column, but after scoring things so matrices are still conformable
     i = i+1
   }
   #Finished parameter selection, cleanup.
@@ -1855,10 +1865,10 @@ getBICMatricesGLMNET <- function(opath,option,X,W,W_c, all_ids, names, min.iter 
   {
     message("Warning: final top performing matrices weren't aligned. Aligning now. Note to developer: check this logical condition.")
     #This could happen if we aren't picking the exact most recent version of optimal.u
-    aligned <- AlignFactorMatrices(X,W,min.dat$optimal.u,min.dat$optimal.v); 
+    aligned <- AlignFactorMatrices(X,W,min.dat$optimal.u,min.dat$optimal.v);
     min.dat$optimal.u <- aligned$U; min.dat$optimal.v<- aligned$V
   }
   #This returns all the data from the last iteration
-  returnCompletionDat(min.dat, rec.dat, u.fit,conv.options)
+  returnCompletionDat(min.dat, rec.dat, u.fit,conv.options, option)
 
 }

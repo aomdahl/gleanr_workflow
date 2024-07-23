@@ -44,6 +44,17 @@ updateStatement  <- function(l,a,l_og, a_og, run,time)
 initializeGwasMF <- function(X,W,C,snp.ids, trait.names, K=0, init.mat = "V", covar_shrinkage=-1,enforce_blocks=TRUE,covar_se=NULL, ...)
 {
   #SourcePackages()
+  #A few quick sanity checks:
+  if(all(apply(X, 2, var) == 0) | all(apply(X, 1, var) == 0))
+  {
+    message("Matrix of effect sizes contains no variance. Likely not a valid matrix- program will terminate")
+    quit()
+  }
+  if(all(apply(W, 2, var) == 0) | all(apply(W, 1, var) == 0))
+  {
+    warning("Matrix of standard errors contains no variance. May not be valid")
+  }
+
   message("This is an archaic initialization; recommend doing away with this...")
   args <- defaultSettings(K=K,init.mat = init.mat,...)
   args$pve_init <- FALSE
