@@ -144,7 +144,8 @@ updateRecDat <- function(rec.dat, mat.fit, matrix_on, iter,X,W,W_c, optimal_comp
     rec.dat$bic.a <- c(rec.dat$bic.a,mat.fit$bic); rec.dat$alpha.s <- c(rec.dat$alpha.s,mat.fit$alpha.sel)
     rec.dat$U_sparsities = c(rec.dat$U_sparsities, matrixSparsity(mat.fit$U, ncol(X)));
     rec.dat$sparsity.obj[[paste0("U_", iter)]] <- computeObjIntermediate(X, W,W_c, mat.fit$U, optimal_complement, option,mat.fit$alpha.sel,curr.lambda, decomp = TRUE, loglik = TRUE) #should happen before drop empty colums
-  }
+    rec.dat$bic_sum <- c(rec.dat$bic_sum,mat.fit$bic + rec.dat$bic.l[length(rec.dat$bic.l)] )
+    }
   if(matrix_on == "V")
   {
     curr.alpha <- rec.dat$alpha.s[length(rec.dat$alpha.s)]
@@ -154,6 +155,7 @@ updateRecDat <- function(rec.dat, mat.fit, matrix_on, iter,X,W,W_c, optimal_comp
     #computeObjIntermediate <- function(X,W,W_c,U,V,option,alpha,lambda,...)computeObjIntermediate <- function(X,W,W_c,U,V,option,alpha,lambda,...)
     rec.dat$sparsity.obj[[paste0("V_", iter)]] <- computeObjIntermediate(X, W,W_c, optimal_complement, mat.fit$V,option,curr.alpha,mat.fit$lambda.sel, decomp = TRUE, loglik = TRUE) #Objective calculation
     rec.dat$Ks <- c(rec.dat$Ks, ncol(DropEmptyColumns(mat.fit$V))) #Track K
+    rec.dat$bic_sum <- c(rec.dat$bic_sum,mat.fit$bic + rec.dat$bic.a[length(rec.dat$bic.a)] )
   }
 
   return(rec.dat)
@@ -1717,7 +1719,8 @@ getBICMatricesGLMNET <- function(opath,option,X,W,W_c, all_ids, names, min.iter 
   #Data to track
   rec.dat <- list("alphas"=c(), "lambdas"=c(), "bic.a" = c(), "bic.l"=c(), "obj"=c(),
                   "v.sparsity" = c(), "u.sparsity"=c(), "iter"=c(), "sd.sparsity.u" = c(), "sd.sparsity.v" = c(),
-                  "alpha.s" = c(), "lambda.s" = c(), "Ks" = c(), "Vs" = list(),"Us"=list(), "X_hat" = c(), "sparsity.obj" <- list())
+                  "alpha.s" = c(), "lambda.s" = c(), "Ks" = c(), "Vs" = list(),"Us"=list(), "X_hat" = c(), "sparsity.obj" <- list(),
+                  "bic_sum"=c(Inf))
 
   burn.in.sparsity <- DefineSparsitySpaceInit(X, W, W_c, NULL, option, burn.in = burn.in.iter, rg_ref = rg_ref,reg.elements=reg.elements) #If this finds one with NA, cut them out here, and reset K; we want to check pve here too.
   option$regression_method = "glmnet" #Just in case it wasn't set earlier
