@@ -50,9 +50,9 @@ initializeGwasMF <- function(X,W,C,snp.ids, trait.names, K=0, init.mat = "V", co
     message("Matrix of effect sizes contains no variance. Likely not a valid matrix- program will terminate")
     quit()
   }
-  if(all(apply(W, 2, var) == 0) | all(apply(W, 1, var) == 0))
+  if(all(apply(W, 2, var) == 0))
   {
-    warning("Matrix of standard errors contains no variance. May not be valid")
+    warning("Columns of standard errors contain no variance. May not be valid")
   }
 
   message("This is an archaic initialization; recommend doing away with this...")

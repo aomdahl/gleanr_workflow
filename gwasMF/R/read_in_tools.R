@@ -605,7 +605,7 @@ readInSettings <- function(args)
   option$svd_init <- args$svd_init
   option$std_y <- args$std_y
   option$param_conv_criteria <- args$param_conv_criteria
-
+  option$min.bicsearch.iter <- args$min.bic.search.iter
   #Internal use only:
   option$actively_calibrating_sparsity <- FALSE
   #This looks alot like object-oriented programming.
@@ -644,7 +644,7 @@ readInSettings <- function(args)
 #####
 ## Setting defaults helpful for running elsewhere
 
-defaultSettings <- function(K=0, init.mat = "V", fixed_ubiq= TRUE, conv_objective = 0.001)
+defaultSettings <- function(K=0, init.mat = "V", fixed_ubiq= TRUE, conv_objective = 0.001,min_bic_search_iter=5 )
 {
   args <- UdlerArgs()
   args$niter <- 200
@@ -661,6 +661,7 @@ defaultSettings <- function(K=0, init.mat = "V", fixed_ubiq= TRUE, conv_objectiv
   message("set convergence objective to ",args$converged_obj_change)
   args$std_coef <- FALSE
   args$std_y <- FALSE
+  args$min.bic.search.iter <- min_bic_search_iter
   if(init.mat == "U")
   {
     args$init_L <- "std"
