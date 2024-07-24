@@ -24,13 +24,18 @@ if(FALSE)
   W <- W[1:1000, 1:10]
   option$K <- 5
 }
-#ZERO_THRESH = 1e-5
-#source("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/src/sparsity_scaler.R")
-#source("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/src/pve.R")
-  #fast matrix correlation help
 
+
+#' Faster correlation calculation for large matrices
+#' Grabbed this off of stack overflow.
+#' @param x
+#'
+#' @return
+#' @export
+#'
+#' @examples
 cor2 <- function(x) {
-1/(NROW(x)-1) * crossprod(scale(x, TRUE, TRUE))
+1/(nrow(x)-1) * crossprod(scale(x, TRUE, TRUE))
 }
 
 #This function uses OLS to get a good estimate of what the maximum sparsity space is across all parameters.
@@ -179,7 +184,6 @@ DefineSparsitySpace <- function(X,W,W_cov,fixed,learning, option, fit = "None",r
   }
 
 }
-
 
 
 #Function to initialize V as desired
@@ -335,7 +339,7 @@ UpdateTrackingParams <- function(sto.obj, X,W,W_c,U,V,option, sparsity.thresh = 
       sto.obj$Us[[length(sto.obj$Us) + 1]] <-  as.matrix(U)
       sto.obj$V <- as.matrix(V)
       sto.obj$Vs[[length(sto.obj$Vs) + 1]] <-  as.matrix(V)
-      sto.obj$PVE <-PercentVarEx(as.matrix(X)*as.matrix(W), v = V)
+      sto.obj$PVE <- PercentVarEx(as.matrix(X)*as.matrix(W) %*%W_c, V,U)
   sto.obj
 }
 
@@ -566,8 +570,23 @@ MatrixChange <- function(new, old)
 
 #Main workhorse function
 #1.26 changes- drop the burn in.
+#' Main ALS workhorse with fixed sparsity parameters
+#' Proceeds until some convergence threshold
+#' @param X
+#' @param W
+#' @param W_c
+#' @param option - specifies major settings
+#' @param preV - V to start from
+#' @param preU - U to start from, if desired (option$u_init must be TRUE)
+#' @param burn.in - If you want to have some burn in iterations using un-regularized least squares.
+#' @param reg.elements - ?????
+#'
+#' @return
+#' @export
+#'
+#' @examples
 Update_FL <- function(X, W, W_c, option, preV = NULL, preU = NULL, burn.in = FALSE,reg.elements=NULL){
-  # number of features - to avoid using T in R
+
   #Tracking data for debugging things...
   ll.tracker <- c()
   mse.tracker <- c()
@@ -592,8 +611,7 @@ Update_FL <- function(X, W, W_c, option, preV = NULL, preU = NULL, burn.in = FAL
     #U <- initU(X,W,option,preU=preU)
     message("initializing with U")
     V.new = FitVWrapper(X, W,W_c, preU, option,reg.elements=reg.elements)
-    #V.dat =  fit_V(X, W, L, option)
-    #V <- V.dat$V/V.dat$s
+    #V <- V.dat$V/V.dat$s #scaling version
     V.prev <- V
     V = V.new$V
 
@@ -618,9 +636,7 @@ Update_FL <- function(X, W, W_c, option, preV = NULL, preU = NULL, burn.in = FAL
   U.dat = FitUWrapper(X,W,W_c,V, option,reg.elements=reg.elements) #returns it scaled, with S  #CONFIRM
   U <- U.dat$U
   option[['carry_coeffs']] <- og_option
-  #if(option$debug)
-  #{em.objective[[0]] <- compute_obj(X,W,W_c, U,V,option, globalLL=TRUE,decomp = TRUE)}
-  #Start tracking stats
+
   tracking.data <- UpdateTrackingParams(NULL, X,W,W_c,U,V,option,scalar=U.dat$s) #multiplies everything by the scalar: #CONFIRM
 
   #If U is already empty, than we know that the matrix is too sparse, and we should just end there.
@@ -662,16 +678,13 @@ Update_FL <- function(X, W, W_c, option, preV = NULL, preU = NULL, burn.in = FAL
       s.weight.tracker[[i.c]] <- V.new$s
       i.c <- i.c + 1
 
-    #}
-    #Just get the matrix out.
-    #get the factor specific variance....
     if(option$traitSpecificVar)
     {
       trait.var[iii,] <- V.new$r.v
     }
     # if number of factors decrease because of empty factor, the change in ||F||_F = 100
 
-    #Tracking change in F....
+    #Tracking change in V....
     if(CheckVEmpty(V)) {message("V is empty; ending");  return(UpdateTrackingParams(tracking.data, X,W,W_c,U,V,option, loglik = iteration.ll.total,scalar=V.dat$s))}
     colnames(V) = seq(1, ncol(V));
 

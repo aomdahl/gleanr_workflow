@@ -235,6 +235,11 @@ compute_obj <- function(X, W, W_c, L, FactorM, option, decomp = FALSE, loglik = 
     message("Unable to calculate objective, no valid sparsity parameters given.")
     return(NA)
   }
+  if(is.na(option$alpha1) | is.na(option$lambda1))
+  {
+    message("Unable to calculate objective, no valid sparsity parameters given.")
+    return(NA)
+  }
   M = ncol(X)
   N = nrow(X)
   #message("Scaling out L, in DEVELOPMENT")
@@ -303,7 +308,9 @@ reportObjectivePerFactor <- function(X,W,W_c,L,FactorM, option)
     init = 2
   }
   #Reorder factors by PVE
-  pve.rank=order(PercentVarEx(as.matrix(X)*as.matrix(W), v = V), decreasing = TRUE)
+  #compute_obj <- function(X, W, W_c, L, FactorM, option, decomp = FALSE, loglik = TRUE, globalLL=TRUE, scalar = 1){
+  #July 25, 2024- updated to a more interpretable way.
+  pve.rank=order(PercentVarEx(as.matrix(X)*as.matrix(W) %*% W_c, V,U, K=ncol(V)), decreasing = TRUE)
   curr.indices <- c()
   for(i in init:ncol(FactorM))
   {
@@ -447,18 +454,18 @@ GetStepWiseObjective <- function(X,W,W_c,old.mat,new.mat, companion.mat,fixed.te
 
 
 
-##Wrapper on objective update, for in between each iteration.
-#' Title
+
+#' Wrapper on objective update, for in between each iteration- adds a check for alignment that shouldn't ever get triggered.
 #'
-#' @param X 
-#' @param W 
-#' @param W_c 
-#' @param U 
-#' @param V 
-#' @param option 
-#' @param alpha 
-#' @param lambda 
-#' @param ... 
+#' @param X
+#' @param W
+#' @param W_c
+#' @param U
+#' @param V
+#' @param option
+#' @param alpha
+#' @param lambda
+#' @param ...
 #'
 #' @return
 #' @export
@@ -466,12 +473,12 @@ GetStepWiseObjective <- function(X,W,W_c,old.mat,new.mat, companion.mat,fixed.te
 #' @examples
 computeObjIntermediate <- function(X,W,W_c,U,V,option,alpha,lambda,...)
 {
-  if(ncol(optimal.u) != ncol(optimal.v))
+  if(ncol(U) != ncol(V))
   {
     message("Calculating objective when the matrices haven't been aligned yet. This should not happen")
     quit()
   }
   option$lambda1 <- lambda
   option$alpha1 <- alpha
-  compute_obj(X, W,W_c, optimal.u, optimal.v, option, ...) 
+  compute_obj(X, W,W_c, U, V, option, ...)
 }

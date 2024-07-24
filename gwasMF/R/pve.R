@@ -36,7 +36,42 @@ r2Score <- function(V,U,X,K,D = NULL)
    return(c(r2[1], sapply(2:K, function(i) r2[i] - r2[i-1])))
 }
 
-
+## Method 1.5- vanilla R2
+#' Very basic estimation of PVE, based on R2
+#'
+#' @param V
+#' @param U
+#' @param X
+#' @param K
+#' @param D
+#'
+#' @return vector of PVE per factor.
+#' @export
+#'
+#' @examples
+linearPVE <- function(V,U,X,K=NULL,D=NULL)
+{
+  r2.list <- c()
+  if(is.null(K))
+  {
+    K=ncol(V)
+  }
+  if(is.null(D))
+  {
+    D <- rep(1,K)
+  }
+  #Need to do it in aggregate, since we will overestimate if doing it separately
+  #Factors aren't entirely unique
+  for(i in 1:K)
+  {
+    kc <- 1:i
+    inter.mat <- scale(c(U[,kc] %*% diag(D[kc]) %*% t(V[,kc])), scale=FALSE)
+    x.vect <- scale(c(X),scale=FALSE)
+    fit <- lm(x.vect ~ inter.mat + 0)
+    r2.list <- c(r2.list, summary(fit)$r.squared)
+  }
+  return(c(r2.list[1], sapply(2:K, function(i) r2.list[i] - r2.list[i-1])))
+}
 
 ## Method 2: Explained Variance Score
 #Basically, this drops the assumption of the data being 0-centered (? still not clear on this point). This would look like $1-\frac{Var[\hat{y}-y]}{Var[y]}$
@@ -78,15 +113,16 @@ pveBySVD <-function(V,U,X,K,D = NULL)
 mean.na <- function(vec){
   return(mean(vec[!is.na(vec)]))
 }
-
-PercentVarEx <- function(x,v, K=NULL, center= FALSE)
+#PercentVarEx(
+PercentVarEx <- function(x,v,u, K=NULL)
 {
   if(all(v == 0) | nrow(v) <= 1)
   {
-	message("empty data passed in, crisis averted")
-	  return(c(NA))
+  	message("empty data passed in, crisis averted")
+  	return(c(NA))
   }
-  PMA_PVE(x,v, K=NULL, center= FALSE)
+  #PMA_PVE(x,v, K=NULL, center= FALSE)
+  linearPVE(v,u,x,K=K,D=NULL)
 }
 
 getVE <- function(xfill, vk)
@@ -97,6 +133,7 @@ getVE <- function(xfill, vk)
     sum(svdxk$d^2)
   },  error=function(cond) {
     message("caught error calculating PVE")
+    print(vk)
     message(cond)
     # Choose a return value in case of error
     return(NA)
@@ -116,6 +153,7 @@ PMA_PVE <- function(x,v, K=NULL, center= FALSE)
   if(any(colSums(v==0) == nrow(v)))
   {
     message("Warning: rows in current v contain 0 entries. Setting PVE to 0.")
+    print(v)
     drops <- which(colSums(v==0) == nrow(v))
     v <- v[,-drops]
   }

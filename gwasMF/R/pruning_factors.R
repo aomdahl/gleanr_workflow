@@ -52,7 +52,9 @@ PruneNumberOfFactors <- function(X,W,W_c,reg.run, minK, maxK, option)
 
 #This will cut out factors by some specified parameter (either "fit" term or "objective") until the minimum threshold is reached.
 
-#' Drop factors until a specified MaxK is reached
+#' Drop factors until a specified MaxK is reached. Options are either:
+#'  "objective", which drops the factor with the smallest impact on the overall objective (i.e. hurts the least), or
+#'  "fit", which drops the factor that hurts the fit the least.
 #'
 #' @param X full data matrix
 #' @param W standard errors
@@ -97,15 +99,29 @@ DropFactorsByFit <- function(X,W,W_c,U,V, maxK, option, calc.param="obj", scalar
          "fit" = compute_obj(X,W,W_c, U, V, option, decomp = TRUE, scalar =  scalar)$Fit.p,
          "obj" = compute_obj(X,W,W_c, U, V, option, scalar =  scalar))
   drop.set <- remaining.set
-  if(option$fixed_ubiq)
-  {
-    drop.set <- 2:ncol(U)
-  }
   min.obj <- init.obj.fit
   min.index <- -1
+  min.increase = Inf
+  if(option$fixed_ubiq)
+  {
+    #Need to account for a special case here- its possible to drop the ubiquitous factor
+    sub.opt <- option
+    sub.opt$fixed_ubiq <- FALSE
+    UFI=1 #ubiquitous factor index
+    new.obj.fit <- switch(calc.param,
+                          "fit" = compute_obj(X,W,W_c, U[,-UFI], V[,-UFI], sub.opt, decomp = TRUE, scalar =  scalar)$Fit.p,
+                          "obj" =  compute_obj(X,W,W_c, U[,-UFI], V[,-UFI], sub.opt, scalar =  scalar))
+    diff = new.obj.fit - init.obj.fit
+    if(diff < min.increase)
+    {
+      min.index <- i
+      min.increase <- diff
+    }
+    drop.set <- 2:ncol(U)
+  }
+
   if(ncol(V) >= maxK)
   {
-    min.increase = Inf
     for(i in drop.set) #we don't drop ubiq one
     {
       new.obj.fit <- switch(calc.param,
@@ -122,7 +138,7 @@ DropFactorsByFit <- function(X,W,W_c,U,V, maxK, option, calc.param="obj", scalar
     if(!is.infinite(min.increase))
     {
       message("Calling the next iteration")
-      message("Dropping: ", min.index)
+      message("Dropping factor number: ", min.index)
       return(DropFactorsByFit(X,W,W_c,U[,-min.index],V[,-min.index], maxK, option,scalar = scalar))
     }else
     {
@@ -238,14 +254,16 @@ PruneFactorsByObjective <- function(X,W,U,V, minK, option)
 #' @return return.dat, ret object updated by order of PVE
 #' @export
 #'
-OrderEverythingByPVE <- function(ret,X,W)
+OrderEverythingByPVE <- function(ret,X,W,W_c)
 {
   return.dat <- ret
-  pve=PercentVarEx(as.matrix(X)*as.matrix(W), v = ret$V)
+  #PercentVarEx <- function(x,v,u, K=NULL)
+  pve=PercentVarEx(as.matrix(X)*as.matrix(W) %*% W_c, ret$V, ret$U)
   pveo <- order(pve, decreasing=TRUE)
   return.dat$V<- return.dat$V[,pveo]
   return.dat$U <- return.dat$U[,pveo]
-  return.dat$PVE <- pve[pveo]
+  return.dat$PVE <- PercentVarEx(as.matrix(X)*as.matrix(W) %*% W_c,return.dat$V, return.dat$U)
+  #need go recalculate since its order dependent- adding them in one by one- and they aren't necessarily totally independent.
   return.dat
 }
 

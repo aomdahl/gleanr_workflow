@@ -1382,26 +1382,18 @@ checkConvergenceBICSearch <- function(index, record.data, conv.perc.thresh = 0.0
     #Goes until the BIC stops dropped, or the change crosses 0.
     #I think maybe you need a better condition.. if you stop too soon you miss a nice minimum somewhere else.
     sum.bic.score <- record.data$bic.a + record.data$bic.l
+    #at which iteration is our search no longer decreasing? TRUE = still decreasing
     delta.bic.score <- sapply(2:length(sum.bic.score), function(i) sum.bic.score[i-1] > sum.bic.score[i])
     li <- length(delta.bic.score)
     #if(any((!delta.bic.score)))
-    if(!delta.bic.score[li]) #The last element isn't decreasing
+    if(!delta.bic.score[li]) #The last element is NOT decreasing relative to the previous
     {
-      #CAse 1- we've only been increasing so far, give it some more time
-      if(all(!delta.bic.score)[-li]) #all have been increasing
-      {
-        message("BIC only increasing so far, give it some time...")
-        return(FALSE)
-      }
-      selected.index <- min(which(!delta.bic.score))
-      if(selected.index != (index - 1))
-      {
-        message("behavior not as expected, second to last index isn't the one declining..")
-        message("This would happen if it started increasing early on and didn't swa[]")
-        print(sum.bic.score)
-        print(selected.index)
-      }
-      return(TRUE)
+        #CAse 1- we've only been increasing so far, give it some more time
+        if(all(!delta.bic.score)) #all have been increasing
+        {
+          message("BIC has only increased after minimum iterations. Continuing search")
+          return(FALSE)
+        }else{      return(TRUE) } #Case 2 we end here, not searching anymore.
     }else
     {
       return(FALSE)
@@ -1441,47 +1433,41 @@ gwasML_ALS_Routine <- function(option, X, W,W_c, optimal.init, maxK=0, opath = "
 {
 
   message(paste0("Starting at k:", option$K))
-#if(option$u_init != "")
-#{
-#  reg.run <- Update_FL(X, W, option, preU = optimal.init)
-#}
-option$debug <- TRUE
-reg.run <- Update_FL(X, W, W_c, option, preV = optimal.init, reg.elements =reg.elements,... )
-if(no.prune){return(reg.run)}
-if(maxK != 0)
-{
-  if(ncol(reg.run$V)> maxK)
+  option$debug <- TRUE
+  reg.run <- Update_FL(X, W, W_c, option, preV = optimal.init, reg.elements =reg.elements,... )
+  if(no.prune){return(reg.run)}
+  if(maxK != 0)
   {
-    message("Parsing down to desired number of factors")
-    message("More columns exist than specified....")
-  }
+    if(ncol(reg.run$V) > maxK)
+    {
+      message("More columns identified than specified by the user.")
+      message("gleaner now parsing down to desired number of factors")
 
-  or <- sort(reg.run$PVE, decreasing =TRUE, index.return= TRUE)
-  if(ncol(reg.run$V) < maxK)
+    }
+    if(ncol(reg.run$V) < maxK)
+    {
+      message("Resulted in fewer than desired columns. Sorry.")
+      maxK <- ncol(reg.run$V)
+    }
+  } else {
+    maxK <- ncol(reg.run$V) #If maxK is 0, basically ju
+  }
+  #Note that no pruning takes place if maxK == ncol
+    reg.run <- PruneNumberOfFactors(X,W,W_c,reg.run,option$Kmin, maxK, option) %>% OrderEverythingByPVE(.,X,W, W_c)
+
+  save(reg.run, file = paste0(option$out,opath, "_gwasMF_iter.Rdata" ))
+  #print(paste0(option$out,opath, "_gwasMF_iter.Rdata" ))
+
+  if(option$plots)
   {
-    message("Resulted in fewer than desired columns. Sorry.")
-    maxK <- ncol(reg.run$V)
+    o <- data.frame("rownames" = colnames(X), reg.run$V)
+    write.table(o, file =  paste0(option$out,opath, ".factors.txt"), quote= FALSE, row.names = FALSE)
+    source("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/src/plot_functions.R")
+    title <- paste0("A=",reg.run$autofit_alpha[1], "Lambda=",reg.run$autofit_lambda[1])
+    plotFactors(apply(reg.run$V, 2, function(x) x/norm(x, "2")), trait_names = o$rownames, title = title)
+    ggsave(paste0(option$out,opath, ".factors.png"))
   }
-}else
-{
-  maxK <- ncol(reg.run$V)
-}
-  reg.run <- PruneNumberOfFactors(X,W,W_c,reg.run,option$Kmin, maxK, option) %>% OrderEverythingByPVE(.,X,W)
-
-
-save(reg.run, file = paste0(option$out,opath, "_gwasMF_iter.Rdata" ))
-#print(paste0(option$out,opath, "_gwasMF_iter.Rdata" ))
-
-if(option$plots)
-{
-  o <- data.frame("rownames" = colnames(X), reg.run$V)
-  write.table(o, file =  paste0(option$out,opath, ".factors.txt"), quote= FALSE, row.names = FALSE)
-  source("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/src/plot_functions.R")
-  title <- paste0("A=",reg.run$autofit_alpha[1], "Lambda=",reg.run$autofit_lambda[1])
-  plotFactors(apply(reg.run$V, 2, function(x) x/norm(x, "2")), trait_names = o$rownames, title = title)
-  ggsave(paste0(option$out,opath, ".factors.png"))
-}
-#DEBUGGING: objective differs:
+  #DEBUGGING: objective differs:
 return(reg.run)
 }
 
@@ -1605,7 +1591,6 @@ gleaner <- function(X,W, snp.ids, trait.names, C = NULL, K=0, gwasmfiter =5, rep
     C = diag(ncol(X))
   }
 
-
   d <- initializeGwasMF(X,W,C, snp.ids, trait.names, K=ifelse(use.init.k, K, 0),
                         init.mat=init.mat, covar_shrinkage=shrinkWL,covar_se=covar_se,...) #Either use specified, or prune down as we
   option <- d$options; args <- d$args; hp <- d$hp; all_ids <- d$all_ids; names <- d$namesl; W_c <- d$W_c
@@ -1627,10 +1612,10 @@ gleaner <- function(X,W, snp.ids, trait.names, C = NULL, K=0, gwasmfiter =5, rep
   option$regression_method = regression.method
   if(option$regression_method == "glmnet")
   {
-    bic.dat <- getBICMatricesGLMNET(opath,option,X,W,W_c, all_ids, names)
+    bic.dat <- getBICMatricesGLMNET(opath,option,X,W,W_c, all_ids, names, min.iter=option$min.bicsearch.iter)
   }else
   {
-    bic.dat <- getBICMatrices(opath,option,X,W,W_c, all_ids, names)
+    bic.dat <- getBICMatrices(opath,option,X,W,W_c, all_ids, names,min.iter=option$min.bicsearch.iter)
   }
   if(is.sim)
   {
@@ -1723,7 +1708,7 @@ gleaner <- function(X,W, snp.ids, trait.names, C = NULL, K=0, gwasmfiter =5, rep
     ## return updated min.so.far
 ## else: return min.so.far
 #bic.dat <- getBICMatricesGLMNET(opath,option,X,W,W_c, all_ids, names)
-getBICMatricesGLMNET <- function(opath,option,X,W,W_c, all_ids, names, min.iter = 2, max.iter = 100, burn.in.iter = 0,
+getBICMatricesGLMNET <- function(opath,option,X,W,W_c, all_ids, names, min.iter = 5, max.iter = 100, burn.in.iter = 0,
                                  init.mat = NULL, rg_ref=NULL,reg.elements=NULL,INCR.LIMIT=3)
 {
   W_ld = NULL
@@ -1831,6 +1816,7 @@ getBICMatricesGLMNET <- function(opath,option,X,W,W_c, all_ids, names, min.iter 
     #rec.dat$Ks <- c(rec.dat$Ks, ncol(optimal.v)) #Track K
 
     #Update tracking data for convergence detection
+    optimal.v <- v.fits$V
     curr.lambda <- v.fits$lambda.sel; curr.bic.l <- v.fits$bic
     min.dat <- trackMinParam(min.dat,optimal.u,optimal.v,curr.alpha,curr.lambda,curr.bic.a,curr.bic.l, paste0("V_", i))
 
@@ -1844,6 +1830,8 @@ getBICMatricesGLMNET <- function(opath,option,X,W,W_c, all_ids, names, min.iter 
     }else
     {
       message("Matrices are unaligned. Visit this case to understand why.")
+      print(dim(optimal.v))
+      print(dim(optimal.u))
       rec.dat$X_hat <- c(rec.dat$X_hat, NA)
     }
 
