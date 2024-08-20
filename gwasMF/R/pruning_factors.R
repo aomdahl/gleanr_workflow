@@ -2,6 +2,20 @@
 ## Functions for pruning of factors.
 ######
 
+
+
+pm <- function(matrix_in)
+{
+  if(is.null(matrix_in))
+  {
+    return(matrix_in)
+  }
+  m_out <-as.matrix(matrix_in)
+    rownames(m_out) <- NULL
+  colnames(m_out) <- NULL
+  m_out
+}
+
 #' Cut out factors based on objective or some threshold (maxK)
 #'
 #' @param X full effect size data
@@ -102,26 +116,28 @@ DropFactorsByFit <- function(X,W,W_c,U,V, maxK, option, calc.param="obj", scalar
   min.obj <- init.obj.fit
   min.index <- -1
   min.increase = Inf
-  if(option$fixed_ubiq)
-  {
-    #Need to account for a special case here- its possible to drop the ubiquitous factor
-    sub.opt <- option
-    sub.opt$fixed_ubiq <- FALSE
-    UFI=1 #ubiquitous factor index
-    new.obj.fit <- switch(calc.param,
-                          "fit" = compute_obj(X,W,W_c, U[,-UFI], V[,-UFI], sub.opt, decomp = TRUE, scalar =  scalar)$Fit.p,
-                          "obj" =  compute_obj(X,W,W_c, U[,-UFI], V[,-UFI], sub.opt, scalar =  scalar))
-    diff = new.obj.fit - init.obj.fit
-    if(diff < min.increase)
-    {
-      min.index <- i
-      min.increase <- diff
-    }
-    drop.set <- 2:ncol(U)
-  }
 
-  if(ncol(V) >= maxK)
+
+  if(ncol(V) > maxK)
   {
+    if(option$fixed_ubiq)
+    {
+      #Need to account for a special case here- its possible to drop the ubiquitous factor
+      sub.opt <- option
+      sub.opt$fixed_ubiq <- FALSE
+      UFI=1 #ubiquitous factor index
+      new.obj.fit <- switch(calc.param,
+                            "fit" = compute_obj(X,W,W_c, U[,-UFI], V[,-UFI], sub.opt, decomp = TRUE, scalar =  scalar)$Fit.p,
+                            "obj" =  compute_obj(X,W,W_c, U[,-UFI], V[,-UFI], sub.opt, scalar =  scalar))
+      diff = new.obj.fit - init.obj.fit
+      if(diff < min.increase)
+      {
+        min.index <- UFI
+        min.increase <- diff
+      }
+      drop.set <- 2:ncol(U)
+    }
+
     for(i in drop.set) #we don't drop ubiq one
     {
       new.obj.fit <- switch(calc.param,
@@ -139,12 +155,22 @@ DropFactorsByFit <- function(X,W,W_c,U,V, maxK, option, calc.param="obj", scalar
     {
       message("Calling the next iteration")
       message("Dropping factor number: ", min.index)
+      #print(dim(U))
+      #print(dim(V))
+      if(min.index > ncol(U))
+      {
+        message("You see the problem...")
+        stopifnot(ncol(U) < min.index)
+      }
       return(DropFactorsByFit(X,W,W_c,U[,-min.index],V[,-min.index], maxK, option,scalar = scalar))
     }else
     {
       return(list("U"=U, "V" = V, "K" = ncol(V)))
     }
 
+  }else
+  {
+    return(list("U"=U, "V" = V, "K" = ncol(V)))
   }
 }
 #Beta test function- can we pick out the best factors by how they contribute (or don't) to the objective?
@@ -254,15 +280,37 @@ PruneFactorsByObjective <- function(X,W,U,V, minK, option)
 #' @return return.dat, ret object updated by order of PVE
 #' @export
 #'
-OrderEverythingByPVE <- function(ret,X,W,W_c)
+OrderEverythingByPVE <- function(ret,X,W,W_c,terminal.attempt = FALSE,...)
 {
   return.dat <- ret
+  if(all(ret$V == 0) | all(ret$U == 0))
+  {
+	  message("returned matrices empty,no reorder will be performed.")
+	  return(ret)
+  }
+  if(ncol(ret$V) == 1 & ncol(ret$U) == 1)
+  {
+    message("Only one column remains, no reorder to do.")
+    return(ret)
+  }
   #PercentVarEx <- function(x,v,u, K=NULL)
-  pve=PercentVarEx(as.matrix(X)*as.matrix(W) %*% W_c, ret$V, ret$U)
-  pveo <- order(pve, decreasing=TRUE)
-  return.dat$V<- return.dat$V[,pveo]
-  return.dat$U <- return.dat$U[,pveo]
+
+  pve.ord = getPVEOrder(as.matrix(X)*as.matrix(W) %*% W_c, pm(ret$V), pm(ret$U),...)
+
+  #pve=PercentVarEx(as.matrix(X)*as.matrix(W) %*% W_c, pm(ret$V), pm(ret$U),...)
+  #pveo <- order(pve, decreasing=TRUE)
+  return.dat$V<- pm(ret$V)[,pve.ord]
+  return.dat$U <- pm(ret$U)[,pve.ord]
   return.dat$PVE <- PercentVarEx(as.matrix(X)*as.matrix(W) %*% W_c,return.dat$V, return.dat$U)
+  #save(X,W,W_c, ret, return.dat, file= "/scratch16/abattle4/ashton/snp_networks/scratch/cohort_overlap_exploration/run_scripts/final_sim_june_2024/debug.RData")
+  #if((!all(sort(return.dat$PVE, decreasing=TRUE) == return.dat$PVE)) & !terminal.attempt) #terminal attempt ensures it onlyl tries to correct once.
+  #{
+  #  message("Not a descending setting. Odd. Try again.")
+  #  print(return.dat$PVE)
+  #  print(sort(return.dat$PVE, decreasing=TRUE))
+
+  #  return(OrderEverythingByPVE(return.dat,X,W,W_c,terminal.attempt = TRUE,...))
+  #}
   #need go recalculate since its order dependent- adding them in one by one- and they aren't necessarily totally independent.
   return.dat
 }

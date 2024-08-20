@@ -208,13 +208,13 @@
     {
       if(is.na(option$alpha1)) #we are searching for parameters, phase 1 of the work.
       {
-	message("Fitting a regression")
-        print(pryr::mem_change(fit <- glmnet::glmnet(x = long.v, y = long.x, family = "gaussian", alpha = 1,
-                             intercept = FALSE, standardize = option$std_coef,nlambda = 100, trace.it=1))) #lambda = option[['alpha1']],
+        fit <- glmnet::glmnet(x = long.v, y = long.x, family = "gaussian", alpha = 1,
+                             intercept = FALSE, standardize = option$std_coef,nlambda = 100, trace.it=1) #lambda = option[['alpha1']],
         #print(paste0("Just fit the regression: ", pryr::mem_used()))
         penalty <- fit$penalty
         alpha.list <- fit$lambda
-        message("Using BIC to select out the best one...")
+        #message("SAVING, and Using BIC to select out the best one...")
+        #save(X,W,W_cfit, long.v, long.x, file="/scratch16/abattle4/ashton/snp_networks/scratch/cohort_overlap_exploration/DEBUG.bic.RData" )
       if(FALSE)
       {
         all.preds <- predict(fit, newx = long.v)
@@ -263,12 +263,15 @@
       }
 
         #bic.list <- BICglm(fit, option$bic.var)
+        #message("Calc BIC")
+        #print(dim(long.v))
+        #print(length(long.x))
         bic.list <- calculateBIC(fit, long.v, long.x, option$bic.var)
         #print(paste0("Calculated BIC: ", pryr::mem_used()))
         #print(pryr::mem_used())
         #sklearn extended was default previously?
         #bic.list <- sklearnBIC(fit,long.v,long.x, bic.mode =  option$bic.var)
-        #save(bic.list.complete, fit, long.x, long.v,file="/scratch16/abattle4/ashton/snp_networks/scratch/testing_gwasMF_code/real_data/udler_bic_evaluation.stdized.CORRECTED.RData" )
+        #save(bic.list, fit, long.x, long.v,file="/scratch16/abattle4/ashton/snp_networks/scratch/cohort_overlap_exploration/DEBUG.bic.RData" )
         #bic.list <- ZouBIC(fit, long.v, long.x) #trying this...
 
 
@@ -303,6 +306,10 @@
 
 #look at the probability for a given
         min.index <- which.min(bic.list)
+        #message("Selected BIC index: ", min.index)
+        #print(alpha.list)
+        #message(alpha.list[min.index][-1])
+        #print(option$bic.var)
         #TODO: check this
         u.ret = matrix(coef(fit, s = alpha.list[min.index])[-1], nrow = nrow(X), ncol = ncol(V),byrow = TRUE)
         #return teh best lambda associated with it
@@ -321,7 +328,7 @@
 
         #ProposeNewSparsityParams(bic.list, fit$lambda, (fit$lambda), 2, n.points = 20) #need to modify this to allow for conditions.....
         #Check: is in the realm of those picked by CV?
-        return(list("U" = u.ret,"alpha.sel"=fit$lambda[min.index],
+        return(list("U" = pm(u.ret),"alpha.sel"=fit$lambda[min.index],
                     "bic"= bic.list[min.index], "sparsity_space"=max(fit$lambda), "total.log.lik" = NA,
                     "penalty" = penalty, "s"=s, "next.upper" = upper.next, "next.lower" = lower.next, "SSE"=sse))
 
@@ -364,7 +371,7 @@
       #convert back to a U:
 
       if(option$actively_calibrating_sparsity) { max.sparsity <- rowiseMaxSparsity(Matrix::Matrix(long.x), (long.v))}
-      return(list("U" = l, "sparsity_space"=max.sparsity, "total.log.lik" = ll, "penalty" = penalty, "s"=s, "SSE"=sse))
+      return(list("U" = pm(l), "sparsity_space"=max.sparsity, "total.log.lik" = ll, "penalty" = penalty, "s"=s, "SSE"=sse))
   }
 
 
@@ -500,16 +507,16 @@
 #'#
   FitUWrapper <- function(X,W,W_c,V, option, prevU = NULL,...)
   {
-    if(option[['ncores']] > 1) #This is not working at all. Can't tell you why. But its not. Need to spend some time debugging at some point.
-    {
-      U = fitUParallel(X, W,W_c, V, option, formerU = prevU); #preL is by default Null, unless yo specify!
-
-    }else
-    {
+    #if(option[['ncores']] > 1) #This is not working at all. Can't tell you why. But its not. Need to spend some time debugging at some point.
+    #{
+    #  U = fitUParallel(X, W,W_c, V, option, formerU = prevU); #preL is by default Null, unless yo specify!
+#
+    #}else
+    #{
       #U = fit_U(X, W, W_c, V, option,formerU = prevU, ...);
       U = FitUGlobal(X, W,W_c, V, option,formerU = prevU, ...);
 
-    }
+    #}
     return(U)
   }
 

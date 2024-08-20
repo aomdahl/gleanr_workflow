@@ -41,15 +41,17 @@ r2Score <- function(V,U,X,K,D = NULL)
 #'
 #' @param V
 #' @param U
-#' @param X
-#' @param K
-#' @param D
+#' @param X adjusted for everything already
+#' @param K number of factors
+#' @param D for methods that have it
+#' @param jointly if you want the PVE additively or, each factor separately (factors aren't uncorrrelated, so this may exceed actual total PVE)
 #'
 #' @return vector of PVE per factor.
 #' @export
 #'
 #' @examples
-linearPVE <- function(V,U,X,K=NULL,D=NULL)
+#' #PercentVarEx(as.matrix(X)*as.matrix(W) %*% W_c,return.dat$V, return.dat$U)
+linearPVE <- function(V,U,X,K=NULL,D=NULL, jointly=TRUE)
 {
   r2.list <- c()
   if(is.null(K))
@@ -60,18 +62,74 @@ linearPVE <- function(V,U,X,K=NULL,D=NULL)
   {
     D <- rep(1,K)
   }
-  #Need to do it in aggregate, since we will overestimate if doing it separately
+  #Typically, we need to do it in aggregate, since we will overestimate if doing it separately
   #Factors aren't entirely unique
+  #However, if trying to order them, we want it done singly, not additively
   for(i in 1:K)
   {
     kc <- 1:i
-    inter.mat <- scale(c(U[,kc] %*% diag(D[kc]) %*% t(V[,kc])), scale=FALSE)
+    if(!jointly) { kc <- i}
+     inter.mat <- scale(c(U[,kc] %*% diag(D[kc]) %*% t(V[,kc])), scale=FALSE)
     x.vect <- scale(c(X),scale=FALSE)
     fit <- lm(x.vect ~ inter.mat + 0)
     r2.list <- c(r2.list, summary(fit)$r.squared)
   }
-  return(c(r2.list[1], sapply(2:K, function(i) r2.list[i] - r2.list[i-1])))
+  if(!jointly){
+    return(r2.list)
+  }else
+  {
+    return(c(r2.list[1], sapply(2:K, function(i) r2.list[i] - r2.list[i-1])))
+  }
+
 }
+
+
+
+
+#Why do it this way?
+#Because the PVe changes depending on the order when doing it jointly.
+allCombsLinearPVE <- function(X,V,U,K=NULL,D=NULL, jointly=TRUE)
+{
+  #Special case- if there are too many options to look at:
+  if(ncol(V) > 7)
+  {
+    message("Too many factors to search all possible orders- using joint approximation of PVE")
+    joint.pve <- linearPVE(V,U,X,K=K,D=D, jointly=TRUE)
+    return(order(joint.pve, decreasing = TRUE))
+  }
+
+  all.combs <- combinat::permn(1:ncol(V))
+  all.possibilities <- lapply(all.combs, function(i) linearPVE(V[,i],U[,i],X,K=K,D=D, jointly=TRUE))
+  get.best  <- sapply(all.possibilities, function(x) all(sort(x, decreasing=TRUE) == x) )
+  opts <- which(get.best)
+
+  if(length(opts) == 0)
+  {
+    warning("Unusual case: no optimal joint arrangement of factors with decreasing PVE. \n Proposed order based on independent PVE per factor")
+    indep.pve <- linearPVE(V,U,X,K=K,D=D, jointly=FALSE)
+    return(order(indep.pve, decreasing = TRUE))
+  }
+if(length(opts) > 1)
+{
+	print(all.possibilities[opts[1]])
+	print(all.possibilities[opts[2]])
+	message("Multiple valid PVE orientations, going with the first arbitrarily")
+	opts <- opts[1]
+}
+  #print(which(get.best))
+  #print(get.best)
+  #print(length(get.best))
+  #print(length(all.combs))
+  return(all.combs[[opts]])
+}
+
+
+getPVEOrder <- function(X,V,U,...)
+{
+  allCombsLinearPVE(X,V,U,...)
+}
+#getPVEOrder(as.matrix(X)*as.matrix(W) %*% W_c, pm(ret$V), pm(ret$U),...)
+
 
 ## Method 2: Explained Variance Score
 #Basically, this drops the assumption of the data being 0-centered (? still not clear on this point). This would look like $1-\frac{Var[\hat{y}-y]}{Var[y]}$
@@ -114,7 +172,7 @@ mean.na <- function(vec){
   return(mean(vec[!is.na(vec)]))
 }
 #PercentVarEx(
-PercentVarEx <- function(x,v,u, K=NULL)
+PercentVarEx <- function(x,v,u, K=NULL,...)
 {
   if(all(v == 0) | nrow(v) <= 1)
   {
@@ -122,7 +180,7 @@ PercentVarEx <- function(x,v,u, K=NULL)
   	return(c(NA))
   }
   #PMA_PVE(x,v, K=NULL, center= FALSE)
-  linearPVE(v,u,x,K=K,D=NULL)
+  linearPVE(v,u,x,K=K,D=NULL,...)
 }
 
 getVE <- function(xfill, vk)

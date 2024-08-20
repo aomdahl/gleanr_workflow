@@ -506,15 +506,14 @@ SampleOverlapCovarHandler <- function(args, names, X)
 #' Select the K to initialize with. A few different options, made for testing.
 #'
 #' @param args a list with settings; key settings are K desired (either a number or a method)
-#' @param X input data effect sizes
-#' @param W input data weights
-#' @param svs (optional) the singular values
+#' @param X_ matrix, weighted and adjusted for covariance
+#' @param evals (optional) the egienvalues to evaluate
 #'
 #' @return a number of K to initialize with
 #' @export
 #'
 #' @examples
-selectInitK <- function(args,X,W, svs = NULL)
+selectInitK <- function(args,X_, evals = NULL)
 {
   #Optiosn now are: MAX (default), KAISER, GD
   #GD method: from https://arxiv.org/pdf/1305.5870.pdf
@@ -522,37 +521,106 @@ selectInitK <- function(args,X,W, svs = NULL)
   #MAX: m-1
   #M/2: M/2
 
-  if(is.null(svs) & args$K %in% c("KAISER", "GD"))
+  if(is.null(evals) & args$K %in% c("KAISER", "GD"))
   {
     #We've already done spectral decomp, no need to do it again...
-    svrun <- svd(X*W)
-    svs <- svrun$d
+    svrun <- svd(X_)
+    evals <- svrun$d^2
+  }
 
+  corr.based <- c("KAISER-1", "SCREE", "BENTLER", "R2")
+  if(is.null(evals) & args$K %in% corr.based)
+  {
+    #We've already done spectral decomp, no need to do it again...
+    cor_struct <- cor2(X_)
+    evals <- eigen(cor_struct,symmetric=TRUE, only.values = TRUE)$values
   }
 
   #if(is.numeric(args$K) & args$K !=0)
-  if(args$K %in% paste(1:ncol(X)))
+  if(args$K %in% paste(1:ncol(X_)))
   {
     message("User has specified a number of factors initially- this will be given preference.")
     message("No selection method will be used.")
     return(as.numeric(args$K))
   } else
   {
+    #check this
     k = switch(
       args$K,
-      "MAX"= ncol(X)-1,
-      "GD"= PCAtools::chooseGavishDonoho(X*W,  var.explained=svs^2, noise=1), #see https://rdrr.io/github/kevinblighe/PCAtools/man/chooseGavishDonoho.html
-      "KAISER"= sum(svs^2 > mean(svs^2)),
-      "K/2"=ceiling(ncol(X)/2),
-      "K-2"=ceiling(ncol(X)/2),
+      "MAX"= ncol(X_)-1,
+      "GD"= chooseGavishDonoho(X_,  var.explained=evals, noise=1), #see https://rdrr.io/github/kevinblighe/PCAtools/man/chooseGavishDonoho.html
+      "KAISER"= sum(evals > mean(evals)), #described in https://wires.onlinelibrary.wiley.com/doi/epdf/10.1002/wics.101; better called avergae.
+      "AVG"= sum(evals > mean(evals)), #same as tanigawa et al.
+      "KAISER-1"=  sum(evals > 1),
+      "SCREE"=nFactors::nSeScree(evals,cor=FALSE)$nFactors[1],
+      "BENTLER"=nFactors::nBentler(evals,N=nrow(X_))$nFactors,
+      "R2"=nFactors::nSeScree(evals,cor=FALSE)$nFactors[2],
+      "K/2"=ceiling(ncol(X_)/2),
+      "K-2"=ceiling(ncol(X_)/2),
       as.numeric(args$K)
     )
     message("Proceeding with initialized K of ", k)
 
   }
-
+  if(k == ncol(X))
+  {
+    warning("K initialized to the same number as the columns of X. This will result in MN = NK, which will cause some BIC implementations (such as sklearn) to fail")
+  }
   return(k)
 }
+#' Issues installing PCATools, so took the code directly from there
+#' https://rdrr.io/github/kevinblighe/PCAtools/src/R/randomMethods.R
+#' Choosing PCs with the Gavish-Donoho method
+#'
+#' Use the Gavish-Donoho method to determine the optimal number of PCs to retain.
+#'
+#' @inheritParams chooseMarchenkoPastur
+#'
+#' @details
+#' Assuming that \code{x} is the sum of some low-rank truth and some i.i.d. random matrix with variance \code{noise},
+#' the Gavish-Donoho method defines a threshold on the singular values that minimizes the reconstruction error from the PCs.
+#' This provides a mathematical definition of the \dQuote{optimal} choice of the number of PCs for a given matrix,
+#' though it depends on both the i.i.d. assumption and an estimate for \code{noise}.
+#'
+#' @return
+#' An integer scalar specifying the number of PCs to retain.
+#' The effective limit on the variance explained is returned in the attributes.
+#'
+#' @author Aaron Lun
+#'
+#' @examples
+#' truth <- matrix(rnorm(1000), nrow=100)
+#' truth <- truth[,sample(ncol(truth), 1000, replace=TRUE)]
+#' obs <- truth + rnorm(length(truth), sd=2)
+#'
+#' # Note, we need the variance explained, NOT the percentage
+#' # of variance explained!
+#' pcs <- pca(obs)
+#' chooseGavishDonoho(obs, var.explained=pcs$sdev^2, noise=4)
+#'
+#' @seealso
+#' \code{\link{chooseMarchenkoPastur}}, \code{\link{parallelPCA}} and \code{\link{findElbowPoint}},
+#' for other approaches to choosing the number of PCs.
+#'
+#' @export
+chooseGavishDonoho <- function(x, .dim=dim(x), var.explained, noise) {
+    m <- min(.dim)
+    n <- max(.dim)
+    beta <- m/n
+
+    # Equation 11 of the Gavish-Donoho paper.
+    lambda <- sqrt( 2 * (beta + 1) + (8 * beta) / ( beta + 1 + sqrt(beta^2 + 14 * beta + 1) ) )
+
+    # Equation 3, slightly reorganized to have the variance explained on the LHS
+    # instead of the singular values 'D', where D = [ var.explained * (.dim[2] - 1) ].
+    limit <- lambda^2 * noise * n/(.dim[2] - 1)
+    gv <- sum(var.explained > limit)
+
+    output <- max(1L, gv)
+    attr(output, "limit") <- limit
+    output
+}
+
 
 readInSettings <- function(args)
 {
@@ -564,7 +632,8 @@ readInSettings <- function(args)
   option[['K']] <- args$nfactors
   option[['iter']] <- args$niter
   option[['convF']] <- 0
- option[["nsplits"]] <- as.numeric(args$cores)
+ option[["nsplits"]] <- as.numeric(args$ncores)
+ option[["ncores"]] <- as.numeric(args$ncores)
   option[['conv0']] <- args$converged_obj_change
   option[['ones']] <- FALSE
   option[["plots"]] <- args$overview_plots
@@ -628,12 +697,12 @@ readInSettings <- function(args)
   option$traitSpecificVar <- FALSE
   option$V <- args$verbosity
   option$calibrate_sparsity <- args$scaled_sparsity
-  if(args$cores > 1)
+  if(args$ncores > 1)
   {
-    updateLog(paste("Running in parallel on", args$cores, "cores"))
+    updateLog(paste("Running in parallel on", args$ncores, "cores"))
     option[["parallel"]] <- TRUE
   }
-  option[["ncores"]] <- args$cores
+  option[["ncores"]] <- args$ncores
   option[["fixed_ubiq"]] <- args$fixed_first
   option$std_coef <- args$std_coef
   return(option)
@@ -686,7 +755,7 @@ DefaultSeed2Args <- function()
   args$lambdas <- ""
   args$autofit <- -1
   args$auto_grid_search <- TRUE
-  args$cores <- 1
+  args$ncores <- 1
   args$IRNT <- FALSE
   args$weighting_scheme = "B_SE"
   args$output <- "/scratch16/abattle4/ashton/snp_networks/scratch/testing_gwasMF_code/model_selection/bic_autofit/"
@@ -724,7 +793,7 @@ YuanSimEasy <- function()
   args$lambdas <- ""
   args$autofit <- -1
   args$auto_grid_search <- FALSE
-  args$cores <- 1
+  args$ncores <- 1
   args$IRNT <- FALSE
   args$weighting_scheme = "B_SE"
   args$output <- "/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/yuan_simulations/"
@@ -765,7 +834,7 @@ UdlerArgs <- function()
   args$lambdas <- ""
   args$autofit <- -1
   args$auto_grid_search <- TRUE
-  args$cores <- 1
+  args$ncores <- 1
   args$svd_init <- TRUE
   args$IRNT <- FALSE
   args$weighting_scheme = "B_SE"
@@ -811,7 +880,7 @@ fillDefaultSettings <- function(curr.args)
   curr.args$lambdas <- ""
   curr.args$autofit <- -1
   curr.args$auto_grid_search <- TRUE
-  curr.args$cores <- 1
+  #curr.args$cores <- 1
   curr.args$svd_init <- TRUE
   curr.args$IRNT <- FALSE
   curr.args$scaled_sparsity <- TRUE

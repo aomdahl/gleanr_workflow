@@ -171,7 +171,7 @@ fit_V <- function(X, W, U, option, formerV = NULL){
 
 FitVGlobal <- function(X, W, W_c, U, option, formerV = NULL, reg.elements=NULL)
 {
-  avail.cores <- parallel::detectCores() -1
+  #avail.cores <- parallel::detectCores() -1
   K <- ncol(U)
   M = ncol(X)
   N=nrow(X)
@@ -224,8 +224,7 @@ FitVGlobal <- function(X, W, W_c, U, option, formerV = NULL, reg.elements=NULL)
    }
 
   long.u <- completeUExpand(joined.weights, nrow(U),M,K,U)
-  message("New u added: ", lobstr::mem_used())
-
+  #message("New u added: ", lobstr::mem_used())
   nopen.cols <- sapply(1:ncol(long.u), function(x) x %% K)
 
   #special case this logic failes on
@@ -275,19 +274,12 @@ FitVGlobal <- function(X, W, W_c, U, option, formerV = NULL, reg.elements=NULL)
 
  if(is.na(option$lambda1)) #we are still parameter searching
  {
-
-   #every first entry is 0
-   message("Fitting model")
-   print(pryr::mem_change(fit <- glmnet::glmnet(x = long.u, y = long.x, family = "gaussian", alpha = 1,
+   fit <- glmnet::glmnet(x = long.u, y = long.x, family = "gaussian", alpha = 1,
                         intercept = FALSE, standardize = option$std_coef,
-                        penalty.factor = lasso.active.set,  trace.it=1))) #lambda = option[['alpha1']],
-   message("fit complete")
-   #print(paste0("No set lambda: ", pryr::mem_used()))
-   #print(pryr::mem_used())
-
+                        penalty.factor = lasso.active.set,  trace.it=1) #lambda = option[['alpha1']],
+   #use the pryr:mem_used() and mem_changed() functions to track this.
    lambda.list <- fit$lambda
    penalty <- fit$penalty
-   message("Using BIC to select out the best one...")
    if(FALSE)
    {   bic.list <- c()
      for(i in 1:length(lambda.list))
@@ -323,23 +315,18 @@ FitVGlobal <- function(X, W, W_c, U, option, formerV = NULL, reg.elements=NULL)
    {
      lower.next <- fit$lambda[min.index + 25]
    }
-   return(list("V" = v.ret,"lambda.sel"=fit$lambda[min.index],"bic"= bic.list[min.index], "sparsity_space"=max(fit$lambda),
+   return(list("V" =  pm(v.ret),"lambda.sel"=fit$lambda[min.index],"bic"= bic.list[min.index], "sparsity_space"=max(fit$lambda),
                "total.log.lik" = NA, "penalty" = penalty, "s"=s, "next.upper" = upper.next, "next.lower" = lower.next))
 
  }else
  {
-
-
-
-   #every first entry is 0
-  message("Fitting")
-   pryr::mem_change(fit <- glmnet::glmnet(x = long.u, y = long.x, family = "gaussian", alpha = 1,
+   fit <- glmnet::glmnet(x = long.u, y = long.x, family = "gaussian", alpha = 1,
                         intercept = FALSE, standardize = option$std_coef, penalty.factor = lasso.active.set,
-                        lambda=option$lambda1, trace.it=1))
-   print(paste0("Fitting done- every first entry is 0: ", pryr::mem_used()))
+                        lambda=option$lambda1, trace.it=1)
+   #print(paste0("Fitting done- every first entry is 0: ", pryr::mem_used()))
    penalty <- fit$penalty
    v.curr = matrix(coef(fit, s = option$lambda1)[-1], nrow = ncol(X), ncol = ncol(U),byrow = TRUE)
-   return(list("V" = v.curr, "sparsity_space"=max(fit$lambda), "total.log.lik" = NA, "penalty" = NA, "s"=s,"SSE"=deviance(fit)))
+   return(list("V" = pm(v.curr), "sparsity_space"=max(fit$lambda), "total.log.lik" = NA, "penalty" = NA, "s"=s,"SSE"=deviance(fit)))
  }
 
   #ProposeNewSparsityParams(bic.list, fit$lambda, (fit$lambda), 2, n.points = 20) #need to modify this to allow for conditions.....
@@ -361,7 +348,7 @@ FitVGlobal <- function(X, W, W_c, U, option, formerV = NULL, reg.elements=NULL)
     }
   if(option$actively_calibrating_sparsity) { sparsity.est <- rowiseMaxSparsity(long.x, pen, fixed_first = FALSE)}
 
-  return(list("V" = FactorM, "sparsity_space"=sparsity.est, "total.log.lik" = ll, "penalty" = penalty, "s"=s))
+  return(list("V" = pm(FactorM), "sparsity_space"=sparsity.est, "total.log.lik" = ll, "penalty" = penalty, "s"=s))
 
 }
 #' Wrapper for the V function, not serving a purpose at the moment.
@@ -378,8 +365,6 @@ FitVGlobal <- function(X, W, W_c, U, option, formerV = NULL, reg.elements=NULL)
 #'
 FitVWrapper <- function(X, W,W_c, U, option, formerV = NULL,...)
 {
-  #HERE?
-  #fit_V(X, W, as.matrix(U), option, formerV = formerV)
   FitVGlobal(X, W, W_c, as.matrix(U), option, formerV = formerV,...)
 }
 

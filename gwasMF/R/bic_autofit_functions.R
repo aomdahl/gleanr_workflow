@@ -50,8 +50,8 @@ UpdateAndCheckSparsityParam <-  function(prev.list, new, errorReport = FALSE)
 
 #' Updated tracking of the optimal learned parameters from gleaner
 #'
-#' @param U learned at settings minimizing BIC_alpha at iteration `iter_tag`
-#' @param V learned at settings minimizing BIC_lambda at iteration `iter_tag`
+#' @param U learned at settings minimizing BIC_alpha at iteration `iter_tag`. Should NOT have 0 columns dropped, but be in K dimension the same as V
+#' @param V learned at settings minimizing BIC_lambda at iteration `iter_tag` Should NOT have 0 columns dropped, but be in K dimension the same as U
 #' @param alpha setting minimizing BIC_alpha at iteration `iter_tag`
 #' @param lambda setting minimizing BIC_lambda at iteration `iter_tag`
 #' @param bic_a minimal score at iteration `iter_tag`
@@ -70,26 +70,28 @@ trackMinParam <- function(min.dat,U,V,alpha,lambda,bic_a,bic_l, iter_tag, init=F
     return(list("optimal.u"=NA, "optimal.v"=NA,
                 "alpha"=NA, "lambda"=NA, "bic_a"=Inf,
                 "bic_l"=Inf, min_sum=Inf, iter=""))
-  } else if(length(min.dat)==1)
-     {
-        message("Error- should not occur")
-    quit()
-  }
-  else
-  {
-    new_bic = bic_a+bic_l
-    if(new_bic < min.dat$min_sum)
+  }else {
+    stopifnot(ncol(U) == ncol(V)) #this should be true.
+    if(length(min.dat)==1)
     {
-      message("Found better setting, updating now...")
-      return(list("optimal.u"=U, "optimal.v"=V,
-                  "alpha"=alpha, "lambda"=lambda, "bic_a"=bic_a,
-                  "bic_l"=bic_l, "min_sum"=new_bic, "iter"=iter_tag))
+      message("Error- should not occur")
+      quit()
+    } else {
+      new_bic = bic_a+bic_l
+      if(new_bic < min.dat$min_sum)
+      {
+        message("Found better setting, updating now...")
+        return(list("optimal.u"=U, "optimal.v"=V,
+                    "alpha"=alpha, "lambda"=lambda, "bic_a"=bic_a,
+                    "bic_l"=bic_l, "min_sum"=new_bic, "iter"=iter_tag))
 
-    }else
-    {
-      return(min.dat)
+      }else
+      {
+        return(min.dat)
+      }
     }
   }
+
 }
 
 
@@ -114,7 +116,7 @@ returnCompletionDat <- function(min.dat, rec.dat, mat.fit, conv.options, general
   }
   list("optimal.v" = min.dat$optimal.v,"resid.var" = mat.fit$resid_var,
        "rec.dat" = rec.dat, "lambda"=min.dat$lambda, "alpha"=min.dat$alpha, "options" = general.options,
-       "K"= ncol(min.dat$optimal.v), "alpha.path" = rec.dat$alpha.s, "lambda.path" = rec.dat$lambda.s, "optimal.u" = min.dat$optimal.u, "convergence.options" = conv.options,
+       "K"= ifelse(!is.null(ncol(min.dat$optimal.v)), ncol(min.dat$optimal.v),NA), "alpha.path" = rec.dat$alpha.s, "lambda.path" = rec.dat$lambda.s, "optimal.u" = min.dat$optimal.u, "convergence.options" = conv.options,
        "min.dat"=min.dat)
 }
 
@@ -144,6 +146,7 @@ updateRecDat <- function(rec.dat, mat.fit, matrix_on, iter,X,W,W_c, optimal_comp
     rec.dat$bic.a <- c(rec.dat$bic.a,mat.fit$bic); rec.dat$alpha.s <- c(rec.dat$alpha.s,mat.fit$alpha.sel)
     rec.dat$U_sparsities = c(rec.dat$U_sparsities, matrixSparsity(mat.fit$U, ncol(X)));
     rec.dat$sparsity.obj[[paste0("U_", iter)]] <- computeObjIntermediate(X, W,W_c, mat.fit$U, optimal_complement, option,mat.fit$alpha.sel,curr.lambda, decomp = TRUE, loglik = TRUE) #should happen before drop empty colums
+    rec.dat$Ks <- c(rec.dat$Ks, ncol(DropEmptyColumns(mat.fit$U,option)$updatedMatrix))
     rec.dat$bic_sum <- c(rec.dat$bic_sum,mat.fit$bic + rec.dat$bic.l[length(rec.dat$bic.l)] )
     }
   if(matrix_on == "V")
@@ -154,7 +157,7 @@ updateRecDat <- function(rec.dat, mat.fit, matrix_on, iter,X,W,W_c, optimal_comp
     rec.dat$lambdas <- UpdateAndCheckSparsityParam(rec.dat$lambdas, mat.fit$lambda.sel, errorReport = TRUE); rec.dat$bic.l <- c(rec.dat$bic.l,mat.fit$bic) #lambdas and bic scores
     #computeObjIntermediate <- function(X,W,W_c,U,V,option,alpha,lambda,...)computeObjIntermediate <- function(X,W,W_c,U,V,option,alpha,lambda,...)
     rec.dat$sparsity.obj[[paste0("V_", iter)]] <- computeObjIntermediate(X, W,W_c, optimal_complement, mat.fit$V,option,curr.alpha,mat.fit$lambda.sel, decomp = TRUE, loglik = TRUE) #Objective calculation
-    rec.dat$Ks <- c(rec.dat$Ks, ncol(DropEmptyColumns(mat.fit$V))) #Track K
+    rec.dat$Ks <- c(rec.dat$Ks, ncol(DropEmptyColumns(mat.fit$V,option)$updatedMatrix)) #Track K HEREEEe
     rec.dat$bic_sum <- c(rec.dat$bic_sum,mat.fit$bic + rec.dat$bic.a[length(rec.dat$bic.a)] )
   }
 
@@ -331,6 +334,8 @@ CalcMatrixBIC.loglikversion <- function(X,W,U,V, which.learning, W_cov = NULL, d
 #' @export
 calculateBIC <- function(fit, covars,y, bic.mode)
 {
+
+    message("Calculating now...", bic.mode)
     switch(
     bic.mode,
     "sklearn_eBIC"= sklearnBIC(fit,covars,y) + extendedBIC(fit),
@@ -411,12 +416,14 @@ BICglm <- function(fit, bic.mode = ""){
 #' @examples
 sklearnBIC <- function(fit,x,y, bic.mode = "")
 {
+  #message("using SKlearn")
+  #save(fit,x,y,bic.mode, file = "/scratch16/abattle4/ashton/snp_networks/scratch/cohort_overlap_exploration/DEBUG.bic.RData")
   p = ncol(x)
   n = length(y)
   #OLS fit
   #This is expensive to do afeter taking so long to fit a goshdarn lasso. Need to find an alternative option?
   lm.fit <- glmnet::bigGlm(y=y , x=x, family = "gaussian",intercept = FALSE,trace.it = 1)
-  fit.best.lm <- predict(lm.fit, newx = x)
+  #fit.best.lm <- predict(lm.fit, newx = x)
 
   #our fit
   coef = coef(fit)
@@ -424,8 +431,13 @@ sklearnBIC <- function(fit,x,y, bic.mode = "")
   residuals = (y- yhat)
   sse = apply(residuals, 2, function(x) sum(x^2))
 
-
-  self.noise.variance <- sum((y - fit.best.lm)^2)/(n -p)
+  if(n==p)
+  {
+    warning("Unable to calculated BIC when initialized # factors the same as M. Output results will not make sense.")
+  }
+  #stopifnot(sum((y - fit.best.lm)^2) == deviance(lm.fit))
+  #message("UPDATE sklearn to remove predict step.")
+  self.noise.variance <- deviance(lm.fit)/(n - p)
   scikitlearn.bic <- n*log(2*pi*self.noise.variance) + sse/self.noise.variance + log(n)*fit$df
   scikitlearn.bic
 
@@ -794,27 +806,30 @@ FitVs <- function(X, W,W_c, initU, lambdas,option, weighted = FALSE,reg.elements
 }
 #Helper function to get rid of empty columns in the data.
 #Empty means all the terms are 0.
-DropEmptyColumns <- function(matin)
+DropEmptyColumns <- function(matin,option)
 {
   matin <- as.matrix(matin)
   c <- colSums(matin != 0)
+  ret.option <- option
   if(any(c == 0))
   {
     #print("dropping")
     drops <- which(c == 0)
-    if(1 %in% drops){
-      message("BEWARE- 1st column dropping???")
+    if(1 %in% drops & option$fixed_ubiq){
+      #message("Ubiqitous factor was removed. ")
+      #message("gleaner now lifting the regularization constraint on 1st factor. Keep an eye on the objective.")
+      ret.option$fixed_ubiq <- FALSE
     }
-    return(as.matrix(matin[,-drops]))
+    return(list("updatedMatrix" = as.matrix(matin[,-drops]), "updatedOptions"=ret.option))
   }
-  return(matin)
+  return(list("updatedMatrix" = matin, "updatedOptions"=ret.option))
 }
 
 #Same as the above, but for magrittr piping (not actually used.)
-DropEmptyColumnsPipe <- function(lin)
+DropEmptyColumnsPipe <- function(lin,options)
 {
   ret.lin <- lin
-  ret.lin[[1]] <- DropEmptyColumns(lin[[1]])
+  ret.lin[[1]] <- DropEmptyColumns(lin[[1]],options)
   return(ret.lin)
 
 }
@@ -1448,14 +1463,15 @@ gwasML_ALS_Routine <- function(option, X, W,W_c, optimal.init, maxK=0, opath = "
     }
     if(ncol(reg.run$V) < maxK)
     {
-      message("Resulted in fewer than desired columns. Sorry.")
+      message("Resulted in fewer than the maximum number of allowed columns.")
       maxK <- ncol(reg.run$V)
     }
   } else {
     maxK <- ncol(reg.run$V) #If maxK is 0, basically ju
   }
   #Note that no pruning takes place if maxK == ncol
-    reg.run <- PruneNumberOfFactors(X,W,W_c,reg.run,option$Kmin, maxK, option) %>% OrderEverythingByPVE(.,X,W, W_c)
+    reg.run <- PruneNumberOfFactors(X,W,W_c,reg.run,option$Kmin, maxK, option)
+    reg.run <- OrderEverythingByPVE(reg.run,X,W, W_c, jointly = FALSE)
 
   save(reg.run, file = paste0(option$out,opath, "_gwasMF_iter.Rdata" ))
   #print(paste0(option$out,opath, "_gwasMF_iter.Rdata" ))
@@ -1609,6 +1625,22 @@ gleaner <- function(X,W, snp.ids, trait.names, C = NULL, K=0, gwasmfiter =5, rep
   K.cap <- K
   option$bic.var <- bic.var
   print(paste("bic var setting:", bic.var))
+  if(is.sim)
+  {
+	if(bic.var == "Zou")
+	  {
+	    message("Forcing K to be Kaiser, optimal for Zou")
+	    K <- "KAISER"
+	    option$K <- "KAISER"
+	  }
+	if(bic.var == "dev"){
+	    message("Forcing K to be GRID for teseting")
+	    K <- "GRID"
+	    option$K <- "GRID"
+
+	}
+
+  }
   #Do the bic learning...
   use.optim <- TRUE
   option$regression_method = regression.method
@@ -1633,7 +1665,7 @@ gleaner <- function(X,W, snp.ids, trait.names, C = NULL, K=0, gwasmfiter =5, rep
     bic.dat5 <- getBICMatrices(opath,option,X,W,W_c,all_ids, names)
   }
 
-  if(is.na(bic.dat$K) | is.na(bic.dat$alpha))
+  if(is.null(bic.dat$K) | is.na(bic.dat$alpha) | all(bic.dat$optimal.v == 0))
   {
     message("No signal detected under current settings. Program will end")
      return(list("V" = matrix(0, nrow=ncol(X), ncol = 1), "U" = matrix(0, nrow=nrow(X), ncol = 1), "initK" = NA, "K" =0, "obj" = c(NA), "obj_change" = c(),
@@ -1694,24 +1726,75 @@ gleaner <- function(X,W, snp.ids, trait.names, C = NULL, K=0, gwasmfiter =5, rep
 #####
 #Version optimized for glmnet
 #####MAJOR TODO:
-## IMPLEMENT  better convergence response
-## At present, it drops out when its been at least 3 iterations and then picks the overall iteration that minimizes BIC.
-## However, every step is a pair (one alpha, one lambda), and so things shouldn't just be considered in a single iteration (i.e. update V at the end, update U in the next)
-## The reason current implementation is potentially dangerous- if at the end of one iteration everything is zeroed out and that minimized teh BIC, then we get nothing. But perhaps that savme V
-## with the previous iterations's U (an unscored matchup) would have made it non-zero.
-## Proposed approach:
-## After each fitting STEP (U, or V), make a call to "storeMinBICDat"
-## When convergence is acheived, return optimal.u, optimal.v, lambda, alpha returned from the most recent call to storeMinBicDat
-## pseudocode storeMinBicDat
-## input arguments: min.so.far, bic.a, bic.l, curr_v, curr_u
-## if bic.a + bic.l < min.so.far$bic_tot:
-    ## update min.so.far with new minimum
-    ## store current u and v in min.so.far,
-    ## return updated min.so.far
-## else: return min.so.far
-#bic.dat <- getBICMatricesGLMNET(opath,option,X,W,W_c, all_ids, names)
-getBICMatricesGLMNET <- function(opath,option,X,W,W_c, all_ids, names, min.iter = 5, max.iter = 100, burn.in.iter = 0,
-                                 init.mat = NULL, rg_ref=NULL,reg.elements=NULL,INCR.LIMIT=3)
+
+#####
+#Version optimized for glmnet
+#####MAJOR TODO:
+## IMPLEMENT  better convergence response [X]
+
+
+getBICMatricesGLMNET <- function(opath,option,X,W,W_c, all_ids, names, ...)
+{
+
+  if(option$K == "GRID")
+  {
+    gridSearchK(opath, option,X,W,W_c,all_ids,names,...)
+  }else
+  {
+    getBICWorkhorse(opath,option,X,W,W_c, all_ids, names, ...)
+  }
+}
+
+
+#######For the grid BIC search
+
+# Load the rgenoud package
+# Define a wrapper function for genoud to minimize bic.sum by modifying K
+#optimizeK <- function(K, opath, option, X, W, W_c,genoud_c, all_ids, names, reg.vect,...) {
+#  option$K <- K
+#  bic.dat <- getBICWorkhorse(opath, option, X, W, W_c, all_ids, names, ...)
+#  message("K: ",K, ", BIC: ", bic.dat$min.dat$min_sum)
+#  return(bic.dat$min.dat$min_sum)
+#}
+
+gridSearchKDEPRECATED <- function(opath, option,X,W,W_c,all_ids,names,...)
+{
+  # Use genoud to find the best K
+  M <- ncol(X)-1
+  result <- rgenoud::genoud(
+    fn = optimizeK,
+    nvars = 1,             # Number of variables to optimize (K)
+    max = FALSE,           # We are minimizing, so max is FALSE
+    Domains = matrix(c(1, M), nrow = 1, byrow = TRUE), # Bounds for K
+    starting.values = M,   # Initial value for K
+    data.type.int = TRUE,  # Ensure K is treated as an integer
+    pop.size = 6,        # Population size for the genetic algorithm
+    max.generations = 3, # Number of generations
+    MemoryMatrix = TRUE,
+    boundary.enforcement=2,
+    wait.generations = 2,
+    opath = opath,
+    option = option,
+    X = X,
+    W = W,
+    W_c = W_c,
+    all_ids = all_ids,
+    names = names,
+    ...
+  )
+  # Extract the optimal K
+  optimal_K <- result$par
+  option$K <- K
+  getBICWorkhorse(opath, option, X, W, W_c, all_ids, names, ...)
+}
+
+
+
+#########
+#function(K, opath, option, X_in, W_in, W_c, all_ids, names, reg.vect,...)
+#  bic.dat <- getBICWorkhorse(opath, option, X_in, W_in, W_c, all_ids, names, ...)
+getBICWorkhorse <- function(opath,option,X,W,W_c, all_ids, names, min.iter = 5, max.iter = 100, burn.in.iter = 0,
+                            init.mat = NULL, rg_ref=NULL,reg.elements=NULL,INCR.LIMIT=3)
 {
   W_ld = NULL
   conv.options <- list()
@@ -1767,10 +1850,11 @@ getBICMatricesGLMNET <- function(opath,option,X,W,W_c, all_ids, names, min.iter 
     #If we want to initialize with U, start here
     if(option$u_init != "")
     {
+      message("initializing via U.")
       v.fits <- FitVWrapper(X,W,W_c, optimal.u,option,reg.elements=reg.elements)
       rec.dat$lambda.s <- c(rec.dat$lambda.s,v.fits$lambda.sel)
       optimal.v <- v.fits$V
-      optimal.v <- DropEmptyColumns(optimal.v)
+      dropped.dat <- DropEmptyColumns(optimal.v,option); optimal.v <- dropped.dat$updatedMatrix; option <-dropped.dat$updatedOptions
       rec.dat$Ks <- c(rec.dat$Ks, ncol(optimal.v)) #this is based on the previous model?, we haven't pruned out empty columns yet?
 
       #Record new data
@@ -1782,9 +1866,8 @@ getBICMatricesGLMNET <- function(opath,option,X,W,W_c, all_ids, names, min.iter 
       min.dat <- trackMinParam(min.dat,optimal.u,optimal.v,curr.alpha,v.fits$lambda.sel,curr.bic.a,v.fits$bic, "V0")
     }
 
-    print(paste0("Fitting U, iteration ", i))
+    message(paste0("Fitting U, iteration ", i))
     u.fit <- FitUWrapper(X, W, W_c, optimal.v, option,reg.elements=reg.elements)
-
     #Update the tracking data for downstream debugging
 
     #rec.dat$alphas <- UpdateAndCheckSparsityParam(rec.dat$alphas, u.fit$alpha.sel, errorReport = TRUE)
@@ -1796,9 +1879,8 @@ getBICMatricesGLMNET <- function(opath,option,X,W,W_c, all_ids, names, min.iter 
     curr.alpha <- u.fit$alpha.sel; curr.bic.a <- u.fit$bic
     rec.dat <- updateRecDat(rec.dat, u.fit, "U", i, X,W,W_c, optimal.v, option)
     message("verify this update takes place as expected.")
-    optimal.u <- DropEmptyColumns(u.fit$U)
-    min.dat <- trackMinParam(min.dat,optimal.u,optimal.v,curr.alpha,curr.lambda,curr.bic.a,curr.bic.l, paste0("U_", i))
-
+    min.dat <- trackMinParam(min.dat,u.fit$U,optimal.v,curr.alpha,curr.lambda,curr.bic.a,curr.bic.l, paste0("U_", i))
+    dropped.dat <- DropEmptyColumns(u.fit$U,option); optimal.u <- dropped.dat$updatedMatrix; option <-dropped.dat$updatedOptions
     #Do a check- is it empty?
     if(CheckUEmpty(optimal.u)) {
       message("U has no signal; ending model selection phase");
@@ -1806,7 +1888,7 @@ getBICMatricesGLMNET <- function(opath,option,X,W,W_c, all_ids, names, min.iter 
       }
 
     #fit V now
-    print(paste0("Fitting V, iteration ", i))
+    message(paste0("Fitting V, iteration ", i))
     v.fits <- FitVWrapper(X,W,W_c, optimal.u,option,reg.elements=reg.elements)
 
     #Update the tracking data for downstream debugging
@@ -1846,7 +1928,8 @@ getBICMatricesGLMNET <- function(opath,option,X,W,W_c, all_ids, names, min.iter 
 
     #Store some convergence details, for debugging
     conv.options[[i]] <- trackAlternativeConvergences(X,W,W_c, optimal.u,optimal.v, i, rec.dat, u.fit$sparsity_space, v.fits$sparsity_space, option)
-    optimal.v <- DropEmptyColumns(v.fits$V) #Drop empty columns- this must happen before next U iteration so we don't have an empty column, but after scoring things so matrices are still conformable
+    dropped.dat <- DropEmptyColumns(v.fits$V,option); optimal.v <- dropped.dat$updatedMatrix; option <-dropped.dat$updatedOptions
+    #Drop empty columns- this must happen before next U iteration so we don't have an empty column, but after scoring things so matrices are still conformable
     i = i+1
   }
   #Finished parameter selection, cleanup.
@@ -1856,6 +1939,8 @@ getBICMatricesGLMNET <- function(opath,option,X,W,W_c, all_ids, names, min.iter 
   {
     message("Warning: final top performing matrices weren't aligned. Aligning now. Note to developer: check this logical condition.")
     #This could happen if we aren't picking the exact most recent version of optimal.u
+    print(head(min.dat$optimal.u))
+    print(head(min.dat$optimal.v))
     aligned <- AlignFactorMatrices(X,W,min.dat$optimal.u,min.dat$optimal.v);
     min.dat$optimal.u <- aligned$U; min.dat$optimal.v<- aligned$V
   }

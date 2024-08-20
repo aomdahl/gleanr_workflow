@@ -57,7 +57,7 @@ DefineSparsitySpaceInit <- function(X, W,W_c, W_ld, option, burn.in = 5,reg.elem
   Wint <-as.matrix(W)
   message("initializing v")
   message("dropped arguments, so can't pass rg")
-  V.dat <- initV(Xint,Wint,option)
+  V.dat <- initV(X,W,W_c,option)
   message("here")
   V<-V.dat$V
 
@@ -185,9 +185,12 @@ DefineSparsitySpace <- function(X,W,W_cov,fixed,learning, option, fit = "None",r
 
 }
 
-
+## X_- x ready to factorize, likely modified.
 #Function to initialize V as desired
-initV <- function(X,W,option, preV = NULL, rg_ref = NULL)
+#NOTE- we initialize V to unadjusted estimates of Beta, because adjustments (scaling, etc.) will be imposed on it during the regression steps
+#However, for selecting the seed K, we DO want the modified version
+
+initV <- function(X,W,W_c,option, preV = NULL, rg_ref = NULL)
 {
 	D = ncol(X)
 	cor_struct <- cor2(X)
@@ -195,7 +198,10 @@ initV <- function(X,W,option, preV = NULL, rg_ref = NULL)
   svd.corr <- svd(cor_struct)
   svd.dat <- corpcor::fast.svd(X)
   message("Wastefully calculating all SVs now, change this later.")
-  setK = selectInitK(option,X,W,svs = svd.dat$d)
+  X_=t(W_c %*% t(X*W)) #I think this is where the differences came from?
+
+  #X_ = X*W
+  setK = selectInitK(option,X_)#,svs = svd.dat$d)
   if(!option[['preinitialize']])
   {
     V = matrix(runif(D*(setK - 1), min = -1, max = 1), nrow = D);
@@ -299,10 +305,31 @@ UpdateTrackingParams <- function(sto.obj, X,W,W_c,U,V,option, sparsity.thresh = 
                      "V_change" = c(), "U_change" = c(), "decomp_obj" ="", "model.loglik" = c(), "Vs"=list(), "Us"=list())
   }
     # collect sparsity in L and F
-  if(all(U==0) | all(V==0))
+  obj_updated = compute_obj(X, W,W_c, U, V, option, scalar=scalar)
+
+  #Need to make an important check- did this last fit step hurt our objective functinon
+  if(length(sto.obj$obj) > 1 | all(U==0) | all(V==0)) #have we run enough iterations to compare to?
   {
-    return(sto.obj)
+    if((length(sto.obj$obj) == 1) & (all(U==0) | all(V==0)))
+    {
+      message("First iteration zeroed out matrix, Ending now.")
+      return(sto.obj)
+    }
+
+    if(obj_updated > sto.obj$obj[length(sto.obj$obj)])
+    {
+      if(all(U==0) | all(V==0))
+      {
+        message("Previous iteration zeroed out matrix, but this increases objective. Ending run on previous iteration")
+        return(sto.obj)
+      }else
+      {
+        warning("Objective function is no longer decreasing. Evaluate all following iterations closesly.")
+      }
+    }
   }
+
+
   #sto.obj$U_sparsities = c(sto.obj$U_sparsities, sum(abs(U) < sparsity.thresh) / (ncol(U) * nrow(U)));
   #sto.obj$V_sparsities = c(sto.obj$V_sparsities, sum(abs(V) < sparsity.thresh) / (ncol(V) * nrow(V)));
   sto.obj$U_sparsities = c(sto.obj$U_sparsities, matrixSparsity(U, option$K)); #The sparsity count should be with respect to the initial value..
@@ -316,7 +343,7 @@ UpdateTrackingParams <- function(sto.obj, X,W,W_c,U,V,option, sparsity.thresh = 
   {
     sto.obj$model.loglik <- c(sto.obj$model.loglik,loglik)
   }
-    obj_updated = compute_obj(X, W,W_c, U, V, option, scalar=scalar)
+
     sto.obj$decomp_obj = compute_obj(X, W,W_c, U, V, option,decomp = TRUE, scalar=scalar)
   if(is.na(sto.obj$obj[1]))
   {
@@ -495,6 +522,11 @@ AlignFactorMatrices <- function(X,W,U, V)
   }
   U = as.matrix(as.data.frame(U[, non_empty]));
   V  = as.matrix(as.data.frame(V[, non_empty]));
+  if(nrow(V) == 0 | ncol(V) == 0)
+  {
+	  V = matrix(0, nrow = ncol(X), ncol=1)
+	  U=matrix(0,nrow=nrow(X), ncol=1)
+  }
   return(list("U"=U, "V"=V))
 }
 # converge if: 1). Change of the values in factor matrix is small. ie. The factor matrix is stable. 2). Change in the objective function becomes small; 3). reached maximum number of iterations
@@ -529,8 +561,7 @@ ConvergenceConditionsMet <- function(iter,X,W,W_c, U,V,tracker,option, initV = F
   }
  #If we have completed at least 1 iteration and we go up, end it.
   #First iteration has objective change of 0.
-  print("Currnet objective change:")
-  print(obj.change.percent)
+  message("Current objective change: ",obj.change.percent )
   if(objective_change < 0 & option[['conv0']] > 0) #& length(tracker$obj) > 2)
   {
     message("warning: negative objective")
@@ -601,6 +632,8 @@ Update_FL <- function(X, W, W_c, option, preV = NULL, preU = NULL, burn.in = FAL
   easy.objective <- c()
   dev.score<- c()
   V = NULL
+  message("convergence set to ", option$conv0)
+
   #Random initialization of F
   if(!is.null(preV) & option$u_init == "")
   {
@@ -622,7 +655,7 @@ Update_FL <- function(X, W, W_c, option, preV = NULL, preU = NULL, burn.in = FAL
   }
   else{ #initialize by F as normal.
 
-    V.dat <- initV(X,W,option,preV=preV) #returns scalar and V at unit norm length, #CONFIRM
+    V.dat <- initV(X,W,W_c,option,preV=preV) #returns scalar and V at unit norm length, #CONFIRM
     V <- V$V.dat
   }
   message(""); message('Start optimization ...')
@@ -685,17 +718,20 @@ Update_FL <- function(X, W, W_c, option, preV = NULL, preU = NULL, burn.in = FAL
     # if number of factors decrease because of empty factor, the change in ||F||_F = 100
 
     #Tracking change in V....
-    if(CheckVEmpty(V)) {message("V is empty; ending");  return(UpdateTrackingParams(tracking.data, X,W,W_c,U,V,option, loglik = iteration.ll.total,scalar=V.dat$s))}
+    if(CheckVEmpty(V)) {
+      message("V is empty; ending");
+      updated.mats <- AlignFactorMatrices(X,W,U, V); U <- updated.mats$U; V <- updated.mats$V
+      return(UpdateTrackingParams(tracking.data, X,W,W_c,U,V,option, loglik = iteration.ll.total,scalar=V.new$s))}
     colnames(V) = seq(1, ncol(V));
 
-    message("Finished storing data, starting U fit.")
-    message("memory: ", lobstr::mem_used())
+    #message("Finished storing data, starting U fit.")
+    #message("memory: ", lobstr::mem_used())
     ## update L
     U.new <- FitUWrapper(X,W,W_c,V, option,r.v = trait.var[iii,],reg.elements=reg.elements)#, prevU = U) #returns U scaled, with S  #CONFIRM
     U.prev <- U
     U = U.new$U #confirm- its unit norm?
-    message("Now calculating all tracking data after updating U, V...")
-    message("memory: ", lobstr::mem_used())
+    #message("Now calculating all tracking data after updating U, V...")
+    #message("memory: ", lobstr::mem_used())
 
     ll.tracker <- c(ll.tracker, U.new$total.log.lik)
     penalty.tracker <- c(penalty.tracker, U.new$penalty)
@@ -723,7 +759,10 @@ Update_FL <- function(X, W, W_c, option, preV = NULL, preU = NULL, burn.in = FAL
     }
     # if L is empty, stop
     #rescale V, since we last learned U with a rescaled V
-    if(CheckUEmpty(U)) {message("U is empty; ending"); return(UpdateTrackingParams(tracking.data, X,W,W_c,U,V,option,loglik = iteration.ll.total,scalar=U.dat$s))} #Multiplies by the extra factor.
+    if(CheckUEmpty(U)) {
+      message("U is empty; ending");
+      updated.mats <- AlignFactorMatrices(X,W,U, V); U <- updated.mats$U; V <- updated.mats$V
+      return(UpdateTrackingParams(tracking.data, X,W,W_c,U,V,option,loglik = iteration.ll.total,scalar=U.new$s))} #Multiplies by the extra factor.
     colnames(U) = seq(1, ncol(U)) ;
 
     # Drop low PVE and align two matrices
