@@ -172,6 +172,8 @@ fit_V <- function(X, W, U, option, formerV = NULL){
 FitVGlobal <- function(X, W, W_c, U, option, formerV = NULL, reg.elements=NULL)
 {
   #avail.cores <- parallel::detectCores() -1
+  #TWEAK THIS:
+  #glmnet::glmnet.control(fdev = 1e-10)
   K <- ncol(U)
   M = ncol(X)
   N=nrow(X)

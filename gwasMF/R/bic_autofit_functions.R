@@ -427,7 +427,8 @@ sklearnBIC <- function(fit,x,y, bic.mode = "")
 
   #our fit
   coef = coef(fit)
-  yhat=x%*%coef[-1,]
+  #Should be using t <- predict(fit, newx=x)
+  yhat=x%*%coef[-1,] #Why is there an intercept at all? all my runs request none.
   residuals = (y- yhat)
   sse = apply(residuals, 2, function(x) sum(x^2))
 
@@ -438,7 +439,27 @@ sklearnBIC <- function(fit,x,y, bic.mode = "")
   #stopifnot(sum((y - fit.best.lm)^2) == deviance(lm.fit))
   #message("UPDATE sklearn to remove predict step.")
   self.noise.variance <- deviance(lm.fit)/(n - p)
+  #For a simple benchmark test:
+  #Ask- are the results different? Is it faster?
+  #self.noise.variance <- deviance(fit)[length(fit$lambda)]/(n - p)
   scikitlearn.bic <- n*log(2*pi*self.noise.variance) + sse/self.noise.variance + log(n)*fit$df
+  if(FALSE){ #looking at this alternative calculation
+    #alternative version with glmnet data directly
+    alt.var <- deviance(fit)[length(fit$lambda)]/(n - p)
+    alt.bic <- n*log(2*pi*alt.var) + sse/alt.var + log(n)*fit$df
+    #do the mins differ?
+    if(abs(self.noise.variance - alt.var) > 0.01)
+    {
+      message("notable difference here.")
+    }
+
+    if(which.min(alt.bic) != which.min(scikitlearn.bic))
+    {
+      message("Mins differ")
+      quit()
+    }else {message("mins agree!")}
+  }
+
   scikitlearn.bic
 
 }
@@ -1633,7 +1654,7 @@ gleaner <- function(X,W, snp.ids, trait.names, C = NULL, K=0, gwasmfiter =5, rep
 	    K <- "KAISER"
 	    option$K <- "KAISER"
 	  }
-	if(bic.var == "dev"){
+	if(bic.var == "dev" | bic.var == "sklearn"){
 	    message("Forcing K to be GRID for teseting")
 	    K <- "GRID"
 	    option$K <- "GRID"

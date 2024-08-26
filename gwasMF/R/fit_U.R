@@ -163,6 +163,9 @@
   {
     #it_U(X, W, W_c, initV, option)
     #print(paste0("Starting global U fit: ", pryr::mem_used()))
+    #TweaK this:
+    #glmnet::glmnet.control(fdev = 1e-10)
+
     max.sparsity <- NA; penalty = NA; ll = NA; l = NA; sse=NA
     if(is.null(reg.elements))
     {

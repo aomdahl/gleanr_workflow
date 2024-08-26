@@ -39,32 +39,35 @@ gridSearchK <- function(opath, option,X,W,W_c,all_ids,names,step.limit = 10,init
   }
   #Initial grid search
   #optimizeK <- function(K, opath, option, X_in, W_in, W_c, all_ids, names, reg.vect,...)
-  init.results <- paramtest::grid_search(optimizeK, params = init.params, n.iter = 1 , boot = FALSE, bootParams = NULL, parallel = parallel, ncpus = option$ncores,
-                                         opath = opath,
-                                         option = option,
-                                         X_in = X,
-                                         W_in = W,
-                                         W_c = W_c,
-                                         all_ids = all_ids,
-                                         names = names)
+  init.results <- gridSearch(as.list(init.params$K), option$ncores, opath, option, X, W, W_c, all_ids, names,...)
+
+  #init.results <- paramtest::grid_search(optimizeK, params = init.params, n.iter = 1 , boot = FALSE, bootParams = NULL, parallel = parallel, ncpus = option$ncores,
+  #                                       opath = opath,
+  #                                       option = option,
+  #                                       X_in = X,
+  #                                       W_in = W,
+  #                                       W_c = W_c,
+  #                                       all_ids = all_ids,
+  #                                       names = names)
 
 
   sdv <- gatherSearchData(init.results,k.range)
   grid.search.record <- gridSearchRecord(init.results, init.params, NULL)
-
+  save(sdv,grid.search.record, file = paste0(opath, "_K_search.RData"))
   #If we aren't looking at immediatley adjacent K and we haven't exceeded our step limit
   while(length(sdv$query_matrix$K) < step.limit & sdv$k_diff >= 1)
   {
     #Keep looking
-    next.grid <- paramtest::grid_search(optimizeK, params = sdv$next_params, n.iter = 1 , boot = FALSE, bootParams = NULL,
-                                        parallel = parallel, ncpus =option$ncores,
-                                        opath = opath,
-                                        option = option,
-                                        X_in = X,
-                                        W_in = W,
-                                        W_c = W_c,
-                                        all_ids = all_ids,
-                                        names = names)
+    next.grid <- gridSearch(as.list(sdv$next_params$K), option$ncores, opath, option, X, W, W_c, all_ids, names,...)
+    #next.grid <- paramtest::grid_search(optimizeK, params = sdv$next_params, n.iter = 1 , boot = FALSE, bootParams = NULL,
+    #                                    parallel = parallel, ncpus =option$ncores,
+    #                                    opath = opath,
+    #                                    option = option,
+    #                                    X_in = X,
+    #                                    W_in = W,
+    #                                    W_c = W_c,
+    #                                    all_ids = all_ids,
+    #                                    names = names)
     grid.search.record <- gridSearchRecord(next.grid, sdv$next_params, grid.search.record)
     sdv <- gatherSearchData(next.grid,k.range, curr_grid=sdv$query_matrix,curr_best = sdv$min_result )
     save(sdv,grid.search.record, file = paste0(opath, "_K_search.RData"))
@@ -92,6 +95,7 @@ gridSearchK <- function(opath, option,X,W,W_c,all_ids,names,step.limit = 10,init
 #' @export
 #'
 #' @examples
+#' #gatherSearchData(next.grid,k.range, curr_grid=sdv$query_matrix,curr_best = sdv$min_result )
 gatherSearchData <- function(gs_object,k_range,curr_grid=NULL,curr_best=NULL)
 {
   #Store results so we don't repeat tests
@@ -152,6 +156,7 @@ gridSearchRecord <- function(gs_object, params, record_obj)
 #'#For debugging, try:
 #load("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/run_scripts/finngen_ukbb_benchmark/v2_expanded_run/bic_method_comparisons_covar_adjusted/GRID.DEBUG.RData")
 #' @examples
+#' #chooseNextParams(curr.best.K,query.matrix,k_range)
 chooseNextParams <- function(best_K, curr_grid,all_K)
 {
   testbounds <- getNewTestBounds(best_K, curr_grid,all_K)
@@ -190,6 +195,7 @@ chooseNextParams <- function(best_K, curr_grid,all_K)
 #' @export
 #'
 #' @examples
+#' #getNewTestBounds(best_K, curr_grid,all_K)
 getNewTestBounds <- function(best_K, curr_grid,all_K)
 {
   diffs <- (curr_grid$K - best_K)
@@ -274,3 +280,23 @@ optimizeK <- function(K, opath, option, X_in, W_in, W_c, all_ids, names,...) {
   message("K: ",K, ", BIC: ", bic.dat$min.dat$min_sum)
   return(bic.dat)
 }
+
+
+gridSearch <- function(iter_params, ncpus, opath, option, X_in, W_in, W_c, all_ids, names,...)
+{
+  ret.list <- list("tests"=data.frame("iter"=1:length(iter_params), "K"=unlist(iter_params)))
+  if(ncpus == 1 | length(iter_params) == 1)
+  {
+    message("Not running in parallel this time...")
+    ret.list$results <- lapply(iter_params, function(kinit) optimizeK(kinit, opath, option, X_in, W_in, W_c, all_ids, names,...))
+  }else
+  {
+    message("Now running in parallel across ", ncpus, " cores.")
+    ret.list$results <- parallel::mclapply(iter_params, function(kinit)
+    {
+      optimizeK(kinit, opath, option, X_in, W_in, W_c, all_ids, names,...)
+    }, mc.cores = ncpus)
+  }
+  ret.list
+}
+
