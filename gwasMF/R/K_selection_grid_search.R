@@ -53,6 +53,15 @@ gridSearchK <- function(opath, option,X,W,W_c,all_ids,names,step.limit = 10,init
 
   sdv <- gatherSearchData(init.results,k.range)
   grid.search.record <- gridSearchRecord(init.results, init.params, NULL)
+  if(sdv$next_params$terminate)
+  {
+    message("All BICs the same. Grid search is complete.")
+    if(all(is.infinite(sdv$query_matrix$BIC)))
+    {
+      message("All entries are 0'd out. Program will end.")
+    }
+    return(sdv$min_result)
+  }
   save(sdv,grid.search.record, file = paste0(opath, "_K_search.RData"))
   #If we aren't looking at immediatley adjacent K and we haven't exceeded our step limit
   while(length(sdv$query_matrix$K) < step.limit & sdv$k_diff >= 1)
@@ -68,8 +77,19 @@ gridSearchK <- function(opath, option,X,W,W_c,all_ids,names,step.limit = 10,init
     #                                    W_c = W_c,
     #                                    all_ids = all_ids,
     #                                    names = names)
-    grid.search.record <- gridSearchRecord(next.grid, sdv$next_params, grid.search.record)
-    sdv <- gatherSearchData(next.grid,k.range, curr_grid=sdv$query_matrix,curr_best = sdv$min_result )
+    #New paradigm- we need this to update off the full list
+    grid.search.record <- gridSearchRecord(next.grid, sdv$next_params, grid.search.record) #use this last entry in the search
+    sdv <- gatherSearchData(next.grid,k.range, curr_grid=sdv$query_matrix,curr_best = sdv$min_result ) #need previous dat here: UPDATE
+    if(sdv$next_params$terminate)
+    {
+      message("All BICs the same. Grid search is complete.")
+      if(all(is.infinite(sdv$query_matrix$BIC)))
+      {
+        message("All entries are 0'd out. Program will end.")
+        return(sdv$min_result)
+      }
+    }
+
     save(sdv,grid.search.record, file = paste0(opath, "_K_search.RData"))
   #query.matrix <- storeGridResults(next.grid, curr_grid=query.matrix)
   #min.result <- getBestRun(next.grid,curr_best = min.result)
@@ -123,23 +143,30 @@ gatherSearchData <- function(gs_object,k_range,curr_grid=NULL,curr_best=NULL)
 #' @export
 #'
 #' @examples
-gridSearchRecord <- function(gs_object, params, record_obj)
+gridSearchRecord <- function(gs_object,prev.results, params, record_obj)
 {
-
   if(is.null(record_obj))
   {
     record_obj <- list("test_dat"=list(), "curr_runs"=NULL)
   }
   bics <- sapply(gs_object$results, function(x) (x$min.dat$min_sum))
+  #bics_global procedure
+  #Get the scalar that is max across all for the variance comparison; generally should be M-1.
+  bics_global <- getGlobalBICSum(gs_object$results,record_obj$test_dat) #need to include the previous information
+
   alphas <- sapply(gs_object$results, function(x) (x$min.dat$alpha))
   lambdas <- sapply(gs_object$results, function(x) (x$min.dat$lambda))
+  K_end <- sapply(gs_object$results, function(x) ncol(x$optimal.v))
+  K_end[is.null(K_end)] <- 0
+
   record_obj$curr_runs <- rbind(record_obj$curr_runs,
                                 data.frame("Kinit"=params$K,
-                                           "K_end"=sapply(gs_object$results, function(x) ncol(x$optimal.v)),
-                                           "bic"=bics,
+                                           "K_end"=K_end,
+                                           "bic_local"=bics,
+                                           "bic_global"=bics_global,
                                            "alpha"=alphas,
                                            "lambda"=lambdas))
-  record_obj$test_dat <- c(record_obj$test_dat, gs_object)
+  record_obj$test_dat <- c(record_obj$test_dat, gs_object) #concatenate all the new information together
   record_obj
 }
 
@@ -147,9 +174,9 @@ gridSearchRecord <- function(gs_object, params, record_obj)
 
 #' Figure out which points to test next
 #' Currently limited to BINARY SEARCH- only searches 2 points next, at the midpoint between points that have been previously tested (integers only)
-#' @param best_K
-#' @param curr_grid
-#' @param all_K
+#' @param best_K- the K that is currently best
+#' @param curr_grid-a list with all the BICs and all the Ks
+#' @param all_K- all possible Ks to consider
 #'
 #' @return
 #' @export
@@ -159,6 +186,12 @@ gridSearchRecord <- function(gs_object, params, record_obj)
 #' #chooseNextParams(curr.best.K,query.matrix,k_range)
 chooseNextParams <- function(best_K, curr_grid,all_K)
 {
+  end = FALSE
+  if(all(curr_grid$BIC == curr_grid$BIC[which(curr_grid$K == best_K)]))
+    {
+      #All the BICs are the same, stop.
+      end = TRUE
+  }
   testbounds <- getNewTestBounds(best_K, curr_grid,all_K)
   above <- testbounds$upper; below <- testbounds$lower
 
@@ -181,7 +214,7 @@ chooseNextParams <- function(best_K, curr_grid,all_K)
     test.list <- test.list[-repeats]
   }
 
-  list("K"=test.list)
+  list("K"=test.list, "terminate"=end)
 
 }
 
@@ -219,10 +252,21 @@ getNewTestBounds <- function(best_K, curr_grid,all_K)
   }
   list("upper"=above, "lower"=below)
 }
+
+#' Update search grid with newest search data.
+#'
+#' @param gs_object list of bic_autofit objects
+#' @param curr_grid current data containing a list of Kinits and global BIC scores
+#'
+#' @return an updated grid with the latest looks.
+#' @export
+#'
+#' @examples
 storeGridResults <- function(gs_object, curr_grid=NULL)
 {
   tested_k <- gs_object$tests[,2]
   bic_scores <- sapply(gs_object$results, function(x) x$min.dat$min_sum)
+  bic_scores <- getGlobalBICSum(gs_object$results)
   ret <- list("K"=tested_k, "BIC"=bic_scores)
   if(!is.null(curr_grid))
   {
@@ -235,7 +279,33 @@ storeGridResults <- function(gs_object, curr_grid=NULL)
 #
 getBestRun <- function(gs_object, curr_best = NULL)
 {
-  min_i <- which.min(sapply(gs_object$results, function(x) x$min.dat$min_sum))
+  #$$todo
+  # Instead of just looking at the best score, we need to rescale all to be on the same variance scale.
+  #Do this by getting the fit.scalar for the object with the largest K across the set under consideration
+  #then get new BIC scores for each with fit.term/global.fit.scalar + df.term + addends
+  #Note that for sklearn, the addends will be problematic since they are subject to the sse of that calculation.
+  #They also contain ebic
+  #consider just dropping this
+  #From all of these rescaled BIC terms, pick the one that minimizes
+  #make sure to test in zou case:
+  #we pick a terrible zou because it is scaled to look good even though its terrible.
+  #list("bic.list" = BIC,
+  #     "fit.term" = deviance(fit),
+  #     "df.term"=  log(n)*k,
+  #     "fit.scaler"=1,
+  #     "addends" =0)
+
+  #min_i <- which.min(sapply(gs_object$results, function(x) x$min.dat$min_sum))
+  #Its possible that there are matching minimums.
+  #In this case, choose the one that has the smaller Kinit score
+  find_min_of <- getGlobalBICSum(gs_object$results)
+  min_i = which(find_min_of == min(find_min_of, na.rm = TRUE))
+  if(length(min_i) > 1)
+  {
+    min.k.i <- which.min(gs_object$tests$K[min_i])
+    min_i= min_i[min.k.i]
+  }
+  #min_i <- which.min(getGlobalBICSum(gs_object$results))
   new.best <- gs_object$results[[min_i]]
   if(!is.null(curr_best))
   {
@@ -300,3 +370,17 @@ gridSearch <- function(iter_params, ncpus, opath, option, X_in, W_in, W_c, all_i
   ret.list
 }
 
+getGlobalBICs <- function(fit_vect, source)
+{
+  #
+  max.coef.index <- which.max(sapply(fit_vect, function(x) (x$min.dat[[source]]$n.coef)))
+  scalar_global <- fit_vect[[max.coef.index]]$min.dat[[source]]$fit.scaler #
+  #Get the scalar that is max across all for the variance comparison; generally should be M-1.
+ sapply(fit_vect, function(x) x$min.dat[[source]]$fit.term/scalar_global + x$min.dat[[source]]$df.term + x$min.dat[[source]]$addends)
+}
+
+
+getGlobalBICSum <- function(fit_vect)
+{
+  getGlobalBICs(fit_vect, "bic_a_dat") + getGlobalBICs(fit_vect, "bic_l_dat")
+}
