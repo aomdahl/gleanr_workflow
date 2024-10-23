@@ -1,4 +1,4 @@
-# GLEANER: GWAS latent embeddings accounting for noise and regularization
+# GLEANR: GWAS latent embeddings accounting for noise and regularization
 GLEANER is a matrix factorization method intended to estimate sparse latent genetic factors of pleiotropy across GWAS.
 This repo contains an ongoing project to develop a flexible, interpretable, and sparse factorization framework to integrate GWAS data across studies and cohorts. We employ a basic alternating least-squares matrix factoriztion algorithm with sparse priors on learned matrices, while accounting for study uncertainty.
 
