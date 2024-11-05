@@ -1,3 +1,28 @@
+################################################################################################################################
+## Ashton Omdahl, November 2024
+## Wrapper script to run gleanr fro mthe command line
+## Input:
+##              - X: the matrix to be decomposed (N x M, N is the number of SNPs, M is the number of traits/studies)
+##              - V: learned factor matrix  (M x K, M is the number of traits, K is the number of factors)
+##              - W: the weight matrix, same size as in X
+##              - option: a list with parameters including lambda1, the l1 penalty parameter for the factor matrix (F)
+##
+## Output:
+##              - A text file containing matrix factors (`latent.factors.txt`) and latent loadings (`latent.loadings.txt`)
+##              - Three R data files corresponding to sparsity parameter selection (`*_bic_dat.RData`), K_init selection (`*XXX`), and model fitting (`*_final_dat.RData`)
+##
+## Example of usage:
+## Rscript src/gleaner_run.R --gwas_effects target_studies.beta.tsv --uncertainty target_studies.se.tsv --trait_names pheno.names.txt --outdir output_dir/prefix \
+## --fixed_first -K "GRID" -v 1 \
+## --covar_matrix target_studies_gcov_int.tab.csv \
+## --sample_sd target_studies_sample_sd_report.tsv  \
+## --WLgamma Strimmer \
+## --covar_se_matrix target_studies_gcov_int_se.tab.csv
+##
+################################################################################################################################
+
+
+
 library(devtools)
 library(optparse)
 
@@ -37,7 +62,7 @@ make_option(c("--drop_phenos"), type = "character", help = "Specify phenotypes t
 make_option(c("--fixed_first"), type = "logical", help = "if want to remove L1 prior on first factor", action = "store_true", default = FALSE),
 make_option(c("--debug"), type = "logical", help = "if want debug run", action = "store_true", default = FALSE),
 make_option(c("--overview_plots"), type = "logical", help = "To include plots showing the objective, sparsity, etc for each run", action = "store_true", default = FALSE),
-make_option(c("-K", "--nfactors"), type = "character", help = "specify the number of factors. Options are a number, or MAX, KAISER, K-2, CG", default = "MAX"),
+make_option(c("-K", "--nfactors"), type = "character", help = "specify the number of factors. Options are a number, or MAX, KAISER, K-2, CG", default = "GRID"),
 make_option(c("--genomic_correction"), type="character", default= "", help="Specify path to genomic correction data, one per snp.TODO: Also has the flexibility to expand"),
 make_option(c("--bic_var"), type = 'character', help = "Specify the bic method to use. Options are [sklearn_eBIC,sklearn,Zou_eBIC,Zou,dev_eBIC,dev, std,NONE]", default = "sklearn_eBIC"),
 make_option(c("-p", "--param_conv_criteria"), type = 'character', help = "Specify the convergene criteria for parameter selection", default = "BIC.change"),
@@ -99,7 +124,7 @@ args_input <- parse_args(OptionParser(option_list=option_list))#, args = t)
 #args_input <- parse_args(OptionParser(option_list=option_list), args = t)
 #TODO: cut oout this middle-man, make a more efficient argument input vector.
 
-setwd("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwasMF/"); load_all()
+setwd("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gleanr/"); load_all()
 args <-fillDefaultSettings(args_input)
 
 writeRunReport(args)
