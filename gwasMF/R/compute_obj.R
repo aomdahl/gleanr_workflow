@@ -21,7 +21,7 @@ getQuickObj <- function(sse,n, U,V,option)
 #'
 #' @return the matrix of residuals, N x M
 #' @export
-calcGlobalResiduals <- function(X,W,U,V, W_cov = NULL, fixed_first = FALSE, scale.explanatory = FALSE, scalar = 1)
+calcGlobalResiduals <- function(X,W,U,V, W_cov = NULL, fixed_first = FALSE, std.explanatory = FALSE, scalar = 1)
 {
 
   #if(fixed_first)
@@ -43,17 +43,17 @@ calcGlobalResiduals <- function(X,W,U,V, W_cov = NULL, fixed_first = FALSE, scal
       return(NA)
     }
     outcome.var <-t(W_cov) %*% t(W * X)
-    #if(scale.explanatory)
-    #{
-    #  explanatory.var <- mleScaleMatrix(explanatory.var)
-    #}
+    if(std.explanatory)
+    {
+      outcome.var <- mleScaleMatrix(outcome.var)
+    }
     xhat <- (t(W_cov) %*% t(W * (U %*% t(V))))/scalar
     return((outcome.var -xhat) %>% t())
     #return(t(W_cov) %*% t(W * X - W * (U %*% t(V))) %>% t()) #Final transpose at end to switch the dimensions correctly. Verified this matches expected objective on 4/10
   }
   message("This case should not occur")
   explanatory.var <- (W * X)
-  if(scale.explanatory)
+  if(std.explanatory)
   {
     explanatory.var <- mleScaleMatrix(explanatory.var)
   }
@@ -62,9 +62,14 @@ calcGlobalResiduals <- function(X,W,U,V, W_cov = NULL, fixed_first = FALSE, scal
 
 mleScaleMatrix <- function(explanatory.var)
 {
-  mu = mean(explanatory.var)
-  var <- (1/(ncol(explanatory.var) * nrow(explanatory.var))) * sum((explanatory.var-mu)^2)
-  explanatory.var/sqrt(var)
+  message("Updated for simplification")
+  v <- scale(c(explanatory.var))
+  r <- matrix(v, nrow = nrow(explanatory.var))
+  #i have verified this orders the matrix correctly, rest assured.
+  return(r)
+  #mu = mean(explanatory.var)
+  #var <- (1/(ncol(explanatory.var) * nrow(explanatory.var))) * sum((explanatory.var-mu)^2)
+  #explanatory.var/sqrt(var)
 }
 
 mleScaleVector <- function(x)
@@ -76,10 +81,12 @@ mleScaleVector <- function(x)
 
 mleStdVector <- function(x)
 {
-  x_bar<- mean(x)
-  n <- length(x)
-  mle.x <- sum((x - x_bar)^2)/n
-  (x-x_bar) /sqrt(mle.x)[1]
+	#simplified implementation as of Aug 31, 2024
+      as.vector(scale(x))
+	#x_bar<- mean(x)
+ 	# n <- length(x)
+  #mle.x <- sum((x - x_bar)^2)/n
+  #(x-x_bar) /sqrt(mle.x)[1]
 }
 
 mleStdMatrix <- function(X)
@@ -244,7 +251,7 @@ compute_obj <- function(X, W, W_c, L, FactorM, option, decomp = FALSE, loglik = 
   N = nrow(X)
   #message("Scaling out L, in DEVELOPMENT")
   #L <- apply(L,2, function(x) x/norm(x, "2"))
-  residuals = calcGlobalResiduals(X,W,L, FactorM, W_cov =W_c, fixed_first = FALSE, scalar =scalar);
+  residuals = calcGlobalResiduals(X,W,L, FactorM, W_cov =W_c, fixed_first = FALSE, scalar =scalar, std.explanatory=option$std_y);
 	#Residual_penalty = sum(sum(residual^2));
 #	Residual_penalty = sum(residual^2) / (2 * nrow(L));
 #After some quick evaluation, we either scale everything or don't scale at all. For simplicity we scale nothing.

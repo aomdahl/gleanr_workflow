@@ -18,7 +18,7 @@
 #' @export
 #'
 #' @examples
-gridSearchK <- function(opath, option,X,W,W_c,all_ids,names,step.limit = 10,init.range=4,...)
+gridSearchK <- function(opath, option,X,W,W_c,all_ids,names,step.limit = 8,init.range=4,...)
 {
   #parallel settings
   parallel="no"
@@ -50,9 +50,9 @@ gridSearchK <- function(opath, option,X,W,W_c,all_ids,names,step.limit = 10,init
   #                                       all_ids = all_ids,
   #                                       names = names)
 
+  grid.search.record <- gridSearchRecord(init.results, init.params,  NULL)
+  sdv <- gatherSearchData(init.results,k.range,grid.search.record)
 
-  sdv <- gatherSearchData(init.results,k.range)
-  grid.search.record <- gridSearchRecord(init.results, init.params, NULL)
   if(sdv$next_params$terminate)
   {
     message("All BICs the same. Grid search is complete.")
@@ -79,7 +79,7 @@ gridSearchK <- function(opath, option,X,W,W_c,all_ids,names,step.limit = 10,init
     #                                    names = names)
     #New paradigm- we need this to update off the full list
     grid.search.record <- gridSearchRecord(next.grid, sdv$next_params, grid.search.record) #use this last entry in the search
-    sdv <- gatherSearchData(next.grid,k.range, curr_grid=sdv$query_matrix,curr_best = sdv$min_result ) #need previous dat here: UPDATE
+    sdv <- gatherSearchData(next.grid,k.range,grid.search.record, curr_grid=sdv$query_matrix,curr_best = sdv$min_result ) #need previous dat here: UPDATE
     if(sdv$next_params$terminate)
     {
       message("All BICs the same. Grid search is complete.")
@@ -116,16 +116,37 @@ gridSearchK <- function(opath, option,X,W,W_c,all_ids,names,step.limit = 10,init
 #'
 #' @examples
 #' #gatherSearchData(next.grid,k.range, curr_grid=sdv$query_matrix,curr_best = sdv$min_result )
-gatherSearchData <- function(gs_object,k_range,curr_grid=NULL,curr_best=NULL)
+gatherSearchData <- function(gs_object,k_range,grid_record,curr_grid=NULL,curr_best=NULL, version="global")
 {
-  #Store results so we don't repeat tests
-  query.matrix <- storeGridResults(gs_object,curr_grid = curr_grid)
-  #Which one is best
-  min.result <- getBestRun(gs_object,curr_best= curr_best)
-  curr.best.K = query.matrix$K[which.min(query.matrix$BIC)]
+  if(version != "global")
+  {
+    #Store results so we don't repeat tests
+    query.matrix <- storeGridResults(gs_object,curr_grid = curr_grid) #update the list with BICs and Ks
+    #Which one is best
+    min.result <- getBestRun(gs_object,curr_best= curr_best) #pick out the best result
+
+    #fix starting here
+    curr.best.K = query.matrix$K[which.min(query.matrix$BIC)] #and its corresponding K
+
+  }else
+  {
+    #alternate version
+    query.matrix <- list("K"=grid_record$curr_runs$Kinit, "BIC"=grid_record$curr_runs$bic_global)
+    #Alternate version
+    min.score <- min(grid_record$curr_runs$bic_global)
+    min_i = which(grid_record$curr_runs$bic_global == min.score)
+    if(length(min_i) > 1)
+    {
+      min.k.i <- which.min(grid_record$curr_runs$Kinit[min_i])
+      min_i= min_i[min.k.i]
+    }
+    min.result <- grid_record$test_dat[[min_i]]
+
+    curr.best.K <- grid_record$curr_runs$Kinit[min_i]
+  }
 
   #What parameters should we consider next? Binary search approach
-  next.params <- chooseNextParams(curr.best.K,query.matrix,k_range)
+  next.params <- chooseNextParams(curr.best.K,query.matrix,k_range) #pick out next params
   #How close are the next Ks we are considering to existing Ks? Make sure we don't repeat anything.
   k.diff = checkK(next.params$K)
   return(list("query_matrix"=query.matrix, "min_result"=min.result,
@@ -133,8 +154,8 @@ gatherSearchData <- function(gs_object,k_range,curr_grid=NULL,curr_best=NULL)
               "next_params" = next.params, "k_diff"=k.diff))
 }
 
-#' Helper function to track the results of run from one to the nnext test
-#'
+#' Helper function to track the results of run from one to the next. This re-updates all the information each time, so a
+#' bit less efficient than it could be, but needed to ensure the BICs are on the right global scale.
 #' @param gs_object return from grid search object
 #' @param params which settings of K we tried at
 #' @param record_obj the object this is being stored in
@@ -143,30 +164,32 @@ gatherSearchData <- function(gs_object,k_range,curr_grid=NULL,curr_best=NULL)
 #' @export
 #'
 #' @examples
-gridSearchRecord <- function(gs_object,prev.results, params, record_obj)
+gridSearchRecord <- function(gs_object,params, record_obj)
 {
   if(is.null(record_obj))
   {
     record_obj <- list("test_dat"=list(), "curr_runs"=NULL)
   }
-  bics <- sapply(gs_object$results, function(x) (x$min.dat$min_sum))
+  record_obj$test_dat <- c(record_obj$test_dat, gs_object$results) #concatenate all the new information together
+
+  bics <- sapply(record_obj$test_dat, function(x) (x$min.dat$min_sum))
   #bics_global procedure
   #Get the scalar that is max across all for the variance comparison; generally should be M-1.
-  bics_global <- getGlobalBICSum(gs_object$results,record_obj$test_dat) #need to include the previous information
+  bics_global <- getGlobalBICSum(record_obj$test_dat) #need to include the previous information
 
-  alphas <- sapply(gs_object$results, function(x) (x$min.dat$alpha))
-  lambdas <- sapply(gs_object$results, function(x) (x$min.dat$lambda))
-  K_end <- sapply(gs_object$results, function(x) ncol(x$optimal.v))
+  alphas <- sapply(record_obj$test_dat, function(x) (x$min.dat$alpha))
+  lambdas <- sapply(record_obj$test_dat, function(x) (x$min.dat$lambda))
+  K_end <- sapply(record_obj$test_dat, function(x) ncol(x$optimal.v))
   K_end[is.null(K_end)] <- 0
 
-  record_obj$curr_runs <- rbind(record_obj$curr_runs,
-                                data.frame("Kinit"=params$K,
+ # record_obj$curr_runs <- rbind(record_obj$curr_runs,
+  record_obj$curr_runs <-        data.frame("Kinit"=c(record_obj$curr_runs$Kinit, params$K),
                                            "K_end"=K_end,
                                            "bic_local"=bics,
                                            "bic_global"=bics_global,
                                            "alpha"=alphas,
-                                           "lambda"=lambdas))
-  record_obj$test_dat <- c(record_obj$test_dat, gs_object) #concatenate all the new information together
+                                           "lambda"=lambdas) #)
+
   record_obj
 }
 
@@ -375,6 +398,13 @@ getGlobalBICs <- function(fit_vect, source)
   #
   max.coef.index <- which.max(sapply(fit_vect, function(x) (x$min.dat[[source]]$n.coef)))
   scalar_global <- fit_vect[[max.coef.index]]$min.dat[[source]]$fit.scaler #
+  #Make a check- if this is quite a bit smaller or bigger than other scalars, issue a warning. This might result in some irregular parameter selection:
+  all.other.scalars <- sapply(fit_vect, function(x) (x$min.dat[[source]]$fit.scaler))[-max.coef.index]
+
+
+  #If this value REALLY off from all the others, that is a sign of a potentially bad choice. Could happen if we get into a high-overfitting case:. Throw a warning
+  #2 tests- its an order of magnitude off
+  checkOverfitVar(scalar_global, all.other.scalars,fit_vect,max.coef.index)
   #Get the scalar that is max across all for the variance comparison; generally should be M-1.
  sapply(fit_vect, function(x) x$min.dat[[source]]$fit.term/scalar_global + x$min.dat[[source]]$df.term + x$min.dat[[source]]$addends)
 }
@@ -382,5 +412,41 @@ getGlobalBICs <- function(fit_vect, source)
 
 getGlobalBICSum <- function(fit_vect)
 {
-  getGlobalBICs(fit_vect, "bic_a_dat") + getGlobalBICs(fit_vect, "bic_l_dat")
+  round(getGlobalBICs(fit_vect, "bic_a_dat") + getGlobalBICs(fit_vect, "bic_l_dat"), digits=8) #need to round because R counts 1e-12 errors as differences.
 }
+
+#' Check if the current variance estimate is really off from all the others and give a warning.
+#'
+#' @param global - globally minimial variance estimate
+#' @param remaining - all other variance estimates
+#' @param fit_vect - fit data for all entries
+#' @param min_index - inde corresponding to the globally minimal variacne estiamte
+#'
+#' @return
+#' @export
+#'
+#' @examples
+checkOverfitVar <- function(globalmin, remaining,fit_vect,min_index)
+{
+  ks.all <- sapply(fit_vect, function(x) ncol(x$optimal.v))
+  #We are only really concerned about it if it results in many more K being selected than any other option
+  if(all(ks.all[min_index] > 2*max(ks.all[-min_index])))  #Got stuck in some local valley with 2 more K than any other option
+     {
+       if(all(abs(round(log10(globalmin)-log10(remaining),digits=1)) >= 1))
+       {
+         warning("Selected K has 2x more factors than any other option and a variance estimate at least one order of magnitude different from all others. Proceed with caution, and consider an alternative Kinit strategy.")
+       }
+     }
+     #Alternative test- it doesn't match the distribution of expected variances.
+     if(length(unique(remaining)) > 1 & FALSE) #This condition throws a bug if other options are too close- don't bother with it.
+     {
+       fit = MASS::fitdistr(1/remaining, "gamma")
+       prob.not <- min(invgamma::pinvgamma(globalmin,shape = fit$estimate[1],rate = fit$estimate[2], lower.tail = FALSE),
+                       invgamma::pinvgamma(globalmin,shape = fit$estimate[1],rate = fit$estimate[2]))
+       if(prob.not < 0.005)
+       {
+         warning("Selected K for variance scaling has variance estimate beyond what we expect by chance (alpha < 0.01).\nProceed with caution, consider an alternative Kinit strategy.")
+       }
+     }
+}
+

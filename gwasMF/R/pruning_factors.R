@@ -280,7 +280,7 @@ PruneFactorsByObjective <- function(X,W,U,V, minK, option)
 #' @return return.dat, ret object updated by order of PVE
 #' @export
 #'
-OrderEverythingByPVE <- function(ret,X,W,W_c,terminal.attempt = FALSE,...)
+OrderEverythingByPVE <- function(ret,X,W,W_c,options,terminal.attempt = FALSE,...)
 {
   return.dat <- ret
   if(all(ret$V == 0) | all(ret$U == 0))
@@ -295,13 +295,13 @@ OrderEverythingByPVE <- function(ret,X,W,W_c,terminal.attempt = FALSE,...)
   }
   #PercentVarEx <- function(x,v,u, K=NULL)
 
-  pve.ord = getPVEOrder(as.matrix(X)*as.matrix(W) %*% W_c, pm(ret$V), pm(ret$U),...)
+  pve.ord = getPVEOrder(as.matrix(X), pm(ret$V), pm(ret$U),W,W_c,options,...)
 
   #pve=PercentVarEx(as.matrix(X)*as.matrix(W) %*% W_c, pm(ret$V), pm(ret$U),...)
   #pveo <- order(pve, decreasing=TRUE)
   return.dat$V<- pm(ret$V)[,pve.ord]
   return.dat$U <- pm(ret$U)[,pve.ord]
-  return.dat$PVE <- PercentVarEx(as.matrix(X)*as.matrix(W) %*% W_c,return.dat$V, return.dat$U)
+  return.dat$PVE <- PercentVarEx(X,return.dat$V, return.dat$U,W,W_c, options)
   #save(X,W,W_c, ret, return.dat, file= "/scratch16/abattle4/ashton/snp_networks/scratch/cohort_overlap_exploration/run_scripts/final_sim_june_2024/debug.RData")
   #if((!all(sort(return.dat$PVE, decreasing=TRUE) == return.dat$PVE)) & !terminal.attempt) #terminal attempt ensures it onlyl tries to correct once.
   #{

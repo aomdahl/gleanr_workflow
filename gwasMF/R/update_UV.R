@@ -58,7 +58,6 @@ DefineSparsitySpaceInit <- function(X, W,W_c, W_ld, option, burn.in = 5,reg.elem
   message("initializing v")
   message("dropped arguments, so can't pass rg")
   V.dat <- initV(X,W,W_c,option)
-  message("here")
   V<-V.dat$V
 
   if(burn.in < 1)
@@ -197,11 +196,17 @@ initV <- function(X,W,W_c,option, preV = NULL, rg_ref = NULL)
   #svd.r <- svd(cor_struct, nu = option$K)
   svd.corr <- svd(cor_struct)
   svd.dat <- corpcor::fast.svd(X)
+
   message("Wastefully calculating all SVs now, change this later.")
   X_=t(W_c %*% t(X*W)) #I think this is where the differences came from?
 
   #X_ = X*W
   setK = selectInitK(option,X_)#,svs = svd.dat$d)
+  if(ncol(svd.dat$v) < (setK - 1))
+  {
+    warning("PCs for initalization have effectively 0 eigenvalues. Limiting to fewer PCs")
+    setK = ncol(svd.dat$v)
+  }
   if(!option[['preinitialize']])
   {
     V = matrix(runif(D*(setK - 1), min = -1, max = 1), nrow = D);
@@ -366,7 +371,8 @@ UpdateTrackingParams <- function(sto.obj, X,W,W_c,U,V,option, sparsity.thresh = 
       sto.obj$Us[[length(sto.obj$Us) + 1]] <-  as.matrix(U)
       sto.obj$V <- as.matrix(V)
       sto.obj$Vs[[length(sto.obj$Vs) + 1]] <-  as.matrix(V)
-      sto.obj$PVE <- PercentVarEx(as.matrix(X)*as.matrix(W) %*%W_c, V,U)
+      #PercentVarEx <- function(x,v,u,W,W_c,options, K=-1,...)
+      sto.obj$PVE <- PercentVarEx(as.matrix(X),V,U,as.matrix(W),W_c,option)
   sto.obj
 }
 
@@ -452,6 +458,15 @@ CheckVEmpty <- function(V)
 
 CheckMatrixEmpty <- function(mat, name)
 {
+  if(all(is.na(mat)))
+  {
+    return(TRUE)
+  }
+
+  if(ncol(mat) == 0)
+  {
+    return(TRUE)
+  }
   non_empty_mat = which(apply(mat, 2, function(x) sum(x!=0)) > 0)
   if(length(non_empty_mat) == 0){
     #| (non_empty_v[1] == 1 & option$fixed_ubiq & (length(non_empty_f) == 1))){
@@ -841,8 +856,12 @@ EndIterStatement <- function(iter, td, option)
 #' @export
 #'
 #' @examples
-prepRegressionElements <- function(X,W,W_c)
+prepRegressionElements <- function(X,W,W_c, option)
 {
+  long.x<- c(t(W_c) %*% t(X*W))
+  if(option$std_y) {
+    long.x <- mleStdVector(long.x)
+    }
   list("joined.weights" = lapply(1:nrow(X), function(i) Matrix::Matrix(t(W_c) %*% (diag(W[i,])))),
-       "long.x"=c(t(W_c) %*% t(X*W)))
+       "long.x"=long.x)
 }

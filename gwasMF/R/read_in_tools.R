@@ -562,7 +562,7 @@ selectInitK <- function(args,X_, evals = NULL)
     message("Proceeding with initialized K of ", k)
 
   }
-  if(k == ncol(X))
+  if(k == ncol(X_))
   {
     warning("K initialized to the same number as the columns of X. This will result in MN = NK, which will cause some BIC implementations (such as sklearn) to fail")
   }
@@ -664,7 +664,8 @@ readInSettings <- function(args)
     option$Kmin <- 0
   }
   #Experimental
-  message("Scaling is off by default")
+
+  #message("Scaling is off by default")
   #had to turn off for simulations, at least for now...
   option$scale <- FALSE
   option$burn.in <- 0
@@ -672,7 +673,8 @@ readInSettings <- function(args)
   option$swap <- FALSE
   option$bic.var <- args$bic_var
   option$svd_init <- args$svd_init
-  option$std_y <- args$std_y
+  message("Standardizing y by default")
+  option$std_y <- TRUE # args$std_y
   option$param_conv_criteria <- args$param_conv_criteria
   option$min.bicsearch.iter <- args$min.bic.search.iter
   #Internal use only:

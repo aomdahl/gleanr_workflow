@@ -62,6 +62,7 @@ initializeGwasMF <- function(X,W,C,snp.ids, trait.names, K=0, init.mat = "V", co
   option$swap <- FALSE
   option$alpha1 <- 1e-10
   option$lambda1 <- 1e-10
+  option$block_covar <- 0.2
   output <- args$output
   #log.path <- paste0(args$output, "gwasMF_log.", Sys.Date(), ".txt")
   #lf <- logr::log_open(log.path, show_notes = FALSE)

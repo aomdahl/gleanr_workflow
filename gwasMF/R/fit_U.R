@@ -1,9 +1,8 @@
   ################################################################################################################################
   ## Update the factor matrix U during the alternative optimization
-  ## Based originally on Yuan He's code, with some speed-up improvements and tweaks made by Ashton 2019-2022
   ## Input:
   ##              - X: the matrix to be decomposed (N x T, N is the number of data points, T is the number of features)
-  ##              - F: learned factor matrix  (T x K, T is the number of features, K is the number of factors)
+  ##              - V: learned factor matrix  (M x K, M is the number of traits, K is the number of factors)
   ##              - W: the weight matrix, same size as in X
   ##              - option: a list with parameters including lambda1, the l1 penalty parameter for the factor matrix (F)
   ##
@@ -269,7 +268,8 @@
         #message("Calc BIC")
         #print(dim(long.v))
         #print(length(long.x))
-        bic.list <- calculateBIC(fit, long.v, long.x, option$bic.var)
+        bic.dat <- calculateBIC(fit, long.v, long.x, option$bic.var)
+        bic.list <- bic.dat$bic.list
         #print(paste0("Calculated BIC: ", pryr::mem_used()))
         #print(pryr::mem_used())
         #sklearn extended was default previously?
@@ -309,6 +309,7 @@
 
 #look at the probability for a given
         min.index <- which.min(bic.list)
+        bic.dat <- extractMinBicDat(bic.dat, min.index)
         #message("Selected BIC index: ", min.index)
         #print(alpha.list)
         #message(alpha.list[min.index][-1])
@@ -333,7 +334,7 @@
         #Check: is in the realm of those picked by CV?
         return(list("U" = pm(u.ret),"alpha.sel"=fit$lambda[min.index],
                     "bic"= bic.list[min.index], "sparsity_space"=max(fit$lambda), "total.log.lik" = NA,
-                    "penalty" = penalty, "s"=s, "next.upper" = upper.next, "next.lower" = lower.next, "SSE"=sse))
+                    "penalty" = penalty, "s"=s, "next.upper" = upper.next, "next.lower" = lower.next, "SSE"=sse, "bic.dat"=bic.dat))
 
 
       }
