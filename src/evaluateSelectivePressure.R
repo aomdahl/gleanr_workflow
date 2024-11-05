@@ -1,6 +1,6 @@
 source("/scratch16/abattle4/ashton/snp_networks/gwas_decomp_ldsc/src/plot_functions.R")
 source("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/src/selectivePressureEst.R")
-pacman::p_load(magrittr, dplyr, ggplot2, data.table,optparse)
+pacman::p_load(magrittr, dplyr, ggplot2, data.table,optparse, moments)
 
 #' Calculate the selection scores
 #'
@@ -11,11 +11,12 @@ pacman::p_load(magrittr, dplyr, ggplot2, data.table,optparse)
 #' @param permute Number of permutations to run, default is 0
 #' @return A dataframe with calculated selection scores.
 #' @export
+#' ret$U,df.u, permute = 0
 getSelectionScores <- function(u.mat,u.processed, permute = 0)
 {
   u.selection.full.permutes <- list()
   u.pvals.s_sigma <-  matrix(NA, ncol = 2, nrow = ncol(u.mat))
-if(permute > 0)  u.pvals.s_sigma <-  matrix(NA, ncol =4, nrow = ncol(u.mat))
+if(permute > 0 | permute == -1)  u.pvals.s_sigma <-  matrix(NA, ncol =4, nrow = ncol(u.mat))
   
   for(u in 1:ncol(u.mat))
   {
@@ -30,7 +31,25 @@ if(permute > 0)  u.pvals.s_sigma <-  matrix(NA, ncol =4, nrow = ncol(u.mat))
       u.selection.full.permutes[[u]] <-permuteNullDistS(2,10, u_effects, mafs) 
       u.pvals.s_sigma[u,] <- c(u.optim$par[1], u.optim$par[2], sum(u.selection.full.permutes[[u]][,1] <= u.optim$par[1]),
                                sum(u.selection.full.permutes[[u]][,2] >= u.optim$par[2]))
-    }else
+    }else if(permute == -1){ #This is code for getting the CI
+      #do via jacknife, if not too slow...
+      #Its too slow
+      bootstrap.dat <- list()
+      n.strap = 100
+      strap.size = ceiling(0.8 * length(u_effects))
+      for(i in 1:n.strap)
+      {
+        svMisc::progress(i)
+        samp <- sample(1:length(u_effects),size = strap.size,replace = TRUE)
+        bootstrap.dat[[i]] <- estimateS_SigmaG(u_effects[-i], mafs[-i])
+      } #unsurprisngly, that's pretty slow...
+      
+      boots <- sapply(bootstrap.dat, function(x) x$par[1])
+      u.optim.sub <- estimateS_SigmaG(u_effects[samp], mafs[samp])
+      quants <- quantile(boots, c(0.025,0.975))
+      u.pvals.s_sigma[u,] <- c(u.optim$par[1], u.optim$par[2],quants[1],quants[2])
+    }
+    else
     {
       u.pvals.s_sigma[u,] <- c(u.optim$par[1], u.optim$par[2])
     }
@@ -38,8 +57,9 @@ if(permute > 0)  u.pvals.s_sigma <-  matrix(NA, ncol =4, nrow = ncol(u.mat))
   }
   out.col.names <- c("S_hat", "sigma_g_hat")
   if(permute > 0) out.col.names <- c("S_hat", "sigma_g_hat", "p_s", "p_sigma_g")
+  if(permute == -1) out.col.names <- c("S_hat", "sigma_g_hat", "upper_ci", "lower_ci")
   df.s_estimates <- data.frame(u.pvals.s_sigma) %>% set_colnames(out.col.names) %>% 
-    mutate("Factor" = paste0("U", 1:ncol(u.mat))) %>% print()
+    mutate("Factor" = paste0("U", 1:ncol(u.mat))) #%>% print()
   
   #Also do factor sparsity,
   df.s_estimates$sparsity <- apply(u.mat, 2, function(x) sum(x==0)/length(x))
@@ -57,10 +77,10 @@ if(permute > 0)  u.pvals.s_sigma <-  matrix(NA, ncol =4, nrow = ncol(u.mat))
 loadMAFRef <- function(snp.ids, maf_id="af_EUR", maf.path="/data/abattle4/lab_data/GWAS_summary_statistics/PanUKBB/high_quality_common_variants_EUR.txt.bgz")
 {
   full.snps <- fread(maf.path)
-  full.snps <- filter(full.snps,rsid %in% snp.ids) #There are 2 redundant SNPs it looks like.
+  full.snps <- full.snps %>% dplyr::filter(rsid %in% snp.ids) #There are 2 redundant SNPs it looks like.
   i=which(colnames(full.snps) ==maf_id)
-  print(i)
-  print(full.snps[,..i])
+  #print(i)
+  #print(full.snps[,..i])
   full.snps$maf <- sapply(unlist(full.snps[,..i]), function(x) ifelse(x > 0.5, 1-x, x)) + 1e-16
   #adding a constant so none are zero, which kills the function
   full.snps
@@ -78,7 +98,7 @@ loadMAFRef <- function(snp.ids, maf_id="af_EUR", maf.path="/data/abattle4/lab_da
 joinedUDat <- function(U, snp.ids, snp.ref)
 {
   df.u <- data.frame("snp" = snp.ids, U) %>%  set_colnames(c('rsid', paste0("U",1:ncol(U))))
-  df.u <- left_join(df.u, snp.ref, by = "rsid") %>% filter(!is.na(maf))
+  df.u <- left_join(df.u, snp.ref, by = "rsid") %>% dplyr::filter(!is.na(maf))
   
   #There are a no NAs, good job
   if(sum(is.na(df.u$af_EUR)) > 0 |   sum(is.na(df.u$maf)) > 0)
@@ -121,9 +141,9 @@ plotTraits <- function(factor_list,df.s_estimates,df.v)
   for(q in factor_list)
   {
     q_ <- gsub(x=q, pattern= "U", replacement = "V")
-    s <- (df.s_estimates %>% filter(Factor == q))$S_hat
+    s <- (df.s_estimates %>% dplyr::filter(Factor == q))$S_hat
     
-    plot.list[[q_]] <- ggplot(df.v %>% filter(abs(!!sym(q_)) > 0), aes(x=reorder(trait, !!sym(q_)), y=!!sym(q_))) + 
+    plot.list[[q_]] <- ggplot(df.v %>% dplyr::filter(abs(!!sym(q_)) > 0), aes(x=reorder(trait, !!sym(q_)), y=!!sym(q_))) + 
       geom_bar(stat="identity") + coord_flip() + theme_bw() + xlab("Traits") + ggtitle(paste0(q, " S=",s))
   }
   plot.list
@@ -148,10 +168,10 @@ plotAndTestFactorsVsS <- function(V, U, s_dat)
   snps.per.factor <- apply(U, 2, function(x) sum(x!=0))
   message("test of snps per factor vs S")
   #cor.test(s_dat$S_hat, snps.per.factor,method = "spearman")
-  print(cor.test(s_dat$S_hat, snps.per.factor,method = "pearson"))
+  #print(cor.test(s_dat$S_hat, snps.per.factor,method = "pearson"))
   message("test of traits per factor vs S")
   # cor.test(s_dat$S_hat, traits.per.factor,method = "spearman") 
-  print(cor.test(s_dat$S_hat, traits.per.factor,method = "pearson"))
+  #print(cor.test(s_dat$S_hat, traits.per.factor,method = "pearson"))
   df.test <- data.frame(df.s_estimates,traits.per.factor,snps.per.factor)
   list(ggplot(df.test, aes(x=traits.per.factor, S_hat)) + geom_point() + theme_bw() + xlab("Traits per factor"),
        ggplot(df.test, aes(x=snps.per.factor, S_hat)) + geom_point() + theme_bw() + xlab("SNPs per factor"))
@@ -170,6 +190,27 @@ saveFigs <- function(ilist, odir, tag)
     i=i+1
   }
 }
+###########Stuff for calculating polygenicity as described by Oconnor:
+
+# Functions to calculate moments, based on oconnor polygenicity
+getME <- function(v) {
+  (3*length(v))/kurtosis(v)
+}
+
+getMENonzero <- function(v) {
+  keep.set <- v[v != 0]
+  (3*length(keep.set))/kurtosis(keep.set)
+}
+
+
+
+getPolygenicityScores <- function(u)
+{
+  me <- apply(u, 2, function(x) getME(x))
+  mt <- apply(u, 2, function(x) sum(x != 0))
+  data.frame("Factor" = paste0("U",1:ncol(u)), "Me"=me, "Mt"=mt, "Me_scaled"=me/nrow(u), "Mt_scaled"=mt/nrow(u))
+}
+
 
 # Argument parsing
 option_list <- list(
@@ -191,10 +232,12 @@ opt_parser <- OptionParser(option_list = option_list)
 t=c("--factorization=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results/panUKBB_complete_61K/_final_dat.RData",
     "--output=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results/")
 #-a af_EAS -m results//panUKBB_complete_41K/full_maf_dat.txt -o results//panUKBB_complete_41K/selective_pressure_EAS_af/
-t=c("--factorization=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results/panUKBB_complete_41K/_final_dat.RData",
-    "--maf_column=af_EAS", 
-    "--maf_reference=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results//panUKBB_complete_41K/full_maf_dat.txt",
-    "--output=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results/")
+t=c("--factorization=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results/panUKBB_complete_41K_final/panUKBB_complete_41K_final_final_dat.RData",
+    "--maf_column=af_EUR", 
+    "--maf_reference=/data/abattle4/lab_data/GWAS_summary_statistics/PanUKBB/high_quality_common_variants_EUR.txt.bgz",
+    "--output=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results/panUKBB_complete_41K_final/selective_pressure/")
+
+
 opt <- parse_args(opt_parser)
 
 # Check if required arguments are provided
@@ -206,7 +249,6 @@ if (is.null(opt$factorization) || is.null(opt$output)) {
 if (!is.null(opt$factorization)) {
   load(opt$factorization)
 }
-
 
 # Example: 
 # results <- your_function(factorization, opt$maf_reference)
@@ -227,10 +269,17 @@ df.v <- joinedVDat(ret$V, ret$trait.names)
 
 #Get selection scores:
 message("Estimating S scores")
-df.s_estimates <- getSelectionScores(ret$U,df.u, permute = 0)
-write.table(df.s_estimates, file=paste0(opt$output, "s_scores.tsv"), quote=FALSE, row.names=FALSE)
+df.s_estimates <- getSelectionScores(ret$U,df.u, permute = -1) #get 95% CI by default.
+df.polygen_estimates <- getPolygenicityScores(ret$U)
+df.architecture <- left_join(df.s_estimates, df.polygen_estimates, by="Factor")
+write.table(df.architecture, file=paste0(opt$output, "s_scores.tsv"), quote=FALSE, row.names=FALSE)
 #Visualize these
 all.plots <- visualizeSelectionScores(df.s_estimates)
+
+
+ggplot(df.polygen_estimates)
+
+
 
 #Plot the traits in the top 3 factors and bottom 3 factors, as well as relationship between U and MAF
 message("Visualizing traits in top and bottom scores")
@@ -256,5 +305,5 @@ saveFigs(top.factors, opt$output, "topS_traits")
 saveFigs(lower.factors, opt$output, "bottomS_traits")
 saveFigs(top.rel, opt$output, "topS_maf")
 saveFigs(lower.rel, opt$output, "bottomS_maf")
-safeFigs(selective.vs.factors, opt$output, "S_vs_factors")
+saveFigs(selective.vs.factors, opt$output, "S_vs_factors")
 message("Preliminary selective pressure analysis is complete.")

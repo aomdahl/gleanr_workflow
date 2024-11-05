@@ -19,7 +19,7 @@ singletonLookup <- function(u.ref, z.scores.all, trait, factor)
 traitBarplots <- function(trait, scaled.V,xlab=FALSE,size=15,factor_list=c())
 {
   barplots = list()
-  whr.factors <- names(which(unlist((scaled.V %>% filter(Traits==trait))[,-1]) !=0))
+  whr.factors <- names(which(unlist((scaled.V %>% dplyr::filter(Traits==trait))[,-1]) !=0))
   if(length(factor_list) > 0)
   {
     whr.factors = paste0("V", factor_list)
@@ -50,11 +50,11 @@ plotByFactorNumber <- function(factor.vals, factor.name,  flip_coord = TRUE, all
 {
   if(all_nonzero)
   {
-    p <- ggplot(factor.vals %>% filter(!!sym(factor.name) !=0), aes(x = reorder(Traits,!!sym(factor.name)), y= !!sym(factor.name))) + geom_bar(stat= "identity") + xlab("Traits") + theme_bw()
+    p <- ggplot(factor.vals %>% dplyr::filter(!!sym(factor.name) !=0), aes(x = reorder(Traits,!!sym(factor.name)), y= !!sym(factor.name))) + geom_bar(stat= "identity") + xlab("Traits") + theme_bw()
     
   }else
   {
-    p <- ggplot(factor.vals %>% filter(abs(!!sym(factor.name)) > mean(abs(!!sym(factor.name)))), aes(x = reorder(Traits,!!sym(factor.name)), y= !!sym(factor.name))) + geom_bar(stat= "identity") + xlab("Traits") + theme_bw()
+    p <- ggplot(factor.vals %>% dplyr::filter(abs(!!sym(factor.name)) > mean(abs(!!sym(factor.name)))), aes(x = reorder(Traits,!!sym(factor.name)), y= !!sym(factor.name))) + geom_bar(stat= "identity") + xlab("Traits") + theme_bw()
     
   }
   if(flip_coord)
@@ -129,7 +129,7 @@ plotPolygenicity <- function(U, fin, type="log",ylab=FALSE,size=15, plot_type="h
  poly <- getPolygenicity(U) 
  min <- min(c(poly$Me),c(poly$Mt))
  max <- max(c(poly$Me),c(poly$Mt))
- poly %<>% filter(Factors %in% fin) %>% mutate(Factors=factor(Factors, levels=rev(fin))) %>%
+ poly %<>% dplyr::filter(Factors %in% fin) %>% mutate(Factors=factor(Factors, levels=rev(fin))) %>%
    pivot_longer(cols=c("Me", "Mt"),values_to = "Poly_score")
  
  if(plot_type=="barplot")
@@ -144,9 +144,9 @@ plotPolygenicity <- function(U, fin, type="log",ylab=FALSE,size=15, plot_type="h
    {
      poly$Poly_score = poly$Poly_score/nrow(U)
    }
-   p1 = ggplot(poly %>% filter(name == "Me"), aes(x=Factors,y=(Poly_score)) ) + geom_bar(stat="identity", fill="#FF5733") + theme_classic(size) + 
+   p1 = ggplot(poly %>% dplyr::filter(name == "Me"), aes(x=Factors,y=(Poly_score)) ) + geom_bar(stat="identity", fill="#FF5733") + theme_classic(size) + 
      ylab("Effective polygenicity (Me)")
-   p2 = ggplot(poly %>% filter(name == "Mt"), aes(x=Factors,y=(Poly_score)) ) + geom_bar(stat="identity", fill="#FF5733") + theme_classic(size) + 
+   p2 = ggplot(poly %>% dplyr::filter(name == "Mt"), aes(x=Factors,y=(Poly_score)) ) + geom_bar(stat="identity", fill="#FF5733") + theme_classic(size) + 
      ylab("Total polygenicity (Mt)")
    return(list("me"=p1, "mt"=p2))
  }
@@ -196,23 +196,23 @@ dropXLab <- function(p)
 
 nominateNonZeroTissues <- function(tissue.plotting.dat, fdr=0.05)
 {
-  as.character(sort(factor(unique((tissue.plotting.dat %>% filter(factor_tissue_fdr < fdr))$Source),levels=paste0("F",1:100))))
+  as.character(sort(factor(unique((tissue.plotting.dat %>% dplyr::filter(factor_tissue_fdr < fdr))$Source),levels=paste0("F",1:100))))
 }
 
 plotNiceTissues <- function(ast.factors,tissue.plotting.dat,fdr_pass=0.05, size=15,ylab=FALSE)
 {
   #ast.factors <- c("F1","F2", "F6","F8", "F27")
   #View(scaled.V %>% select(Traits, V1, V2, V6,V8, V27))
-  focus_trait_tissue <- tissue.plotting.dat %>% filter(Source %in% ast.factors) 
-  message("Filtering by factorspecific tissue FDR, note that adjusted for tissue")
-  ggplot(focus_trait_tissue %>% filter(Coefficient_P_value < 0.01), aes(x=Name,y=-log10(factor_tissue_fdr), fill=color_code)) +
+  focus_trait_tissue <- tissue.plotting.dat %>% dplyr::filter(Source %in% ast.factors) 
+  message("dplyr::filtering by factorspecific tissue FDR, note that adjusted for tissue")
+  ggplot(focus_trait_tissue %>% dplyr::filter(Coefficient_P_value < 0.01), aes(x=Name,y=-log10(factor_tissue_fdr), fill=color_code)) +
     geom_bar(stat="identity") +facet_wrap(~Source, scales = "free")
   
   factor_order = paste0("F",100:1)
   tissue.order <- unique((focus_trait_tissue %>% arrange(new_category))$p_tissue)
-  pass_tissues <- unique((focus_trait_tissue %>% filter(Factor_specific_fdr < fdr_pass))$tissue)
-  pass_cat_names <- unique((focus_trait_tissue %>% arrange(color_code) %>% filter(Factor_specific_fdr < fdr_pass))$new_category)
-  pass <- focus_trait_tissue %>% filter(tissue %in% pass_tissues) %>% mutate("coef_out" = ifelse(Factor_specific_fdr < fdr_pass, z_score, 0 )) %>%
+  pass_tissues <- unique((focus_trait_tissue %>% dplyr::filter(Factor_specific_fdr < fdr_pass))$tissue)
+  pass_cat_names <- unique((focus_trait_tissue %>% arrange(color_code) %>% dplyr::filter(Factor_specific_fdr < fdr_pass))$new_category)
+  pass <- focus_trait_tissue %>% dplyr::filter(tissue %in% pass_tissues) %>% mutate("coef_out" = ifelse(Factor_specific_fdr < fdr_pass, z_score, 0 )) %>%
     mutate("color_code"=ifelse(Factor_specific_fdr < fdr_pass, color_code,"#FFFFFF"))
   p <- ggplot(pass, aes(x= factor(Source, level = factor_order), y =factor(p_tissue, level = tissue.order), 
                    fill = color_code, alpha = coef_out)) + 
@@ -235,12 +235,12 @@ plotNiceTissuesBarplot <- function(ast.factors,tissue.plotting.dat,fdr_pass=0.05
 {
   #ast.factors <- c("F1","F2", "F6","F8", "F27")
   #View(scaled.V %>% select(Traits, V1, V2, V6,V8, V27))
-  focus_trait_tissue <- tissue.plotting.dat %>% filter(Source %in% ast.factors) 
-  message("Filtering by factorspecific tissue FDR, note that adjusted for tissue")
+  focus_trait_tissue <- tissue.plotting.dat %>% dplyr::filter(Source %in% ast.factors) 
+  message("dplyr::filtering by factorspecific tissue FDR, note that adjusted for tissue")
   factor_order = paste0("F",1:1000)
   tissue.order <- unique((focus_trait_tissue %>% arrange(new_category))$p_tissue)
-  pass_cat_names <- unique((focus_trait_tissue %>% arrange(color_code) %>% filter(Factor_specific_fdr < fdr_pass))$new_category)
-  pass <- focus_trait_tissue %>% filter(Factor_specific_fdr < fdr_pass) %>% rename("Factor"=Source)
+  pass_cat_names <- unique((focus_trait_tissue %>% arrange(color_code) %>% dplyr::filter(Factor_specific_fdr < fdr_pass))$new_category)
+  pass <- focus_trait_tissue %>% dplyr::filter(Factor_specific_fdr < fdr_pass) %>% rename("Factor"=Source)
   
   count.by.cat <- pass %>% group_by(Factor, category,color_code) %>% summarize("Count"=n()) 
   #append on any missing factors
@@ -272,7 +272,7 @@ getPleiotropyScores <- function(pvals,U.mat, threshold=1e-5)
 {
   
   pleio.scores <- data.frame("SNPs" =pvals[,1], "pleio" = apply(pvals[,-1],1,function(x) sum(x < threshold, na.rm=TRUE)/sum(!is.na(x)))) %>%
-    set_colnames(c("SNPs", "pleio")) %>% filter(SNPs %in% U.mat$SNPs)
+    set_colnames(c("SNPs", "pleio")) %>% dplyr::filter(SNPs %in% U.mat$SNPs)
 
   left_join(U.mat, pleio.scores, by="SNPs")
 
@@ -300,12 +300,12 @@ getTopAndBottomSNPSByFactor <- function(full.U,u.with.plieo)
 sidewaysPleioBarplot <- function(joined.pleio,factors_of_interest,size=15, ylab=FALSE)
 {
   
-  #ggplot(joined.pleio %>% filter(factor %in% factors_of_interest), aes(x=factor,y=Pleioscore/137, fill=where)) + geom_boxplot() + theme_classic()
-  #joined.pleio %>% filter(factor %in% factors_of_interest) %>% group_by(factor,where) %>% summarize("count"=n(), "avg"=mean(Pleioscore))
+  #ggplot(joined.pleio %>% dplyr::filter(factor %in% factors_of_interest), aes(x=factor,y=Pleioscore/137, fill=where)) + geom_boxplot() + theme_classic()
+  #joined.pleio %>% dplyr::filter(factor %in% factors_of_interest) %>% group_by(factor,where) %>% summarize("count"=n(), "avg"=mean(Pleioscore))
   
   
-  #ggplot(joined.pleio %>% filter(factor %in% factors_of_interest), aes(x=factor,y=Pleioscore, fill=where)) + geom_violin() + theme_classic()
-  joined.pleio %<>% filter(factor %in% factors_of_interest) %<>% mutate("factor"=factor(factor,levels=rev(factors_of_interest)))
+  #ggplot(joined.pleio %>% dplyr::filter(factor %in% factors_of_interest), aes(x=factor,y=Pleioscore, fill=where)) + geom_violin() + theme_classic()
+  joined.pleio %<>% dplyr::filter(factor %in% factors_of_interest) %<>% mutate("factor"=factor(factor,levels=rev(factors_of_interest)))
   p <- ggplot(joined.pleio, aes(x=factor,y=Pleioscore, fill=where)) + geom_boxplot() + theme_classic(size) + coord_flip() +
     theme(legend.position="bottom") + guides(fill=guide_legend(ncol=1)) + 
     labs(fill=bquote(U^2)) + xlab("Pleiotropy score")
@@ -321,7 +321,7 @@ plotSelectivePressure <- function(f.in,
   selection <- fread(select.dat) 
   min.s <- min(selection$S_hat)
   max.s <- max(selection$S_hat)
-  selection %<>% filter(Factor %in% f.in)
+  selection %<>% dplyr::filter(Factor %in% f.in)
   selection$Factor <- factor(selection$Factor, levels=rev(f.in))
   if(type=="heatmap")
   {
@@ -344,7 +344,11 @@ plotSelectivePressure <- function(f.in,
 
 }
 
-overallNicePlot <- function(eval.factors,trait, scaled.V,U,joined.pleio,
+#sept 7 dropped pleioitropy
+#overallNicePlot <- function(eval.factors,trait, scaled.V,U,joined.pleio,
+#                            tissue.dat = "/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results/panUKBB_complete_61K/NONE_ldsc_enrichment_Multi_tissue_chromatin/plotting_table.csv",
+#                            ...)
+overallNicePlot <- function(eval.factors,trait, scaled.V,U,select_dat,
                            tissue.dat = "/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results/panUKBB_complete_61K/NONE_ldsc_enrichment_Multi_tissue_chromatin/plotting_table.csv",
                            ...)
 {
@@ -352,14 +356,15 @@ overallNicePlot <- function(eval.factors,trait, scaled.V,U,joined.pleio,
   barplots <- cowplot::plot_grid(plotlist = traitBarplots(trait, scaled.V,factor_list=eval.factors),ncol = 1)
   tissues <- plotNiceTissues(paste0("F",eval.factors), tissue.plotting.dat,...)
    #############
-  pleio.plot <- sidewaysPleioBarplot(joined.pleio,paste0("U",eval.factors))
+  #pleio.plot <- sidewaysPleioBarplot(joined.pleio,paste0("U",eval.factors))
   
   ############ Selective pressure
-  selective.pressure <- plotSelectivePressure(paste0("U",eval.factors))
+  selective.pressure <- plotSelectivePressure(paste0("U",eval.factors),select.dat = select_dat)
   
   ########### Number of effective SNPs and  sample
   polygen <- plotPolygenicity(U, paste0("U",eval.factors),type = "prop")
-  return(list(barplots,tissues, pleio.plot,selective.pressure,polygen))
+  #return(list(barplots,tissues, pleio.plot,selective.pressure,polygen))
+  return(list(barplots,tissues, selective.pressure,polygen))
 }
 
 
@@ -386,7 +391,7 @@ agreementWithLDSC <- function(V,traits, path="/scratch16/abattle4/ashton/snp_net
     {
       next
     }
-    all.in <- filter(joined.all, trait1 %in% l & trait2 %in% l)
+    all.in <- dplyr::filter(joined.all, trait1 %in% l & trait2 %in% l)
     if(nrow(all.in) < 1)
     {
       print(i)
@@ -504,7 +509,21 @@ pleioScoreByWilcox <- function(input.factor, pleio_scores, top_perc = 0.99, alph
   
 }
 
-
+loadGeneEnrichments <- function(factor, type, 
+                                path="/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results/panUKBB_complete_41K_final/top_elements_by_factor/")
+{
+  ret.list <- list()
+  old.mapping <- factor
+  dir=paste0(path,type)
+  ret.list$all_genes <- fread(paste0(dir, "/F", old.mapping, "_snp_gene_rank.csv"))
+  ret.list$set_genes <- fread(paste0(dir, "/F", old.mapping, "_genes_in_factor.txt"),header = FALSE)$V1
+  ret.list$bg_genes <- fread(paste0(dir, "/F", old.mapping, "_background_genes.txt"),header = FALSE)$V1
+  
+  ret.list$enrichments <- fread(paste0(dir, "/gene_factor_enrichments/F", old.mapping, ".joined_enrichments.txt"))
+  ret.list$enrichments_unique <- fread(paste0(dir, "/gene_factor_enrichments_unique/F", old.mapping, ".joined_enrichments.txt"))
+  ret.list
+  
+}
 
 pleioScoresAll <- function(u.dat, pleio_scores,...)
 {
@@ -516,4 +535,79 @@ plotPVEPretty <- function(pve_vector, factors, cin="gray", size=15)
   to.plot <- data.frame(factors,pve_vector) %>% mutate(factors = factor(factors, levels=factors))
   ggplot(to.plot, aes(x=factors,y=pve_vector))+geom_bar(stat="identity", color=cin) + theme_classic(size) + ylab("PVE") + 
     xlab("Factor")
+}
+
+
+
+## eenrichment test:
+#testEnrichment(f11.tp$set_genes, factor_titles, c(late_mk,mk_hmt),conf.level=0.90,alternative="greater")
+testEnrichment <- function(set_genes, bg_genes, gene_set,conf.level=0.95,alternative="two.sided")
+{
+  contingency.table <- t(matrix(c(sum(set_genes %in% gene_set),sum(!(set_genes %in% gene_set)),
+                                  sum(bg_genes %in% gene_set),sum(!(bg_genes %in% gene_set))), nrow = 2))
+  list("test" = fisher.test(contingency.table,alternative=alternative,conf.int =conf.level ), "tab"=contingency.table)
+}
+
+#testEnrichment(unique(f4.tp$set_genes),unique(f4.tp$bg_genes), early_Megakaryopoiesis),
+testEnrichmentPermutedUnique <- function(set_genes, bg_genes, gene_set,n_permute=10000, seed=NA,...)
+{
+  if(!is.na(seed)){set.seed(seed)}
+  permute.list <- list()
+  n.samp <- length(set_genes)
+  for(i in 1:n_permute)
+  {
+    #svMisc::progress(i,max.value=n_permute)
+    subsample.genes <- sample(bg_genes, n.samp)
+    permute.list[[i]] <- testEnrichment(unique(subsample.genes), unique(bg_genes), gene_set,...)
+    if(i %% 10000 == 0)
+    {
+      message("Iteration ", i)
+    }
+  }
+  #Now on the real set
+  real.vals <- testEnrichment(unique(set_genes), unique(bg_genes), gene_set,...)
+  #Interpret this elsewhere.....
+  perm.ors <- sapply(permute.list, function(x) x$test$estimate)
+  list("set_score"=real.vals, "permuted_p"=sum(perm.ors >= real.vals$test$estimate)/n_permute, "n_permute"=n_permute, "permuted_data"=permute.list)
+}
+
+
+#factor_sets = list(f4.tp$set_genes, f11.tp$set_genes, f23.tp$set_genes)
+#factor_titles <- c("F4","F11","F23")
+#sets_to_test <- list(early_Megakaryopoiesis,late_and_proto,cytoskeleton,platelet_function)
+#factor_sets,full.bg,factor_titles, sets_to_test,n_permute=1000
+tabEnrichmentTestPermuted <- function(factor_sets,full.bg,factor_titles, sets_to_test,gene_set_names,n_permute=1000,...)
+{
+  all.tests <- list() 
+  for(i in 1:length(factor_sets))
+  {
+    message("Factor set ",i, " of ", length(factor_sets) )
+    f <- factor_sets[[i]]
+    fname <- factor_titles[[i]]
+    all.tests[[factor_titles[[i]]]] <- lapply(sets_to_test, function(set)  testEnrichmentPermutedUnique(f,full.bg, set, n_permute = n_permute,...))
+  }
+
+  #Build the table
+  do.call("rbind", lapply(1:length(all.tests), function(i) {
+    dat <- all.tests[[i]]; fname = factor_titles[i]
+    data.frame("Factor" = rep(fname,length(dat)), "p-val" = sapply(dat, function(x) x$permuted_p), 
+               "OR"=  sapply(dat, function(x) x$set_score$test$estimate), 
+               "LOWER"=sapply(dat, function(x) x$set_score$test$conf.int[1]),
+               "UPPER"=sapply(dat, function(x) x$set_score$test$conf.int[2]),"Phase"=gene_set_names,
+               "num_genes"=sapply(dat, function(x) x$set_score$tab[1]),
+               "set_size"=sapply(sets_to_test, length),
+               "true_test_p"=sapply(dat, function(x) x$set_score$test$p.value))
+  })) %>%
+    mutate("p.val" = ifelse(p.val == 0, 1/n_permute,p.val)) %>% mutate("bonf.p" = p.adjust(p.val, method="bonferroni")) %>%
+    mutate("FDR" = p.adjust(p.val, method="BH")) %>%
+    mutate("p_sig"=ifelse(bonf.p < 0.05, "p < 0.05", "p > 0.05"))
+}
+
+
+loadMAFData <- function()
+{
+  full.snps <- fread("/data/abattle4/lab_data/GWAS_summary_statistics/PanUKBB/high_quality_common_variants_EUR.txt.bgz")
+  full.snps <- filter(full.snps,rsid %in% ret$snp.ids) #There are 2 redundant SNPs it looks like.
+  full.snps$maf <- sapply(full.snps$af_EUR, function(x) ifelse(x > 0.5, 1-x, x))
+  full.snps
 }

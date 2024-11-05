@@ -90,6 +90,7 @@ getM <- function(args_input)
   #args$block_covar <- 0.2 This is the issue
   input.dat <- readInData(args)
   X <- input.dat$X
+  #reg.vect <- prepRegressionElements(X,input.dat$W,input.dat$W_c,option) 
   return(ncol(X))
 }
 writeSlurmScript <- function(lines,outdir, job_name )
@@ -196,11 +197,11 @@ t= c(paste0("--gwas_effects=",p,"/panUKBB_complete_clumped_r2-0.2.beta.tsv"),
      paste0("--uncertainty=",p,"panUKBB_complete_clumped_r2-0.2.se.tsv"),
      paste0("--trait_names=",p,"/panUKBB_complete.trait_list.tsv"),
      paste0("--outdir=", fp, "/results/panUKBB_complete_41K_sklearn_eBIC/"),
-     "--fixed_first",  "--nfactors=GRID", "--bic_var=sklearn_eBI",
+     "--fixed_first",  "--nfactors=GRID", "--bic_var=sklearn_eBIC",
      paste0("--covar_matrix=", fp, "/ldsr_results/panUKBB_complete/summary_data/gcov_int_se.tab.csv"),
      paste0("--sample_sd=",p,"sample_sd_report.tsv"),"--WLgamma=Strimmer", 
      paste0("--covar_se_matrix=",fp,"/ldsr_results/panUKBB_complete/summary_data/gcov_int_se.tab.csv"),
-     "--job_name=dev-grid-search", "--time=24:00:00", "--partition=shared", "--memory=75G")
+     "--job_name=dev-grid-search", "--time=24:00:00", "--partition=shared", "--memory=75G", "--task=SCORE")
 
 
 
@@ -216,7 +217,7 @@ if(args_input$grid_K == "")
   k.range <- 1:(M-1)
 }
 
-
+message("Task is: ", args_input$task)
 if(args_input$task == "BUILD_JOBS")
 {
   init.range=4
@@ -232,8 +233,9 @@ if(args_input$task == "BUILD_JOBS")
   buildRunScripts(k.iter, args_input)
   
 }
-if(grepl(args_input$task, "SCORE"))
+if(grepl(x=args_input$task, pattern = "SCORE"))
 {
+  message("Scoring now....")
   files <- list.files(path = args_input$outdir, pattern = "*_bic_dat.RData")
   valid.k.measures <- which(grepl(files, pattern = "K[0-9]+"))
   performance.dat <- NULL
@@ -244,20 +246,24 @@ if(grepl(args_input$task, "SCORE"))
     load(paste0(args_input$outdir,f))
     ret.list[[f]] <- bic.dat
     performance.dat <- rbind(performance.dat, 
-                             c(k.val, bic.dat$min.dat$min_sum, bic.dat$min.dat$alpha, bic.dat$min.dat$lambda))
+                             c(k.val, bic.dat$min.dat$min_sum, bic.dat$min.dat$alpha, bic.dat$min.dat$lambda, ncol(bic.dat$min.dat$optimal.v)))
   }
-  performance.dat <- data.frame(performance.dat) %>% magrittr::set_colnames(c("Kinit", "BIC_sum","alpha", "lambda")) %>% mutate_all(as.numeric)
+  performance.dat <- data.frame(performance.dat) %>% magrittr::set_colnames(c("Kinit", "BIC_sum","alpha", "lambda", "Kend")) %>% mutate_all(as.numeric)
   
-  performance.dat$bic_global <- getGlobalBICSum(ret.list)
+  performance.dat$bic_global <- getGlobalsBICSum(ret.list)
+  message("Performance so far")
+  print(performance.dat)
   grid_record <- list("curr_runs"=performance.dat, "test_dat"=ret.list)
   next.params.dat <- gatherSearchData(ret.list,k.range,grid_record)
   next.params.to.try <- next.params.dat$next_params
+  print(next.params.to.try)
   #best_k = performance.dat$K[which.min(performance.dat$bics_global)]
   #grid <- list("BIC"=performance.dat$BIC_sum, "K"=performance.dat$K)
   #next.params.to.try <- chooseNextParams(best_k, grid,k.range)
-  
-  if(grepl(args_input$task, "BUILD"))
+  write.table(performance.dat, file = paste0(args_input$outdir, "_performance_global_bic_scores.txt"))
+  if(grepl(x=args_input$task, pattern="BUILD"))
   {
+    message("Now building in.. ",args_input$outdir)
     buildRunScripts(unlist(next.params.to.try$K), args_input)
   }
 

@@ -1,5 +1,5 @@
-Package: gwasMF
-Title: Sparse Loadings Underlying GWAS Summary Statistics (SLUGS)
+Package: gleanr
+Title: GWAS latent embeddings accounting for noise and regularization
 Version: 0.0.0.9000
 Authors@R: 
     person("Ashton", "Omdahl", , "aomdahl1@jhu.edu", role = c("aut", "cre"),
