@@ -5,37 +5,17 @@
 ################################################################################################################################
 
 
-########################################### Functions for tracking updates #####################################################
-##Examining possible convergence settings
-trackAlternativeConvergences <- function(X,W,W_c, U,V, index, record.data, u.alphamax, v.lambdamax, option_old)
-{
-  message(dim(U))
-  message(dim(V))
-  track.modes <- list()
-  #simple sum mode
-  EPSILON = 1e-4
-  track.modes[["simple.sum"]] = record.data$alpha.s[[index]] + record.data$lambda.s[[index]]
-  track.modes[["U.norm"]] = norm(U, "F")
-  track.modes[["V.norm"]] = norm(V, "F")
-  track.modes[["U"]] = U #For memory?
-  track.modes[["V"]] = V #For memory?
-  #scaled sum mode
-  track.modes[["lambda.max"]] <-  v.lambdamax
-  track.modes[["alpha.max"]] <- u.alphamax
-  track.modes[["alpha.scaled"]] <- record.data$alpha.s[[index]]/u.alphamax
-  track.modes[["lambda.scaled"]] <- record.data$lambda.s[[index]]/v.lambdamax
-  track.modes[["scaled.sum"]] = record.data$alpha.s[[index]]/u.alphamax + record.data$lambda.s[[index]]/v.lambdamax
-            track.modes[["bic.alpha"]] = record.data$bic.a[[index]]
-              track.modes[["bic.lambda"]] = record.data$bic.l[[index]]
+########################################### Functions for tracking convergence/model fitting progression ###########################################
 
-             option <- option_old
-              option$fixed_ubiq <- TRUE
-              option$alpha1 <- record.data$alpha.s[[index]]
-              option$lambda1 <-  record.data$lambda.s[[index]]
-              track.modes[["decomp.obj"]] <- compute_obj(X, W, W_c, U, V, option, decomp = TRUE)
-              track.modes
-}
-
+#' Update sparsity parameter list with next selection
+#' Notify user if there was a large jump in the sparsity parameters.
+#' @param prev.list list of sparsity parameters so far
+#' @param new new parameter proposed
+#' @param errorReport Setting if we want to give extra information
+#'
+#' @return updated list of sparsity parameters
+#' @export
+#'
 UpdateAndCheckSparsityParam <-  function(prev.list, new, errorReport = FALSE)
 {
  if(!is.null(prev.list))
@@ -45,7 +25,7 @@ UpdateAndCheckSparsityParam <-  function(prev.list, new, errorReport = FALSE)
 	  new <- new[1]
 	if( errorReport & !is.null(prev.list) > 1 & (abs(new-prev)/prev > 1.5))
 	  {
-	    message("WARNING: large jumpy in sparsity parameter encountered....")
+	    message("WARNING: large jump in sparsity parameter encountered....")
 	    message("Current: ", prev)
 	    message("New: ", new)
 	  }
@@ -278,6 +258,52 @@ checkConvergenceBICSearch <- function(index, record.data, conv.perc.thresh = 0.0
 
 }
 
+
+#' Track alternative source of convergence. Primarily experimental, to identify alternatives to the objective
+#'
+#' @param X
+#' @param W
+#' @param W_c
+#' @param U
+#' @param V
+#' @param index whcih iteration we are currently on
+#' @param record.data
+#' @param u.alphamax - the maximum possible sparsity parameter for a given input X, V (||y'X||_INF)
+#' @param v.lambdamax  - the maximum possible sparsity parameter for a given input X, U (||y'X||_INF)
+#' @param option_old
+#'
+#' @return track.modes list containing possible convergence criteria, including V and U norms
+#' @export
+#'
+#' @examples
+trackAlternativeConvergences <- function(X,W,W_c, U,V, index, record.data, u.alphamax, v.lambdamax, option_old)
+{
+  track.modes <- list()
+  #simple sum mode
+  EPSILON = 1e-4
+  track.modes[["simple.sum"]] = record.data$alpha.s[[index]] + record.data$lambda.s[[index]]
+  track.modes[["U.norm"]] = norm(U, "F")
+  track.modes[["V.norm"]] = norm(V, "F")
+  track.modes[["U"]] = U #For memory?
+  track.modes[["V"]] = V #For memory?
+  #scaled sum mode
+  track.modes[["lambda.max"]] <-  v.lambdamax
+  track.modes[["alpha.max"]] <- u.alphamax
+  track.modes[["alpha.scaled"]] <- record.data$alpha.s[[index]]/u.alphamax
+  track.modes[["lambda.scaled"]] <- record.data$lambda.s[[index]]/v.lambdamax
+  track.modes[["scaled.sum"]] = record.data$alpha.s[[index]]/u.alphamax + record.data$lambda.s[[index]]/v.lambdamax
+  track.modes[["bic.alpha"]] = record.data$bic.a[[index]]
+  track.modes[["bic.lambda"]] = record.data$bic.l[[index]]
+
+  option <- option_old
+  option$fixed_ubiq <- TRUE
+  option$alpha1 <- record.data$alpha.s[[index]]
+  option$lambda1 <-  record.data$lambda.s[[index]]
+  track.modes[["decomp.obj"]] <- compute_obj(X, W, W_c, U, V, option, decomp = TRUE)
+  track.modes
+}
+
+
 ################# Miscellaneous helper functions ###################################################
 
 #' Estimator of the lasso degrees of freedom as the # of non-zero coefficients
@@ -454,7 +480,6 @@ BICglm <- function(fit, bic.mode = ""){
 #' @export
 #'
 #' @examples
-#' #(fit,covars,y)
 sklearnBIC <- function(fit,x,y, bic.mode = "")
 {
   #message("using SKlearn")
@@ -562,8 +587,24 @@ extractMinBicDat <- function(bic.dat, min.index)
   )
 }
 
-#gwasML_ALS_Routine(opath, option, X, W, bic.dat$optimal.v)
-# gwasML_ALS_Routine(opath, option, X, W, bic.dat$optimal.v)
+
+#' Model fitting routine, using the updateUV function
+#'
+#' @param option list of runtime options
+#' @param X
+#' @param W
+#' @param W_c
+#' @param optimal.init V at which to initialize the run, typically the output from a model selection step
+#' @param maxK specify how many K max to include. Factors will be removed if they exceed this.
+#' @param opath optional path to write out to for saving RData
+#' @param no.prune if no pruning of factors is to occur
+#' @param reg.elements list with pre-weighted regression variables
+#' @param ...
+#'
+#' @return list object with final U and V and convergence information
+#' @export
+#'
+#' @examples
 gwasML_ALS_Routine <- function(option, X, W,W_c, optimal.init, maxK=0, opath = "", no.prune = FALSE,reg.elements=NULL,...)
 {
 
@@ -576,7 +617,7 @@ gwasML_ALS_Routine <- function(option, X, W,W_c, optimal.init, maxK=0, opath = "
     if(ncol(reg.run$V) > maxK)
     {
       message("More columns identified than specified by the user.")
-      message("gleaner now parsing down to desired number of factors")
+      message("gleanr now parsing down to desired number of factors")
 
     }
     if(ncol(reg.run$V) < maxK)
@@ -591,19 +632,8 @@ gwasML_ALS_Routine <- function(option, X, W,W_c, optimal.init, maxK=0, opath = "
     reg.run <- PruneNumberOfFactors(X,W,W_c,reg.run,option$Kmin, maxK, option)
     reg.run <- OrderEverythingByPVE(reg.run,X,W, W_c,option, jointly = FALSE)
 
-  save(reg.run, file = paste0(option$out,opath, "_gwasMF_iter.Rdata" ))
-  #print(paste0(option$out,opath, "_gwasMF_iter.Rdata" ))
+  save(reg.run, file = paste0(option$out,opath, "_gleanr_iter.Rdata" ))
 
-  if(option$plots)
-  {
-    o <- data.frame("rownames" = colnames(X), reg.run$V)
-    write.table(o, file =  paste0(option$out,opath, ".factors.txt"), quote= FALSE, row.names = FALSE)
-    source("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/src/plot_functions.R")
-    title <- paste0("A=",reg.run$autofit_alpha[1], "Lambda=",reg.run$autofit_lambda[1])
-    plotFactors(apply(reg.run$V, 2, function(x) x/norm(x, "2")), trait_names = o$rownames, title = title)
-    ggsave(paste0(option$out,opath, ".factors.png"))
-  }
-  #DEBUGGING: objective differs:
 return(reg.run)
 }
 
