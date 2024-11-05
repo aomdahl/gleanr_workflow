@@ -8,7 +8,7 @@
 ########### Functions I don't think I need any more #######
 
 
-########################################### Functions for tracking updates ##########################################################
+########################################### Functions for tracking updates #######################################################
 #Experimental functions
 ##Examining possible convergence settings
 trackAlternativeConvergences <- function(X,W,W_c, U,V, index, record.data, u.alphamax, v.lambdamax, option_old)
@@ -39,7 +39,6 @@ trackAlternativeConvergences <- function(X,W,W_c, U,V, index, record.data, u.alp
               track.modes[["decomp.obj"]] <- compute_obj(X, W, W_c, U, V, option, decomp = TRUE)
               track.modes
 }
-
 
 UpdateAndCheckSparsityParam <-  function(prev.list, new, errorReport = FALSE)
 {
@@ -223,7 +222,67 @@ updateRecDat <- function(rec.dat, mat.fit, matrix_on, iter,X,W,W_c, optimal_comp
   return(rec.dat)
 }
 
+#Convergence criteria for the BIC ssearch
+#Converges when K is unchanging from one run to the next, and the percentage size change in the alpha/lambda paramters is less than 5%
+#Might consider making this more generous- if it stays on the same log scale, then that is probably good enough....
+checkConvergenceBICSearch <- function(index, record.data, conv.perc.thresh = 0.05, conv.mode = "SEPARATE")
+{
+  if(index > 10)
+  {
+    message("Late stage convergence, terminate soon....")
+  }
+  conv.K <- record.data$Ks[[index]] == record.data$Ks[[index-1]]
+  if(conv.mode == "COMB.SUM")
+  {
+    message("Need to test and debug still, but okay")
+    EPSILON = 1e-4
+    sum.prev = record.data$alpha.s[[index-1]] + record.data$lambda.s[[index-1]]
+    sum.curr = record.data$alpha.s[[index]] + record.data$lambda.s[[index]]
 
+    return(  conv.K & (sum.prev - sum.curr) < EPSILON)
+
+  }else if(conv.mode == "BIC.change")
+  {
+    #Goes until the BIC stops dropped, or the change crosses 0.
+    #I think maybe you need a better condition.. if you stop too soon you miss a nice minimum somewhere else.
+    sum.bic.score <- record.data$bic.a + record.data$bic.l
+    #at which iteration is our search no longer decreasing? TRUE = still decreasing
+    delta.bic.score <- sapply(2:length(sum.bic.score), function(i) sum.bic.score[i-1] > sum.bic.score[i])
+    li <- length(delta.bic.score)
+    #if(any((!delta.bic.score)))
+    if(!delta.bic.score[li]) #The last element is NOT decreasing relative to the previous
+    {
+      #CAse 1- we've only been increasing so far, give it some more time
+      if(all(!delta.bic.score)) #all have been increasing
+      {
+        message("BIC has only increased after minimum iterations. Continuing search")
+        return(FALSE)
+      }else{      return(TRUE) } #Case 2 we end here, not searching anymore.
+    }else
+    {
+      return(FALSE)
+    }
+
+
+  }  else if(conv.mode == "mat.change")
+  {
+    if(norm(record.data$Vs[[index]], "f") -  norm(record.data$Vs[[index-1]], "f") < 1e-4){return(TRUE)}
+    return(FALSE)
+  }
+  else
+  {
+    queries <- c(conv.K,
+                 abs(record.data$alpha.s[[index]] - record.data$alpha.s[[index-1]])/record.data$alpha.s[[index-1]] < conv.perc.thresh,
+                 abs(record.data$lambda.s[[index]] - record.data$lambda.s[[index-1]])/record.data$lambda.s[[index-1]] < conv.perc.thresh)
+    return(all(queries))
+  }
+
+
+
+
+}
+
+################# Miscellaneous helper functions ###################################################
 
 #' Estimator of the lasso degrees of freedom as the # of non-zero coefficients
 #'
@@ -251,89 +310,39 @@ MatrixDFU <- function(mat_in,fixed_first = FALSE)
   #This seems like it would favor sparsity?
 }
 
-#CalcMatrixBIC(X,W,U,V,df=df,fixed_first = fixed_first,...)
-#Note- we assume input to already be in the correct direction, so no transfofmration eeded on the covariance term...
-CalcMatrixBIC <- function(X,W,U,V, W_cov = NULL, ev="std", weighted = FALSE, df = NULL, fixed_first = FALSE, learning = "V")
+#Empty means all the terms are 0.
+DropEmptyColumns <- function(matin,option)
 {
-  `%>%` <- magrittr::`%>%`
-  #Calculated based on my understanding of what is given by equations 12 and 7 in Lee et al 2010
-  #We assume U (First term) is known/fixed, V is our predictor we evaluate here
-  #11/17 UPDATE: df is calculated for U and V!
-  if(!weighted)
+  #DTTFT
+  message("In the right version of this?")
+  matin <- as.matrix(matin)
+  c <- colSums(matin != 0)
+  ret.option <- option
+  if(any(c == 0))
   {
-    message("unweighted, alert.")
+    #print("dropping")
+    drops <- which(c == 0)
+    if(1 %in% drops & option$fixed_ubiq){
+      #message("Ubiqitous factor was removed. ")
+      #message("gleaner now lifting the regularization constraint on 1st factor. Keep an eye on the objective.")
+      ret.option$fixed_ubiq <- FALSE
+    }
+    return(list("updatedMatrix" = as.matrix(matin[,-drops]), "updatedOptions"=ret.option))
   }
-  n=nrow(X)
-  d = ncol(X)
-  #if(fixed_first) FF$
-  #This shouldn't make a difference, resiudals will be unchanged.
-  #TODO: remove this.
-  if(fixed_first)  #if(FALSE) FF$
-  {
-	  #message("Removing first factor because its fixed")
-	  #Regress out of X the first factor effects.
-	  #Remove the first factor from the downstream steps
-	  X <- X -  (U[,1] %*% t(V[,1]))
-	  V <- V[,-1]
-	  U <- U[,-1]
-  }
+  return(list("updatedMatrix" = matin, "updatedOptions"=ret.option))
+}
 
-  #its possible the matrices are different sizes, depending on which stage of the fitting they get passed in. Correct for this:
-  #aligned <- AlignFactorMatrices(X,W,U,V); U <- aligned$U; V<- aligned$V
-  k = ncol(U)
-  if(!weighted)
-  {
-    message("not weighting here..")
-    W <- matrix(1, nrow = nrow(X), ncol = ncol(X))
-  }
-  if(ev =="std" )
-  {
-    errvar <- AltVar(X,U)
-  }else if(ev == "ols" & weighted)
-  {
-    errvar <- WeightedAltVar(X,W,U, var.method = bic.var, W_cov = W_cov)
-  }
-  else # anuumber gets passed in.
-  {
-    message("in correct place...")
-    #print(ev)
-    errvar = ev
-  }
+#Same as the above, but for magrittr piping (not actually used.)
+DropEmptyColumnsPipe <- function(lin,options)
+{
+  ret.lin <- lin
+  ret.lin[[1]] <- DropEmptyColumns(lin[[1]],options)
+  return(ret.lin)
 
-  if(is.null(df))
-  {
-	  message("something went wrong,..")
-    df <- MatrixDFU(V)
-  }
-
-  if(is.null(W_cov))
-  {
-    W_cov <- diag(nrow(X))
-  }
-
-  #I was doing this wrong previously.
-  #If we reotated things, we need to rotate them back....
-  if(learning == "U")
-  {
-    u.old <- U;
-    U <- V ; V <- u.old
-    X <- t(X); W <- t(W);
-  }
-  if(learning == "V")
-  {
-    message("Currently no covariance on U")
-    W_cov = NULL
-  }
-  resid.matrix <- calcGlobalResiduals(X,W,U,V, W_cov = W_cov, fixed_first = fixed_first)
-  stopifnot(any(!is.null(resid.matrix)))
-  ret <- norm(resid.matrix, type = "F")^2/(n*d * errvar) + (log(n*d)/(n*d))*df
-  #message("Total ", ret)
- #message(". ")
-
-  return(ret)
 }
 
 
+########################################### Functions calculating the BIC ####################################################
 #' Wrapper for all BIC methods under consideration.
 #'
 #' @param fit glmnet object
@@ -345,11 +354,9 @@ CalcMatrixBIC <- function(X,W,U,V, W_cov = NULL, ev="std", weighted = FALSE, df 
 #' and addends (non-consant vector of additional terms, usually eBIC. Should not include constant single terms.), and n.coef- how many coefficients in the maximally testeed model.
 #'
 #' @export
-#' #' #TODO: something here is converting a sparse to a dense matrix, need to figure it out. happens in sklearn_ebic
+#' #' #TODO: In some instances, sklearn_ebic converts input matrices into "dense" matrix object. Want to avoid this.
 calculateBIC <- function(fit, covars,y, bic.mode)
 {
-
-    message("Calculating now...", bic.mode)
     switch(
     bic.mode,
     "sklearn_eBIC"= extendedBIC(sklearnBIC(fit,covars,y), fit),
@@ -438,8 +445,6 @@ BICglm <- function(fit, bic.mode = ""){
        "n.coef"=nrow(coef(fit)[-1,]))
 }
 
-# sklearnBIC(fit, long.v, long.x)
-
 #' Calculate BIC based on what is in the sci-kit learn package (see https://scikit-learn.org/stable/modules/linear_model.html#lasso-lars-ic)
 #' this differs from the traditional derivation, in that the use the unbiased estimate for s rather than the MLE.
 #' Source code is here https://github.com/scikit-learn/scikit-learn/blob/872124551/sklearn/linear_model/_least_angle.py#L1991
@@ -454,7 +459,6 @@ BICglm <- function(fit, bic.mode = ""){
 #'
 #' @examples
 #' #(fit,covars,y)
-
 sklearnBIC <- function(fit,x,y, bic.mode = "")
 {
   #message("using SKlearn")
@@ -511,12 +515,7 @@ sklearnBIC <- function(fit,x,y, bic.mode = "")
 
 
 }
-#sklearn.param.term <- log(n)*fit$df
-#sklearn.fit.term <- n*log(2*pi*self.noise.variance) + sse/self.noise.variance
-#dev.param.term <- log(n)*k
-# dev.fit.term <- -deviance(fit)
-#all(dev.param.term == sklearn.param.term)
-#dev.bic <- BICglm(fit)
+
 ZouBIC <- function(fit, x, y, var.meth = "mle")
 {
   n <- nobs(fit)
@@ -554,696 +553,17 @@ ZouBIC <- function(fit, x, y, var.meth = "mle")
 
 }
 
-
-#' BIC using global fit calculation instead of sum of each regression's liklihood
-#' Note that this doesn't require any fancy counting on the residuals, since all are just lumped into one regression
-#' @param X original data matrix (SNPs x studies)
-#' @param W uncertainty associated with X (SNPs x studies)
-#' @param U SNPs x K matrix
-#' @param V Studies x K matrix
-#' @param W_cov Covariance matrix to correct for. For now just implemented in U.
-#' @param which.learning if we are learning "V" or "U"
-#' @param df degrees of freedom associated with matrix currently learning
-#' @param lm.fit.residuals Specify these to scale the log-liklihood by the optimal OLS fit. Not recommended.
-#'
-#' @return
-#' @export
-CalcMatrixBIC.loglikGLOBALversion <- function(X,W,U,V, which.learning, W_cov = NULL, df = NULL, lm.fit.residuals = NULL, decomp = FALSE,...)
+extractMinBicDat <- function(bic.dat, min.index)
 {
-  `%>%` <- magrittr::`%>%`
-  n=nrow(X)
-  d = ncol(X)
-  k = ncol(U)
-  #Residuals are the same regardless of
-  #extend_the_weighting
-  #remove conditions below
-  resids = calcGlobalResiduals(X,W,U,V,W_cov=W_cov,...)
-
-  #if(which.learning == "U")
-  #{
-  #  resids = calcGlobalResiduals(X,W,U,V,W_cov=W_cov,...)
-  #}else
-  #{
-    #why is this condition here? might just make thigns complex.
-  #  resids = calcGlobalResiduals(X,W,U,V, W_cov = NULL,...)
-  #}
-
-  #model.ll = penLL(n*d, resids)
-  model.ll = penLLSimp(n,d,resids)
-  #The following was tested on 3/17. It doesn't work, my derivation is wrong. I am missing something in the log.
-  #message("Compare this to...")
-  #print(penLLEmpirical(n*d, resids))
-  #message("Trying to look at things differently")
-  #model.ll=penLLEmpirical(n*d, resids)
-  if(is.null(df))
-  {
-    df <- MatrixDFU(V)
-  }
-  #message("Not scaling by n*d here anymore...")
-  #ret <- -model.ll + (log(n*d)/(n*d))*df
-  if(decomp)
-  {
-    message("log fit: ", -2*model.ll)
-    message("df term: ", log(n*d)*df)
-  }
-  if(which.learning == "U" & df == 0)
-  {
-    message("Red alert: we have zeroed out everything")
-    message("This means our model thinks there is no signal whatsoever. Also possible.")
-  }
-    ret <- -2*model.ll + log(n*d)*df
-    if(!is.null(lm.fit.residuals))
-    {
-      lm.ll = penLL(n*d, lm.fit.residuals)
-      ret <- lm.ll/(model.ll) + (log(n*d)/(n*d))*df
-    }
-  return(ret)
-}
-
-
-
-#' BIC using global fit calculation and the optimizing log-liklihood (a normal form)
-#' Note that this doesn't require any fancy counting on the residuals, since all are just lumped into one regression
-#' @param X original data matrix (SNPs x studies)
-#' @param W uncertainty associated with X (SNPs x studies)
-#' @param U SNPs x K matrix
-#' @param V Studies x K matrix
-#' @param W_cov Covariance matrix to correct for. For now just implemented in U.
-#' @param which.learning if we are learning "V" or "U"
-#' @param df degrees of freedom associated with matrix currently learning
-#' @param lm.fit.residuals Specify these to scale the log-liklihood by the optimal OLS fit. Not recommended.
-#'
-#' @return
-#' @export
-CalcMatrixBIC.NormalLoglikGLOBALversion <- function(X,W,U,V, which.learning, W_cov = NULL, df = NULL, calc.residual.variance = FALSE, decomp = FALSE,...)
-{
-  `%>%` <- magrittr::`%>%`
-  n=nrow(X)
-  d = ncol(X)
-  k = ncol(U)
-  #Residuals are the same regardless of
-  if(which.learning == "U")
-  {
-    resids = calcGlobalResiduals(X,W,U,V,W_cov=W_cov,...)
-  }else
-  {
-    resids = calcGlobalResiduals(X,W,U,V, W_cov = NULL,...)
-  }
-  residual.variance =1
-  if(calc.residual.variance)
-  {
-    residual.variance = CalcVariance(n*d, resids)
-  }
-
-  model.ll = stdLogNormalFit(resids, residual.variance=residual.variance)
-  if(is.null(df))
-  {
-    df <- MatrixDFU(V)
-  }
-
-  if(decomp)
-  {
-    message("log fit: ", -2*model.ll)
-    message("df term: ", log(n*d)*df)
-  }
-  if(which.learning == "U" & df == 0)
-  {
-    message("Red alert: we have zeroed out everything")
-    message("This means our model thinks there is no signal whatsoever. Also possible.")
-  }
-  ret <- -2*model.ll + log(n*d)*df
-  if(!is.null(lm.fit.residuals))
-  {
-    lm.ll = penLL(n*d, lm.fit.residuals)
-    ret <- lm.ll/(model.ll) + (log(n*d)/(n*d))*df
-  }
-  return(ret)
-}
-
-
-
-
-#Determine the variance using OLS. Basically, this is the "best" residual variance we can get.
-AltVar <- function(X,U)
-{
-  resids <- c()
-  for(col in 1:ncol(X))
-  {
-    fit <- lm(X[,col]~U)
-    resids <- c(resids, resid(fit))
-  }
-  n = length(resids)
-  (var(resids)* (n - 1)) / n
-}
-
-#WeightedAltVar(t(X),t(W),initV)
-#Determine the variance using OLS. Basically, this is the "best" residual variance we can get.
-
-WeightColumnHelper <- function(w,x,U)
-{
-  return(list("wx"=w*x, "wu" = w*U))
-}
-
-#Meant to help regress out one learned component at a time.
-#not actually that helpful
-#mc is the matrix component to pull out.
-RegressOutMatrixComponent <- function(X,W,mc)
-{
-  ret <- matrix(NA, nrow = nrow(X), ncol = ncol(X))
-  for(col in 1:ncol(X))
-  {
-    w <- unlist(W[,col])
-    wx <- (w*X[,col])
-    wu <- w * mc
-    fit <- lm(wx~wu + 0)
-    fitted <- mc*coef(fit)
-    ret[,col] <- X[,col] - fitted
-  }
-  return(ret)
-}
-
-WeightedAltVar <- function(X,W,U, var.method = "mle", fit.resids = FALSE, W_cov = NULL)
-{
-  if(is.null(W_cov))
-  {
-    W_cov <- diag(nrow(X))
-    message("filling in with blank W")
-    print(dim(W_cov))
-  }
-  n <- nrow(X) * ncol(X)
-  resids <- c()
-  fit.mat.dat <- NULL
-  for(col in 1:ncol(X))
-  {
-    w <- unlist(W[,col])
-    wx <- W_cov %*% (w*X[,col])
-    wu <- W_cov %*% (w * U)
-    fit <- lm(wx~wu + 0)
-    resids <- c(resids, resid(fit))
-    if(fit.resids)
-    {
-      fit.mat.dat <- rbind(fit.mat.dat, unlist(residuals(fit)))
-    }
-  }
-  stopifnot(length(resids) == n)
-  r = 0
-  if(var.method == "unbiased")
-  {
-    message("unbiased")
-    p <- ncol(U) * ncol(X)
-    r = (1/(n-p))*sum(resids * resids)
-  }else if(var.method == "map")
-  {
-    message("map")
-    alpha <- 0.001
-    beta <- 0.001
-    den <- (alpha + n/2 - 1)
-    num <- beta + 0.5*sum(resids * resids)
-    r <- num/den
-  }else if(var.method == "mle") #MLE
-  {
-    #message("mle")
-    p <- 0
-    r = sum(resids * resids)/n
-  } else #var method = std
-  {
-    message("std method.")
-    r <- var(resids)
-  }
-
-  #print("my calculated r is:")
-  #print(r)
-  #print("mle var")
-  #print((var(resids) * (n-1) )/ n)
-  #print(r)
-  #This is equivilant to all ther terms being put into one matrix
-  if((sum(resids * resids) == 0))
-  {
-    message("No residual variance with current fit.")
-    print(r)
-    message("Be wary here- not clear what to do. Going to just approximate to small number")
-    message("This is strong evidence of overfitting- we recommend dropping current factors.")
-    message("Current U dims:")
-    print(dim(U))
-    #this would be easy enough to do, if we had everything in "PVE" order.
-    r = 1e-10
-  }
-  if(fit.resids)
-  {
-    return(list("resid.var" = r, "resids" = as.matrix(fit.mat.dat)))
-  }
-  return(r)
-}
-
-#Helper calls
-CalcVBIC <- function(X,W,U,V,fixed_first=FALSE,lm.resid = NULL,...)
-{
-  #message("Harding coding fixed_first = FALSE on all BIC calculations")
-  #fixed_first = FALSE
-  df.dat=MatrixDFU(V,fixed_first=fixed_first)
-  var.based.bic <- NA
-
-  ll.based.bic <- NA
-  ll.based.bic.ratio <- NA
-  ll.global.bic <- CalcMatrixBIC.loglikGLOBALversion(X,W,U,V, which.learning = "V", df = df.dat,fixed_first=fixed_first)
-                                                           #lm.fit.residuals = lm.resid,fixed_first=fixed_first) #OMIT THIS.
-ll.global.ratio.bic <- NA
-  return(list(var.based.bic,ll.based.bic,ll.based.bic.ratio,ll.global.bic,ll.global.ratio.bic)) #WE LIKE options 1,2,4
-}
-
-CalcUBIC <- function(X,W,W_c, U,V,lm.resid = NULL,...)
-{
-  df.dat <-  MatrixDFU(U)
-  #var.based.bic <- CalcMatrixBIC(t(X),t(W),V,U,df=df.dat,W_cov = W_c, learning = "U",...)
-  #And now, the alternative versions:
-  ll.global.bic <- CalcMatrixBIC.loglikGLOBALversion(X,W,U,V, which.learning = "U", df = df.dat, W_cov = W_c)
-
-  var.based.bic <- NA
-  ll.based.bic <- NA
-  ll.based.bic.ratio <- NA
-  ll.global.ratio.bic <- NA
-  return(list(var.based.bic,ll.based.bic,ll.based.bic.ratio,ll.global.bic,ll.global.ratio.bic)) #WE LIKE options 1,2,4
-}
-
-
-#Fit the V with the scheme:
-#Iniital estimates from burn.in.sparsity and consider.parsm
-FitVs <- function(X, W,W_c, initU, lambdas,option, weighted = FALSE,reg.elements=NULL)
-{
-  bic.var = option$bic.var
-  f.fits <- list()
-  bics <- c()
-
-  for(i in 1:length(lambdas))
-  {
-    l <- lambdas[[i]]
-    option$lambda1 <- l
-    # f.fits[[i]] <- fit_V(X, W, initU, option, formerV = NULL) #I forgot to change this: need to re-run objective tests now >_<
-    f.fits[[i]] <- FitVWrapper(X, W,W_c, initU, option, formerV = NULL,reg.elements=reg.elements)
-  }
-
-  if(weighted) {
-    #option$fixed_ubiq <- FALSE
-    #if(option$fixed_ubiq) FF$
-    message("CURRENTLY SKIPPING the fixed ubiq accomodations for BIC calculation.")
-    if(option$fixed_ubiqs & FALSE)  #if(FALSE) FF$
-    {
-      #If we are down to just 1 column, don't calculate BICs, there is no point anymore.
-      if(ncol(initU) == 1)
-      {
-        #If we have fixed_ubiq and down to 1 column, it doesn't matter
-        message("Down to just 1 column, all BIC the same now.")
-        return(list("fits" = f.fits, "BIC"=rep(0,length(lambdas))))
-      }
-      Xr <- RegressOutMatrixComponent(X,W,initU[,1])
-      #this should be different for each one, because the fixed column differs
-      #this would unfairly advantage fits with more information in factor 1. Doesn't work.
-      #In practice, I think this is not different at all from just calculating the weighted variance normally, except
-      #That in the variance calculation, they no longer get the benefit of that first factor
-      #message("Note: these functions may need to be need to be adjusted- each V1 is different, so each Xr is different that would be learned.")
-      #Current setup seems reasonable, but best would be to have 1 for each
-      av <- WeightedAltVar(Xr,W,as.matrix(initU[,-1]), var.method = bic.var, fit.resids  = TRUE)
-    }else
-    {
-      av <- WeightedAltVar(X,W,initU, var.method = bic.var, fit.resids  = TRUE)
-    }
-    #bics <- do.call("rbind", lapply(f.fits, function(x) CalcVBIC(X,W,initU,x$V, ev=av[[1]], lm.resid = av[[2]], weighted = TRUE, fixed_first = option$fixed_ubiqs)))
-    bics <- do.call("rbind", lapply(f.fits, function(x) CalcVBIC(X,W,initU,x$V/x$s, ev=1, lm.resid = av[[2]], weighted = TRUE, fixed_first = option$fixed_ubiqs)))
-  }else{ #unweighted
-    av <- AltVar(X,initU)
-    bics <- do.call("rbind", lapply(f.fits, function(x) CalcVBIC(X,W,initU, x$V/x$s, ev=av[[1]],lm.resid = av[[2]], fixed_first = option$fixed_ubiqs)))
-  }
-  if(Inf %in% bics)
-  {
-    message("Error here: INF in BIC")
-    quit()
-  }
-  return(list("fits" = f.fits, "BIC"=bics))
-}
-#Helper function to get rid of empty columns in the data.
-#Empty means all the terms are 0.
-DropEmptyColumns <- function(matin,option)
-{
-  #DTTFT
-  message("In the right version of this?")
-  matin <- as.matrix(matin)
-  c <- colSums(matin != 0)
-  ret.option <- option
-  if(any(c == 0))
-  {
-    #print("dropping")
-    drops <- which(c == 0)
-    if(1 %in% drops & option$fixed_ubiq){
-      #message("Ubiqitous factor was removed. ")
-      #message("gleaner now lifting the regularization constraint on 1st factor. Keep an eye on the objective.")
-      ret.option$fixed_ubiq <- FALSE
-    }
-    return(list("updatedMatrix" = as.matrix(matin[,-drops]), "updatedOptions"=ret.option))
-  }
-  return(list("updatedMatrix" = matin, "updatedOptions"=ret.option))
-}
-
-#Same as the above, but for magrittr piping (not actually used.)
-DropEmptyColumnsPipe <- function(lin,options)
-{
-  ret.lin <- lin
-  ret.lin[[1]] <- DropEmptyColumns(lin[[1]],options)
-  return(ret.lin)
-
-}
-
-#Recalculate the sparsity params for U
-#U returned is res-caled up
-FitUs <- function(X, W, W_c, initV, alphas,option, weighted = FALSE, reg.elements = NULL)
-{
-  bic.var = option$bic.var
-  l.fits <- list()
-  for(i in 1:length(alphas))
-  {
-    a <- alphas[[i]]
-    message(i)
-    option$alpha1 <- a
-    #l.fits[[i]] <- fit_U(X, W, W_c, initV, option)
-    #change made here...3/8
-    l.fits[[i]] <- FitUWrapper(X, W, W_c, initV, option,reg.elements=reg.elements)
-
-  }
-  #TODO: recode this, so don't need the logic statement. Downstream should be able to handle it
-  if(weighted) {
-    av <- WeightedAltVar(t(X),t(W),initV, var.method = bic.var, fit.resids  = TRUE, W_cov = W_c)
-    #bics <- do.call('rbind', lapply(l.fits, function(x) CalcUBIC(X,W,W_c,as.matrix(x$U),initV, ev=av[[1]], weighted = TRUE, lm.resid=av[[2]])))
-    bics <- do.call('rbind', lapply(l.fits, function(x) CalcUBIC(X,W,W_c,as.matrix(x$U / x$s),initV, ev=1, weighted = TRUE, lm.resid=av[[2]])))
-  }else{
-    av <- AltVar(t(X),initV, fit.resids = TRUE) #This step is quite slow.... need to speed this up somehow.
-    bics <-  do.call('rbind', lapply(l.fits, function(x) CalcUBIC(X,W,W_c,as.matrix(x$U/ x$s),initV,ev=av[[1]], lm.resid = av[[2]] )))
-  }
-
-  return(list("fits" = l.fits, "BIC"=bics, "resid_var" =av))
-}
-
-#From new distribution and current list, how to pick the new ones?
-#Bic. list: list of BIc scores for all choices
-#optimal.sparsity.param- the top parameter chosen
-#new.dist: distribution of all the ne lambda parameter space
-#@param curr.mode= the mode of the sparsity space based on the current V and U settings
-#@return a list of new sparsity points to try out.
-
-
-ProposeNewSparsityParams <- function(bic.list,sparsity.params, curr.dist, curr.iter, n.points = 7, no.score = FALSE, one.SD.rule = FALSE, no.drop = FALSE)
-{
-  curr.mode = DensityMode(curr.dist)
-  global.min <- min(curr.dist)
-  if(length(bic.list) == 1)
-  {
-    message("No list to choose from- have zeroed all out..?")
-    #Go from cuyrrent value to the mode, give a spread
-    return(sort(10^seq(log10(sparsity.params),log10(curr.mode),length.out=n.points)))
-  }
-  if(no.score)
-  {
-    #then bic.list is the optimal one; generate fake scores
-    fake.scores <- rep(100,length(sparsity.params))
-    fake.scores[which(sparsity.params == bic.list)] <- -1
-    bic.list <- fake.scores
-  }
-  optimal.index <- selectOptimalScoreIndex(bic.list, sparsity.params, one.SD.rule)
-  #cases with redundancy are complex.
-  optimal.sparsity.param <- sparsity.params[optimal.index]
-  sorted.sparsity.params <- sort(sparsity.params, index.return = TRUE)
-  ordered.list <- sorted.sparsity.params$x
-  sorted.index <- which(sorted.sparsity.params$ix == optimal.index)
-  #what is the index int eh sorted list of my optimal sparsty parameter?
-  #New paradigm: always look above and below,
-  #If its the smallest paramter tested
-  if(min(ordered.list) == optimal.sparsity.param)
-  {
-    message('best case is the minimum..')
-    if(no.drop & curr.iter > 2)
-    {
-      message("Not allowing a decrease in score if we are after the first iteration")
-      message("Method needs to deal with the minimum as the option")
-      above <- ordered.list[sorted.index + 1]
-      below <- optimal.sparsity.param
-    } else
-    {
-      above <- ordered.list[sorted.index + 1]
-      #below <- optimal.sparsity.param - (above - optimal.sparsity.param)
-      #simplify this: we are stil searching, so look orders of magnitude
-      #below <- 1e-10
-      below <- global.min #maybe a better way to do this
-      if(below > above)
-      {
-        message("Global min param of distribution is greater than current one.")
-        message("Setting new minimum to 0.1 of current parameter")
-        #print(above)
-        #print(below)
-        below <- optimal.sparsity.param * 0.1
-      }
-    }
-
-  } else if(max(ordered.list) == optimal.sparsity.param) #its the largest parameter tested
-  {
-    message('best case is the maximum')
-    below <- ordered.list[sorted.index - 1]
-    above <- curr.mode
-    #new.list <- 10^seq(log10(below),log10(above),length.out=n.points)
-  }else {
-    #Its bounded- our estimates should be between the one immediately above and below
-    above <- ordered.list[sorted.index + 1]
-    below <- ordered.list[sorted.index - 1]
-    #new.list <- seq(below,above,length.out = n.points)
-  }
-  if(length(above) > 1 | length(below) < 1)
-  {
-    message("WHAT is going on...")
-    print(above)
-    print(below)
-    print(bic.list)
-    print(sparsity.params)
-    readline()
-    quit()
-  }
-  if(is.na(above) | is.na(below))
-  {
-    print("proposed new paramters are not possible")
-    quit()
-  }
-  if(above == below)
-  {
-    message("Converged on single solution")
-    return(below)
-  }
-  new.list <- 10^seq(log10(below),log10(above),length.out=n.points)
-
-  #Ensure none of them are less than 0
-
-
-  if(any(new.list <= 0))
-  {
-    rep.list <- new.list[which(new.list > 0)]
-    if(any(new.list == 0))
-    {
-      rep.list <- c(min(rep.list)/2,rep.list)
-    }
-    new.list <- rep.list
-  }
-
-  unique(sort(c(optimal.sparsity.param, new.list)))
-}
-
-
-    oneSDRule <- function(bics, params)
-    {
-      if(Inf %in% params)
-      {
-        message("issue here....")
-      }
-      if(length(unique(bics)) == 1)
-      {
-        #all the parameters are the same
-        message("BIC score for all parameters are same. Likely that all factors have been 0'd out")
-        message("Seek recourse.")
-        return(which.min(params))
-      }
-        sd <- sd(bics)
-        opt <- min(bics)
-        in.range <-bics[(bics > (opt - sd)) & (bics < (opt+sd))]
-        if(FALSE)
-        {
-          print("Optimal")
-          print(opt)
-          print("SD")
-          print(sd)
-          print(in.range)
-          #top.indices <- which(bics %in% in.range)
-          print("all BICs")
-          print(bics)
-          print("tops")
-          print(top.indices)
-          print(params)
-          #optimal.l <- max(params[top.indices])
-          print("Selecting params:")
-          print(optimal.l)
-        }
-        top.indices <- which(bics %in% in.range)
-        optimal.l <- max(params[top.indices])
-        return(which(params == optimal.l))
-    }
-#Deals with cases if redundant scores.
-#If these are at the upper extreme of the parameter list (likely occurs when all terms have been zeroed out), pick the SMALLEST parameter
-#if these are at the lower extreme of the parameter list (likely occurs when the terms are fully dense), pick the largest parameter
-  SelectBICFromIdenticalScores <- function(bic, params)
-    {
-      best.score <- min(bic)
-      optimal.index <- which.min(bic)
-      #message("Warning- BIC scores are unchanging for certain settings. This is likely evidence of no sparsity.")
-
-      #Choose next lowest bic score index
-      i <- sort(bic, index.return = TRUE)
-
-      sorted.bic <- bic[i$ix]
-      params.sorted.by.bic <- params[i$ix]
-      matching.score.indices <- which(sorted.bic == best.score)
-
-      #If the scores are on the  bigger end of scale
-      #if all scores yield the same, its not obvious if we have 0d out or total density. Pick the one closest ot he averagge
-      if(length(unique(bic)) == 1)
-      {
-        message("All scores yield the same BIC. Unclear what to do...")
-        mid = abs(params - mean(params))
-        optimal.param <- params[which(min(mid) == mid)][1]
-      }
-      else if(all(min(params.sorted.by.bic[matching.score.indices]) > params.sorted.by.bic[-matching.score.indices]))
-      {
-        message("Suspect that scores are zeroing out the results, picking the smallest parameter with low BIC")
-        optimal.param <- min(params.sorted.by.bic[matching.score.indices])
-      } else if(all(max(params.sorted.by.bic[matching.score.indices]) < params.sorted.by.bic[-matching.score.indices]))
-      {
-        message("Suspect that scores are inducing no sparsity, picking the largest parameter with low BIC")
-        optimal.param <- max(params.sorted.by.bic[matching.score.indices])
-      }
-      else
-      {
-        #weird case, in the middle. #This means that all of them are equally goood?
-        #I this case, I want to pick the most spare one actually
-       #print("Beware, unusual case...")
-        #optimal.param <- params.sorted.by.bic[matching.score.indices][ceiling(length(matching.score.indices)/2)] #get the middle one
-        optimal.param <- max(params.sorted.by.bic[matching.score.indices])
-        #print(sorted.bic)
-        #print(optimal.param)
-        #print(params.sorted.by.bic)
-        #print("")
-        message("Unusual case with the center, pick the middle. Likely swung too far above or below. Hope is lost :(")
-
-      }
-
-  which(params == optimal.param) #return the optimal index
-
-    }
-
-    #This gets the index for the optimal
-  selectOptimalScoreIndex <- function(bic, params, oneSD, ndigits = 6)
-  {
-    bic <- round(bic, digits = ndigits)
-    if(oneSD)#just testing our the one sd rule
-    {
-      optimal.index <- oneSDRule(bic,params)
-    } else
-    {
-      best.score <- min(bic)
-      optimal.index <- which.min(bic)
-      if(length(which(bic == best.score)) > 1)
-      {
-        optimal.index <- SelectBICFromIdenticalScores(bic, params)
-        if(length(optimal.index) > 1)
-        {
-          message("Warning: proposing redundant values.")
-          optimal.index <- optimal.index[1]
-        }
-      }
-    }
-    optimal.index
-  }
-    #This function selects the optimal matrix and drops non-zero entries.
-  selectOptimalInstance <- function(fit.data, bic, params, oneSD = FALSE)
-  {
-
-    optimal.index <- selectOptimalScoreIndex(bic, params, oneSD)
-    if(all(fit.data$fits[[optimal.index]]$s) == 1)
-    {
-      optimal.matrix <- DropEmptyColumns(fit.data$fits[[optimal.index]][[1]])
-    }else
-    {
-      which.to.drop <- which(colSums(fit.data$fits[[optimal.index]][[1]] != 0) == 0)
-      optimal.matrix <- DropEmptyColumns(fit.data$fits[[optimal.index]][[1]]) / fit.data$fits[[optimal.index]]$s[,-which.to.drop]
-    }
-    if(ncol(optimal.matrix) == 0)
-    {
-      optimal.matrix <- matrix(0, nrow = nrow(fit.data$fits[[optimal.index]][[1]]), ncol = 1 )
-    }
-    #SELECT NON-ZERO entries
-  return(list("m" = optimal.matrix, "p" = params[[optimal.index]], "index" = optimal.index))
-  }
-
-
-#Convergence criteria for the BIC ssearch
-#Converges when K is unchanging from one run to the next, and the percentage size change in the alpha/lambda paramters is less than 5%
-#Might consider making this more generous- if it stays on the same log scale, then that is probably good enough....
-checkConvergenceBICSearch <- function(index, record.data, conv.perc.thresh = 0.05, conv.mode = "SEPARATE")
-{
-  if(index > 10)
-  {
-    message("Late stage convergence, terminate soon....")
-  }
-  conv.K <- record.data$Ks[[index]] == record.data$Ks[[index-1]]
-  if(conv.mode == "COMB.SUM")
-  {
-    message("Need to test and debug still, but okay")
-    EPSILON = 1e-4
-   sum.prev = record.data$alpha.s[[index-1]] + record.data$lambda.s[[index-1]]
-   sum.curr = record.data$alpha.s[[index]] + record.data$lambda.s[[index]]
-
-   return(  conv.K & (sum.prev - sum.curr) < EPSILON)
-
-  }else if(conv.mode == "BIC.change")
-    {
-    #Goes until the BIC stops dropped, or the change crosses 0.
-    #I think maybe you need a better condition.. if you stop too soon you miss a nice minimum somewhere else.
-    sum.bic.score <- record.data$bic.a + record.data$bic.l
-    #at which iteration is our search no longer decreasing? TRUE = still decreasing
-    delta.bic.score <- sapply(2:length(sum.bic.score), function(i) sum.bic.score[i-1] > sum.bic.score[i])
-    li <- length(delta.bic.score)
-    #if(any((!delta.bic.score)))
-    if(!delta.bic.score[li]) #The last element is NOT decreasing relative to the previous
-    {
-        #CAse 1- we've only been increasing so far, give it some more time
-        if(all(!delta.bic.score)) #all have been increasing
-        {
-          message("BIC has only increased after minimum iterations. Continuing search")
-          return(FALSE)
-        }else{      return(TRUE) } #Case 2 we end here, not searching anymore.
-    }else
-    {
-      return(FALSE)
-    }
-
-
-  }  else if(conv.mode == "mat.change")
-  {
-    if(norm(record.data$Vs[[index]], "f") -  norm(record.data$Vs[[index-1]], "f") < 1e-4){return(TRUE)}
-    return(FALSE)
-  }
-  else
-  {
-    queries <- c(conv.K,
-                 abs(record.data$alpha.s[[index]] - record.data$alpha.s[[index-1]])/record.data$alpha.s[[index-1]] < conv.perc.thresh,
-                 abs(record.data$lambda.s[[index]] - record.data$lambda.s[[index-1]])/record.data$lambda.s[[index-1]] < conv.perc.thresh)
-    return(all(queries))
-  }
-
-
-
-
+  list("bic.list" = bic.dat$bic.list[min.index],
+       "fit.term" = bic.dat$fit.term[min.index],
+       "df.term"=  bic.dat$df.term[min.index],
+       "fit.scaler"=bic.dat$fit.scaler,
+       "addends" = if(length(bic.dat$addends) > 1)
+       {bic.dat$addends[min.index]} else {
+         bic.dat$addends},
+       "n.coef"=bic.dat$n.coef
+  )
 }
 
 #gwasML_ALS_Routine(opath, option, X, W, bic.dat$optimal.v)
@@ -1369,10 +689,6 @@ gleaner <- function(X,W, snp.ids, trait.names, C = NULL, K=0, gwasmfiter =5, rep
 
   ret
 }
-
-#####
-#Version optimized for glmnet
-#####MAJOR TODO:
 
 #####
 #Version optimized for glmnet
@@ -1541,17 +857,6 @@ getBICWorkhorse <- function(opath,option,X,W,W_c, all_ids, names, min.iter = 5, 
 
 }
 
-#############
-extractMinBicDat <- function(bic.dat, min.index)
-{
-  list("bic.list" = bic.dat$bic.list[min.index],
-       "fit.term" = bic.dat$fit.term[min.index],
-       "df.term"=  bic.dat$df.term[min.index],
-       "fit.scaler"=bic.dat$fit.scaler,
-       "addends" = if(length(bic.dat$addends) > 1)
-                      {bic.dat$addends[min.index]} else {
-                        bic.dat$addends},
-       "n.coef"=bic.dat$n.coef
-         )
-}
+
+
 
