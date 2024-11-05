@@ -21,12 +21,12 @@ pm <- function(matrix_in)
 #' @param X full effect size data
 #' @param W effect size uncertainty
 #' @param W_c covariance structure of effect sizes
-#' @param reg.run output from Update_FL; full ALS output
+#' @param reg.run output from update_UV; full ALS output
 #' @param minK Minimum allowed # of factors. NOT USED
 #' @param maxK Maximum allowecx # of factors
 #' @param option
 #'
-#' @return updated ALS output list (same as Update_FL output)
+#' @return updated ALS output list (same as update_UV output)
 #' @export
 #'
 #'  PruneNumberOfFactors(X,W,W_c,reg.run, 0, 3, option)

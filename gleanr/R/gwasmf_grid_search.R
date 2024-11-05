@@ -4,7 +4,7 @@ SourcePackages <- function()
 {
   dir ="/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/src/"
   source(paste0(dir, "fit_F.R"))
-  source(paste0(dir, "update_FL.R"))
+  source(paste0(dir, "update_UV.R"))
   source(paste0(dir, "fit_L.R"))
   source(paste0(dir, "plot_functions.R"))
   source(paste0(dir, 'compute_obj.R'))
@@ -138,7 +138,7 @@ singleRunFromScratch <- function(X,W,W_c,a, l, option, niter = 100)
   option[['alpha1']] <- as.numeric(a)
   option[['lambda1']] <- as.numeric(l)
   option$iter <- niter
-  Update_FL(as.matrix(X), as.matrix(W),W_c, option)
+  update_UV(as.matrix(X), as.matrix(W),W_c, option)
 }
 
 #getGridMatrices(args, option, alphas, lambdas, param.iters)
@@ -185,7 +185,7 @@ getGridMatrices <- function(X,W,W_c,args, option, alphas, lambdas, param.iters)
             X <- as.matrix(X)$X[samp,]; W <- as.matrix(W)$W[samp,]; #all_ids <- input.dat$ids[samp]
             #This works, but need to adjust the parameters. COuld implement okay, but not doing now.f
           }
-        run_stats[[opti]] <- Update_FL(as.matrix(X), as.matrix(W), as.matrix(W_c),option)
+        run_stats[[opti]] <- update_UV(as.matrix(X), as.matrix(W), as.matrix(W_c),option)
         }
         run.id <- paste0(option$K, "_", a, "_", l)
         run.ids <- c(run.ids, run.id)

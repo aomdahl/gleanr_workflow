@@ -1,42 +1,9 @@
 ################################################################################################################################
-#Modified 4/26 by Ashton Omdahl
-## Copied over from another function since this wasn't working originally.
+## Ashton Omdahl, November 2024
+## Machinery for calling the alternating least squares in model-fitting steps, in addition to a few other functions
+##
 ################################################################################################################################
 
-#helpful code for debugging
-if(FALSE)
-{
-  #source("/Users/ashton/Documents/JHU/Research/LocalData/snp_network/quickLoadData.R")
-  source("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/src/quickLoadData.R")
-  source("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/src/fit_V.R")
-  source("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/src/fit_L.R")
-  source("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/src/compute_obj.R")
-  source("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/src/plot_functions.R")
-  all <- quickLoadFactorization("Z", "MARCC")
-  X <- all$X
-  W <- all$W
-  option <- all$option
-  option$traitSpecificVar <- TRUE
-  option$parallel <- FALSE
-
-  #subset for faster running....
-  X <- X[1:1000, 1:10]
-  W <- W[1:1000, 1:10]
-  option$K <- 5
-}
-
-
-#' Faster correlation calculation for large matrices
-#' Grabbed this off of stack overflow.
-#' @param x
-#'
-#' @return
-#' @export
-#'
-#' @examples
-cor2 <- function(x) {
-1/(nrow(x)-1) * crossprod(scale(x, TRUE, TRUE))
-}
 
 #This function uses OLS to get a good estimate of what the maximum sparsity space is across all parameters.
 #@param burn.in- how many iterations to go
@@ -107,7 +74,6 @@ DefineSparsitySpaceInit <- function(X, W,W_c, W_ld, option, burn.in = 5,reg.elem
     {
       #this might be high but oh well...
       #HERE
-      #drops <- CheckLowPVE(X,W,V.dat$V) #redundant with other code
       drops <- c()
       if(length(drops) > 0)
       {
@@ -376,61 +342,6 @@ UpdateTrackingParams <- function(sto.obj, X,W,W_c,U,V,option, sparsity.thresh = 
   sto.obj
 }
 
-#This implments the update step for MAP fits, and includes settings if we arejust fixing one and learning the other (both options)
-UpdateSparsityMAPAutofit <- function(iter, U, V, option)
-{
-  opt.ret <- option
-  lambda.prev <- opt.ret[['lambda1']]
-  if(opt.ret$swap) {
-    lambda.prev <- opt.ret[['alpha1']]
-  }
-  if(opt.ret$MAP_autofit != -1 &  iter > 1)
-  {
-    message(paste0("Current lambda: ", opt.ret$lambda1))
-    opt.ret[['lambda1']] <- MAPfitLambda(V,opt.ret$MAP_autofit, opt.ret)
-    message(paste0("Updated lambda: ", opt.ret[['lambda1']]))
-    #L
-    message(paste0  ("Current alpha: ", opt.ret$alpha1))
-    opt.ret[['alpha1']] <- MAPfitAlpha(U,opt.ret$MAP_autofit,opt.ret)
-    message(paste0("Updated alpha: ", opt.ret[['alpha1']]))
-
-  }
-  if(opt.ret$MAP_autofit != -1 & !is.na(opt.ret$fix.alt.setting)) #opt.ret to fix one and modulate the other, given we are doing autofit.
-  {
-    if(iter < (opt.ret$fix.alt.setting * opt.ret$iter))
-    {
-      if(opt.ret$swap)
-      {
-        message("Lambda setting fixed at 0")
-        opt.ret[['lambda1']] <- 1e-10
-
-      }else
-      {
-        message("Alpha setting fixed at 0")
-        opt.ret[['alpha1']] <- 1e-10
-      }
-
-    }else
-    {
-      if(opt.ret$swap)
-      {
-        message("Alpha setting fixed now")
-        print(lambda.prev)
-        opt.ret[['alpha1']] <- lambda.prev
-
-      }else
-      {
-        message("Lambda setting fixed now")
-        print(lambda.prev)
-        opt.ret[['lambda1']] <- lambda.prev
-      }
-
-    }
-  }
-  opt.ret
-}
-
-
 #' Function to check if U
 #'
 #' @param U to check
@@ -477,24 +388,6 @@ CheckMatrixEmpty <- function(mat, name)
   return(FALSE)
 }
 
-CheckLowPVE <- function(X,W,V, thresh = "default") #this might be high but oh well...
-{
-  if(thresh == "default")
-  {
-    thresh = 0.005
-  }else if(thresh == "avg")
-  {
-    thresh = 1/ncol(X)
-  }
-  else
-  {
-    thresh = 0.01
-  }
-  pve=PercentVarEx(as.matrix(X)*as.matrix(W), v = V)
-  print(pve)
-  return(which(pve <= thresh))
-
-}
 
 #helper to just get rid of some columns quick...
 DropSpecificColumns <- function(drops, mf, ms)
@@ -504,30 +397,10 @@ DropSpecificColumns <- function(drops, mf, ms)
   return(list("U"=U, "V"=V))
 }
 
-DropLowPVE <- function(X,W,V,...)
-{
-  drop.cols <- CheckLowPVE(X,W,V,...)
-  rv <- V
-  if(length(drop.cols) > 0)
-  {
-    rv <- V[,-drop.cols]
-  }
 
-  return(rv)
-}
-
-ZeroLowPVE <- function(X,W,V)
-{
-  drop.cols <- CheckLowPVE(X,W,V)
-  message("Currently including PVE check")
-  rv <- V
-  rv[,drop.cols] <- 0
-  return(rv)
-}
 #Refactor thi
 AlignFactorMatrices <- function(X,W,U, V)
 {
-
   non_empty_v = which(apply(V, 2, function(x) sum(x!=0)) > 0)
   non_empty_u = which(apply(U, 2, function(x) sum(x!=0)) > 0)
   non_empty = intersect(non_empty_u,non_empty_v);
@@ -631,7 +504,7 @@ MatrixChange <- function(new, old)
 #' @export
 #'
 #' @examples
-Update_FL <- function(X, W, W_c, option, preV = NULL, preU = NULL, burn.in = FALSE,reg.elements=NULL){
+update_UV <- function(X, W, W_c, option, preV = NULL, preU = NULL, burn.in = FALSE,reg.elements=NULL){
 
   #Tracking data for debugging things...
   ll.tracker <- c()
@@ -697,10 +570,6 @@ Update_FL <- function(X, W, W_c, option, preV = NULL, preU = NULL, burn.in = FAL
     message(paste0("Currently on iteration ", iii))
     iteration.ll.total <- 0
     ## If we are doing an autofit setting....
-    if(option$MAP_autofit > -1) {
-      print(iii)
-      option <- UpdateSparsityMAPAutofit(iii, U,V, option)
-    }
     message("fitting V..")
     V.new = FitVWrapper(X, W,W_c, U, option,reg.elements=reg.elements)#, formerV = V);  #returns V scaled, with S  #CONFIRM
     message("V fit")
@@ -781,7 +650,6 @@ Update_FL <- function(X, W, W_c, option, preV = NULL, preU = NULL, burn.in = FAL
     colnames(U) = seq(1, ncol(U)) ;
 
     # Drop low PVE and align two matrices
-    #V <- DropLowPVE(X,W,V)
     updated.mats <- AlignFactorMatrices(X,W,U, V); U <- updated.mats$U; V <- updated.mats$V
 
     message("Now checking convergence")
@@ -865,3 +733,17 @@ prepRegressionElements <- function(X,W,W_c, option)
   list("joined.weights" = lapply(1:nrow(X), function(i) Matrix::Matrix(t(W_c) %*% (diag(W[i,])))),
        "long.x"=long.x)
 }
+
+
+#' Faster correlation calculation for large matrices
+#' Grabbed this off of stack overflow.
+#' @param x
+#'
+#' @return
+#' @export
+#'
+#' @examples
+cor2 <- function(x) {
+  1/(nrow(x)-1) * crossprod(scale(x, TRUE, TRUE))
+}
+

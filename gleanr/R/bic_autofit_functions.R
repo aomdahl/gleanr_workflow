@@ -5,11 +5,7 @@
 ################################################################################################################################
 
 
-########### Functions I don't think I need any more #######
-
-
-########################################### Functions for tracking updates #######################################################
-#Experimental functions
+########################################### Functions for tracking updates #####################################################
 ##Examining possible convergence settings
 trackAlternativeConvergences <- function(X,W,W_c, U,V, index, record.data, u.alphamax, v.lambdamax, option_old)
 {
@@ -573,7 +569,7 @@ gwasML_ALS_Routine <- function(option, X, W,W_c, optimal.init, maxK=0, opath = "
 
   message(paste0("Starting at k:", option$K))
   option$debug <- TRUE
-  reg.run <- Update_FL(X, W, W_c, option, preV = optimal.init, reg.elements =reg.elements,... )
+  reg.run <- update_UV(X, W, W_c, option, preV = optimal.init, reg.elements =reg.elements,... )
   if(no.prune){return(reg.run)}
   if(maxK != 0)
   {
