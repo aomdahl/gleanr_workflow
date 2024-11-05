@@ -1,4 +1,14 @@
+################################################################################################################################
+## Ashton Omdahl, November 2024
+## Machinery for performing model fitting in GLEANR using the BIC, as well as tracking relevant data.
+##
+################################################################################################################################
 
+
+########### Functions I don't think I need any more #######
+
+
+########################################### Functions for tracking updates ##########################################################
 #Experimental functions
 ##Examining possible convergence settings
 trackAlternativeConvergences <- function(X,W,W_c, U,V, index, record.data, u.alphamax, v.lambdamax, option_old)
@@ -214,18 +224,16 @@ updateRecDat <- function(rec.dat, mat.fit, matrix_on, iter,X,W,W_c, optimal_comp
 }
 
 
-#Estimator of the L1 degrees of freedom
-MatrixDFV <- function(mat_in, fixed_first = FALSE){
-  print("RED ALERT- USING THE BAD V")
-  if(fixed_first)  #if(FALSE) FF$
-  {
-    sum(mat_in[,-1] == 0)
-  }else
-  {
-    sum(mat_in == 0)
-  }
 
-}
+#' Estimator of the lasso degrees of freedom as the # of non-zero coefficients
+#'
+#' @param mat_in to get DF of
+#' @param fixed_first if we count the first factor (applies to V only)
+#'
+#' @return
+#' @export
+#'
+#' @examples
 MatrixDFU <- function(mat_in,fixed_first = FALSE)
 {
   #this means we are learning U
@@ -322,53 +330,6 @@ CalcMatrixBIC <- function(X,W,U,V, W_cov = NULL, ev="std", weighted = FALSE, df 
   #message("Total ", ret)
  #message(". ")
 
-  return(ret)
-}
-
-CalcMatrixBIC.loglikversion <- function(X,W,U,V, which.learning, W_cov = NULL, df = NULL, lm.fit.residuals = NULL,...)
-{
-  if(is.null(W_cov) & which.learning == "U")
-  {
-    message("Error case that should never happen -giving U but no covar matrix. at minimum identity matrix.")
-  }
-  `%>%` <- magrittr::`%>%`
-  n=nrow(X)
-  d = ncol(X)
-  k = ncol(U)
-  if(which.learning == "V")
-  {
-    model.ll = penalizedLogLikV(X,W,U,V,...) #pass in the fixed first. Only effect is on the residuals.
-  }else
-  {
-    #learning U
-    model.ll = penalizedLogLikU(X,W,W_cov,U,V)
-  }
-  if(is.null(df))
-  {
-    df <- MatrixDFU(V)
-  }
-  #ret <- -model.ll + (log(n*d)/(n*d))*df
-  ret <- -2*model.ll + (log(n*d))*df
-  if(!is.null(lm.fit.residuals))
-  {
-    if(which.learning == "V")
-    {
-      lm.ll = penalizedLogLikV(X,W,U,V, use.resid = lm.fit.residuals,...)
-    }else
-    {
-      #learning U
-      lm.ll = penalizedLogLikU(X,W,W_cov,U,V, use.resid = lm.fit.residuals)
-    }
-    #ret <- neg.ll/(lm.ll) + (log(n*d)/(n*d))*df
-    #the goal is to get a ratio which is SMALLER if the fit is better, larger if the fit is worse.
-    #Since bigger is better with ll, we actually have to invert it.
-    ret <- lm.ll/(model.ll) + (log(n*d)/(n*d))*df
-    message("Warning- this BIC method doesn't work well if there are negatives involved...")
-    if(model.ll < 0)
-    {
-        message('havent figured out this case yet, scores will be uninterpretable')
-    }
-  }
   return(ret)
 }
 
@@ -840,15 +801,11 @@ CalcVBIC <- function(X,W,U,V,fixed_first=FALSE,lm.resid = NULL,...)
   #message("Harding coding fixed_first = FALSE on all BIC calculations")
   #fixed_first = FALSE
   df.dat=MatrixDFU(V,fixed_first=fixed_first)
-  #var.based.bic <- CalcMatrixBIC(X,W,U,V,df=df.dat,fixed_first = fixed_first,learning = "V",...)
   var.based.bic <- NA
-  #ll.based.bic <- CalcMatrixBIC.loglikversion(X,W,U,V, which.learning = "V", df = df.dat, fixed_first=fixed_first)
 
   ll.based.bic <- NA
-  #ll.based.bic.ratio <- CalcMatrixBIC.loglikversion(X,W,U,V, which.learning = "V", df = df.dat, lm.fit.residuals = lm.resid,fixed_first=fixed_first)
   ll.based.bic.ratio <- NA
   ll.global.bic <- CalcMatrixBIC.loglikGLOBALversion(X,W,U,V, which.learning = "V", df = df.dat,fixed_first=fixed_first)
-  #ll.global.ratio.bic <- CalcMatrixBIC.loglikGLOBALversion(X,W,U,V, which.learning = "V", df = df.dat,
                                                            #lm.fit.residuals = lm.resid,fixed_first=fixed_first) #OMIT THIS.
 ll.global.ratio.bic <- NA
   return(list(var.based.bic,ll.based.bic,ll.based.bic.ratio,ll.global.bic,ll.global.ratio.bic)) #WE LIKE options 1,2,4
@@ -859,10 +816,7 @@ CalcUBIC <- function(X,W,W_c, U,V,lm.resid = NULL,...)
   df.dat <-  MatrixDFU(U)
   #var.based.bic <- CalcMatrixBIC(t(X),t(W),V,U,df=df.dat,W_cov = W_c, learning = "U",...)
   #And now, the alternative versions:
-  #ll.based.bic <- CalcMatrixBIC.loglikversion(X,W,U,V, which.learning = "U", df = df.dat, W_cov = W_c)
-  #ll.based.bic.ratio <- CalcMatrixBIC.loglikversion(X,W,U,V, which.learning = "U", df = df.dat, lm.fit.residuals = lm.resid, W_cov = W_c)#OMIT THIS
   ll.global.bic <- CalcMatrixBIC.loglikGLOBALversion(X,W,U,V, which.learning = "U", df = df.dat, W_cov = W_c)
-  #ll.global.ratio.bic <- CalcMatrixBIC.loglikGLOBALversion(X,W,U,V, which.learning = "U", df = df.dat,lm.fit.residuals = lm.resid, W_cov = W_c) #OMIT THIS.
 
   var.based.bic <- NA
   ll.based.bic <- NA
@@ -1292,15 +1246,6 @@ checkConvergenceBICSearch <- function(index, record.data, conv.perc.thresh = 0.0
 
 }
 
-getBICOptimalIndex <- function(record.data)
-{
-  sum.bic.score <- record.data$bic.a + record.data$bic.l
-  delta.bic.score <- sapply(2:length(sum.bic.score), function(i) sum.bic.score[i-1] > sum.bic.score[i])
-  return(which.min(sum.bic.score ))
-  #TODO: verify the index here is the same as the index we'd get elsewhere.
-
-}
-#TODO: try with random, and with non-random.
 #gwasML_ALS_Routine(opath, option, X, W, bic.dat$optimal.v)
 # gwasML_ALS_Routine(opath, option, X, W, bic.dat$optimal.v)
 gwasML_ALS_Routine <- function(option, X, W,W_c, optimal.init, maxK=0, opath = "", no.prune = FALSE,reg.elements=NULL,...)
@@ -1346,98 +1291,6 @@ gwasML_ALS_Routine <- function(option, X, W,W_c, optimal.init, maxK=0, opath = "
 return(reg.run)
 }
 
-#runFullPipeClean(args$prefix,args, gwasmfiter =args$bic_adj)
-runFullPipeClean <- function(args, gwasmfiter =5, save.pipe = FALSE,rep.run = FALSE,...)
-{
-  opath = "BIC_"
-  message("Current setting is to use U based sparsity each time...")
-  option <- readInSettings(args)
-  option$swap <- FALSE
-  option$alpha1 <- 1e-10
-  option$lambda1 <- 1e-10
-  output <- args$output
-  bii = 0
-  #Read in the hyperparameters to explore
-  hp <- readInParamterSpace(args)
-  input.dat <- readInData(args)
-  X <- input.dat$X; W <- input.dat$W; all_ids <- input.dat$ids; names <- input.dat$trait_names; W_c <- input.dat$W_c
-  if(option$K == 0)
-  {
-    message('Iniitializing X to the max -1')
-    option$K <- ncol(X)-1
-  }
-  #Run the bic thing...
-  option$svd_init <- TRUE
-  option$fixed_ubiqs <- TRUE
-  if(rep.run)
-  {
-    set.seed(22)
-    option$svd_init <- FALSE
-    bii = 4
-    bic.dat2 <- getBICMatrices(opath,option,X,W,W_c,all_ids, names, burn.in.iter = bii, ...)
-    bic.dat3 <- getBICMatrices(opath,option,X,W,W_c,all_ids, names, burn.in.iter = bii, ...)
-    bic.dat4 <- getBICMatrices(opath,option,X,W,W_c,all_ids, names, burn.in.iter = bii, ...)
-    bic.dat5 <- getBICMatrices(opath,option,X,W,W_c,all_ids, names, burn.in.iter = bii, ...)
-      if(save.pipe) {
-        save(bic.dat2,bic.dat3,bic.dat4,bic.dat5, file = paste0(option$out,"BIC_iter.MULTIPLES.Rdata" ))
-      }
-    }
-
-
-  bic.dat <- getBICMatrices(opath,option,X,W,W_c, all_ids, names, burn.in.iter = bii, ...)
-
-  if(save.pipe) {
-  save(bic.dat, file = paste0(option$out,opath, "BIC_iter.Rdata" ))
-  }
-  option <- bic.dat$options
-  option$K <- bic.dat$K
-  option$alpha1 <- bic.dat$alpha
-  option$lambda1 <- bic.dat$lambda
-
-    #Don't pass opath in plz to this one.
-  ret <- gwasML_ALS_Routine(option, X, W, W_c, bic.dat$optimal.v, maxK=bic.dat$K) #I like this better
-
-  ret[["snp.ids"]] <- all_ids
-  ret[["trait.names"]] <- names
-  list("als" = ret, "bic.search"=bic.dat)
-}
-
-
-
-
-#' Wrapper to run
-#'
-#' @param args List of all arguments needed to run the pipeline, including path to input data files
-#' @param alpha \eqn{\alpha} sparsity parameter for U matrix
-#' @param lambda \eqn{\lambda} sparsity parameter for V matrix (numeric)
-#' @param opath (optional) prefix for output files (string)
-#'
-#' @return a list containing all return gwasMF items
-#' @export
-runStdPipeClean <- function(args,alpha,lambda, opath = "", initV = NULL)
-{
-  option <- readInSettings(args)
-  option$swap <- FALSE
-  output <- args$output
-  #Read in the hyperparameters to explore
-  hp <- readInParamterSpace(args)
-  input.dat <- readInData(args)
-  X <- input.dat$X; W <- input.dat$W; all_ids <- input.dat$ids; names <- input.dat$trait_names; W_c <- input.dat$W_c
-  if(option$K == 0)
-  {
-    message('Iniitializing X to the max')
-    option$K <- ncol(X)
-  }
-
-  option$alpha1 <- alpha
-  option$lambda1 <- lambda
-  ret <-gwasML_ALS_Routine(option, X, W, W_c, initV, maxK = option$K)
-
-  ret[["snp.ids"]] <- all_ids
-  ret[["trait.names"]] <- names
-  ret
-}
-
 
 #' Wrapper to programmatically call the BIC-based factorization
 #'
@@ -1479,26 +1332,6 @@ gleaner <- function(X,W, snp.ids, trait.names, C = NULL, K=0, gwasmfiter =5, rep
   option$svd_init <- TRUE; args$svd_init <- TRUE
   K.cap <- K
   option$bic.var <- bic.var
-  print(paste("bic var setting:", bic.var))
-  if(is.sim)
-  {
-	if(bic.var == "Zou")
-	  {
-	    message("Forcing K to be Kaiser, optimal for Zou")
-	    K <- "KAISER"
-	    option$K <- "KAISER"
-	  }
-	if(bic.var == "dev" | bic.var == "sklearn" | bic.var == "sklearn_eBIC"){
-	    message("Forcing K to be GRID for teseting")
-	    K <- "GRID"
-	    option$K <- "GRID"
-	    option$Kinit <- "GRID"
-  	  #K <- 5
-  	  #option$K <- 5
-
-	}
-
-  }
   #Do the bic learning...
   use.optim <- TRUE
   option$regression_method = regression.method
@@ -1557,49 +1390,6 @@ getBICMatricesGLMNET <- function(opath,option,X,W,W_c, all_ids, names, ...)
   {
     getBICWorkhorse(opath,option,X,W,W_c, all_ids, names, ...)
   }
-}
-
-
-#######For the grid BIC search
-
-# Load the rgenoud package
-# Define a wrapper function for genoud to minimize bic.sum by modifying K
-#optimizeK <- function(K, opath, option, X, W, W_c,genoud_c, all_ids, names, reg.vect,...) {
-#  option$K <- K
-#  bic.dat <- getBICWorkhorse(opath, option, X, W, W_c, all_ids, names, ...)
-#  message("K: ",K, ", BIC: ", bic.dat$min.dat$min_sum)
-#  return(bic.dat$min.dat$min_sum)
-#}
-
-gridSearchKDEPRECATED <- function(opath, option,X,W,W_c,all_ids,names,...)
-{
-  # Use genoud to find the best K
-  M <- ncol(X)-1
-  result <- rgenoud::genoud(
-    fn = optimizeK,
-    nvars = 1,             # Number of variables to optimize (K)
-    max = FALSE,           # We are minimizing, so max is FALSE
-    Domains = matrix(c(1, M), nrow = 1, byrow = TRUE), # Bounds for K
-    starting.values = M,   # Initial value for K
-    data.type.int = TRUE,  # Ensure K is treated as an integer
-    pop.size = 6,        # Population size for the genetic algorithm
-    max.generations = 3, # Number of generations
-    MemoryMatrix = TRUE,
-    boundary.enforcement=2,
-    wait.generations = 2,
-    opath = opath,
-    option = option,
-    X = X,
-    W = W,
-    W_c = W_c,
-    all_ids = all_ids,
-    names = names,
-    ...
-  )
-  # Extract the optimal K
-  optimal_K <- result$par
-  option$K <- K
-  getBICWorkhorse(opath, option, X, W, W_c, all_ids, names, ...)
 }
 
 
@@ -1683,12 +1473,6 @@ getBICWorkhorse <- function(opath,option,X,W,W_c, all_ids, names, min.iter = 5, 
 
     message(paste0("Fitting U, iteration ", i))
     u.fit <- FitUWrapper(X, W, W_c, optimal.v, option,reg.elements=reg.elements)
-    #Update the tracking data for downstream debugging
-
-    #rec.dat$alphas <- UpdateAndCheckSparsityParam(rec.dat$alphas, u.fit$alpha.sel, errorReport = TRUE)
-    #rec.dat$bic.a <- c(rec.dat$bic.a,u.fit$bic); rec.dat$alpha.s <- c(rec.dat$alpha.s,u.fit$alpha.sel)
-    #rec.dat$U_sparsities = c(rec.dat$U_sparsities, matrixSparsity(u.fit$U, ncol(X)));
-    #rec.dat$sparsity.obj[[paste0("U_", i)]] <- computeObjIntermediate(X, W,W_c, u.fit$U, optimal.v, option, decomp = TRUE, loglik = TRUE) #should happen before drop empty colums
 
     #Update tracking data for convergence detection
     curr.alpha <- u.fit$alpha.sel; curr.bic.a <- u.fit$bic; u.bic.dat <- u.fit$bic.dat
@@ -1711,14 +1495,7 @@ getBICWorkhorse <- function(opath,option,X,W,W_c, all_ids, names, min.iter = 5, 
 
     #Update the tracking data for downstream debugging
     rec.dat <- updateRecDat(rec.dat, v.fits, "V", i, X,W,W_c, optimal.u, option)
-    #rec.dat$lambda.s <- c(rec.dat$lambda.s,v.fits$lambda.sel) #selected lambda to path
-    #rec.dat$V_sparsities = c(rec.dat$V_sparsities, matrixSparsity(v.fits$V, ncol(X))); #Sparsity of V
-    #rec.dat$lambdas <- UpdateAndCheckSparsityParam(rec.dat$lambdas, v.fits$lambda.sel, errorReport = TRUE); rec.dat$bic.l <- c(rec.dat$bic.l,v.fits$bic) #lambdas and bic scores
-    #rec.dat$sparsity.obj[[paste0("V_", i)]] <- computeObjIntermediate(X, W,W_c, optimal.u, v.fits$V, option, decomp = TRUE, loglik = TRUE) #Objective calculation
-
-    #rec.dat$Ks <- c(rec.dat$Ks, ncol(optimal.v)) #Track K
-
-    #Update tracking data for convergence detection
+     #Update tracking data for convergence detection
     optimal.v <- v.fits$V
     curr.lambda <- v.fits$lambda.sel; curr.bic.l <- v.fits$bic; v.bic.dat <- v.fits$bic.dat
     min.dat <- trackMinParam(min.dat,optimal.u,optimal.v,curr.alpha,curr.lambda,curr.bic.a,curr.bic.l, u.bic.dat, v.bic.dat, paste0("V_", i))
@@ -1756,9 +1533,6 @@ getBICWorkhorse <- function(opath,option,X,W,W_c, all_ids, names, min.iter = 5, 
   if(ncol(min.dat$optimal.u) != ncol(min.dat$optimal.v))
   {
     message("Warning: final top performing matrices weren't aligned. Aligning now. Note to developer: check this logical condition.")
-    #This could happen if we aren't picking the exact most recent version of optimal.u
-    print(head(min.dat$optimal.u))
-    print(head(min.dat$optimal.v))
     aligned <- AlignFactorMatrices(X,W,min.dat$optimal.u,min.dat$optimal.v);
     min.dat$optimal.u <- aligned$U; min.dat$optimal.v<- aligned$V
   }
