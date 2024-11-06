@@ -29,7 +29,6 @@ pm <- function(matrix_in)
 #' @return updated ALS output list (same as update_UV output)
 #' @export
 #'
-#'  PruneNumberOfFactors(X,W,W_c,reg.run, 0, 3, option)
 PruneNumberOfFactors <- function(X,W,W_c,reg.run, minK, maxK, option)
 {
 

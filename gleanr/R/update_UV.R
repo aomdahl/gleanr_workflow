@@ -101,8 +101,8 @@ DefineSparsitySpaceInit <- function(X, W,W_c, W_ld, option, burn.in = 5,reg.elem
 #' Title
 #'
 #' @param X NxM matrix of SNP effect sizes
-#' @param W
-#' @param W_cov
+#' @param W NxM matrix of SNP weights (1/SE)
+#' @param W_cov MxM matrix for decorrelating transformation
 #' @param fixed
 #' @param learning
 #' @param option
@@ -492,13 +492,13 @@ MatrixChange <- function(new, old)
 #' Main ALS workhorse with fixed sparsity parameters
 #' Proceeds until some convergence threshold
 #' @param X NxM matrix of SNP effect sizes
-#' @param W
-#' @param W_c
+#' @param W NxM matrix of SNP weights (1/SE)
+#' @param W_c MxM matrix for decorrelating transformation
 #' @param option - specifies major settings
 #' @param preV - V to start from
 #' @param preU - U to start from, if desired (option$u_init must be TRUE)
 #' @param burn.in - If you want to have some burn in iterations using un-regularized least squares.
-#' @param reg.elements - ?????
+#' @param reg.elements - list of pre-weighted regression data.
 #'
 #' @return
 #' @export

@@ -163,7 +163,7 @@ gatherSearchData <- function(gs_object,k_range,grid_record,curr_grid=NULL,curr_b
 #' @return list object containing a table of all BIC score information and the data from the test
 #' @export
 #'
-#' @examples TBD
+#' @examples
 gridSearchRecord <- function(gs_object,params, record_obj)
 {
   if(is.null(record_obj))

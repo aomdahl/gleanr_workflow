@@ -30,7 +30,7 @@
 #' @return list containing updated V and several additional key statistics, including BIC information
 #' @export
 #'
-#' @examples TBD
+#' @examples
 FitVGlobal <- function(X, W, W_c, U, option, formerV = NULL, reg.elements=NULL)
 {
   #Prep data for regression

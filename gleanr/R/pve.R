@@ -182,7 +182,7 @@ pveBySVD <-function(V,U,X,K,D = NULL)
 #' @return mean of vector sans NAs
 #' @export
 #'
-#' @examples mean.na(c(1,2,3,4,5,NA,NA))
+#' @examples
 mean.na <- function(vec){
   return(mean(vec[!is.na(vec)]))
 }

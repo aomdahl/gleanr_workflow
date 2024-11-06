@@ -262,8 +262,8 @@ checkConvergenceBICSearch <- function(index, record.data, conv.perc.thresh = 0.0
 #' Track alternative source of convergence. Primarily experimental, to identify alternatives to the objective
 #'
 #' @param X NxM matrix of SNP effect sizes
-#' @param W
-#' @param W_c
+#' @param W NxM matrix of SNP weights (1/SE)
+#' @param W_c MxM matrix for decorrelating transformation
 #' @param U
 #' @param V
 #' @param index whcih iteration we are currently on
