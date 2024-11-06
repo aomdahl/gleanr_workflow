@@ -364,6 +364,96 @@ DropEmptyColumnsPipe <- function(lin,options)
 }
 
 
+#' Utilities for loading GLEANR by function, as opposed to the command line tools for reading everything in
+#'
+#' @param X- matrix of summary stats
+#' @param W- weights from Standard errors
+#' @param C - cohort overlap estimates
+#' @param snp.ids - list of SNP ids, corresponds to order in X
+#' @param trait.names - traitnames to use, corresponds to order in X
+#' @param K - specify a K if you would like.
+#' @param init.mat- which matrix to initialize to
+#' @param covar_shrinkage- Which covariance matrix shrinkage type to apply, default is variance based (Strimmer)
+#' @param enforce_blocks - Force the matrix to be block matrix
+#' @param covar_se
+#' @param ...
+#'
+#' @return a list containing the objects needed to run gleaner, including the decorrelating transformation matrix andthe options matrix.
+#' @export
+#'
+#' @examples
+initializeGLEANR <- function(X,W,C,snp.ids, trait.names, K=0, init.mat = "V", covar_shrinkage=-1,enforce_blocks=TRUE,covar_se=NULL, ...)
+{
+  #A few quick sanity checks:
+  if(all(apply(X, 2, var) == 0) | all(apply(X, 1, var) == 0))
+  {
+    message("Matrix of effect sizes contains no variance. Likely not a valid matrix- program will terminate")
+    quit()
+  }
+  if(all(apply(W, 2, var) == 0))
+  {
+    warning("Columns of standard errors contain no variance. May not be valid")
+  }
+
+  message("This is an archaic initialization; recommend doing away with this...")
+  args <- defaultSettings(K=K,init.mat = init.mat,...)
+  args$pve_init <- FALSE
+  option <- readInSettings(args)
+  option$swap <- FALSE
+  option$alpha1 <- 1e-10
+  option$lambda1 <- 1e-10
+  option$block_covar <- 0.2
+  output <- args$output
+  #log.path <- paste0(args$output, "gwasMF_log.", Sys.Date(), ".txt")
+  #lf <- logr::log_open(log.path, show_notes = FALSE)
+  #options("logr.compact" = TRUE)
+  #options("logr.notes" = FALSE)
+  #Read in the hyperparameters to explore
+  hp <- readInParamterSpace(args)
+  all_ids <-snp.ids; names <- trait.names
+  initk <- option$K
+  if(initk == 0)
+  {
+    message('Initializing X to the max -1')
+    option$K <- ncol(X)-1
+  }
+  #Run the bic thing...
+  option$V <- FALSE
+  option$fixed_ubiqs <- TRUE
+
+  if(enforce_blocks)
+  {
+    blocks <- create_blocks(C,cor_thr=0.2)
+    covar <- blockifyCovarianceMatrix(blocks, C)
+  }else
+  {
+    message("Not enforcing a block structure")
+    covar <- C
+  }
+
+  #if specified, srhink
+
+  if(covar_shrinkage == "strimmer" | covar_shrinkage == "STRIMMER")
+  {
+    covar <- strimmerCovShrinkage(args, covar, covar_se, sd.scaling=1)
+  }
+  else if(covar_shrinkage > -1)
+  {
+    message("Performing WL shrinkage, as desired")
+
+    covar <- linearShrinkLWSimple(covar, args$WLgamma)
+
+  }
+  else{
+    message("Not applying shrinkage on covar")
+  }
+  W_c_dat <- buildWhiteningMatrix(covar, ncol(X),blockify = -1)
+  W_c = W_c_dat$W_c
+  list("args" = args, "options" = option,
+       "hp" = hp, "all_ids" = snp.ids, "names" = trait.names, "initk" = initk, "W_c" = W_c)
+}
+
+
 ########################################### Functions calculating the BIC ####################################################
 #' Wrapper for all BIC methods under consideration.
 #'
@@ -665,7 +755,7 @@ gleaner <- function(X,W, snp.ids, trait.names, C = NULL, K=0, gwasmfiter =5, rep
   {
     C = diag(ncol(X))
   }
-  d <- initializeGwasMF(X,W,C, snp.ids, trait.names, K=ifelse(use.init.k, K, 0),
+  d <- initializeGLEANR(X,W,C, snp.ids, trait.names, K=ifelse(use.init.k, K, 0),
                         init.mat=init.mat, covar_shrinkage=shrinkWL,covar_se=covar_se,...) #Either use specified, or prune down as we
   option <- d$options; args <- d$args; hp <- d$hp; all_ids <- d$all_ids; names <- d$namesl; W_c <- d$W_c
 
