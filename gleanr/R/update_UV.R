@@ -100,7 +100,7 @@ DefineSparsitySpaceInit <- function(X, W,W_c, W_ld, option, burn.in = 5,reg.elem
 #TODO: makea. test here to check the dimensions of W_c and X and fixed. Needs to line upo.
 #' Title
 #'
-#' @param X
+#' @param X NxM matrix of SNP effect sizes
 #' @param W
 #' @param W_cov
 #' @param fixed
@@ -491,7 +491,7 @@ MatrixChange <- function(new, old)
 #1.26 changes- drop the burn in.
 #' Main ALS workhorse with fixed sparsity parameters
 #' Proceeds until some convergence threshold
-#' @param X
+#' @param X NxM matrix of SNP effect sizes
 #' @param W
 #' @param W_c
 #' @param option - specifies major settings
@@ -716,7 +716,7 @@ EndIterStatement <- function(iter, td, option)
 
 #' Generate regression explanatory variable and weighted elements
 #'
-#' @param X
+#' @param X NxM matrix of SNP effect sizes
 #' @param W
 #' @param W_c
 #'
@@ -739,7 +739,7 @@ prepRegressionElements <- function(X,W,W_c, option)
 #' Grabbed this off of stack overflow.
 #' @param x
 #'
-#' @return
+#' @return Correlation value of a complex matrix.
 #' @export
 #'
 #' @examples

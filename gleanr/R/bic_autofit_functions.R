@@ -160,7 +160,7 @@ returnCompletionDat <- function(min.dat, rec.dat, mat.fit, conv.options, general
 #' @param mat.fit the fit of the most recent step, either u.fit or v.fit
 #' @param matrix_on which matrix you just updated, either "U" or "V"
 #' @param iter which iteration you're on
-#' @param X
+#' @param X NxM matrix of SNP effect sizes
 #' @param W
 #' @param W_c
 #' @param optimal_complement the opposite matrix of matrix_on (actual matrix object)
@@ -261,7 +261,7 @@ checkConvergenceBICSearch <- function(index, record.data, conv.perc.thresh = 0.0
 
 #' Track alternative source of convergence. Primarily experimental, to identify alternatives to the objective
 #'
-#' @param X
+#' @param X NxM matrix of SNP effect sizes
 #' @param W
 #' @param W_c
 #' @param U
@@ -366,7 +366,7 @@ DropEmptyColumnsPipe <- function(lin,options)
 
 #' Utilities for loading GLEANR by function, as opposed to the command line tools for reading everything in
 #'
-#' @param X- matrix of summary stats
+#' @param X NxM matrix of SNP effect sizes
 #' @param W- weights from Standard errors
 #' @param C - cohort overlap estimates
 #' @param snp.ids - list of SNP ids, corresponds to order in X
@@ -456,7 +456,7 @@ initializeGLEANR <- function(X,W,C,snp.ids, trait.names, K=0, init.mat = "V", co
 
 ########################################### Functions calculating the BIC ####################################################
 #' Wrapper for all BIC methods under consideration.
-#'
+#' TODO: In some instances, sklearn_ebic converts input matrices into "dense" matrix object. Want to avoid this.
 #' @param fit glmnet object
 #' @param covars long.v or long.u
 #' @param y long.x- the explanatory data (weighted)
@@ -466,7 +466,7 @@ initializeGLEANR <- function(X,W,C,snp.ids, trait.names, K=0, init.mat = "V", co
 #' and addends (non-consant vector of additional terms, usually eBIC. Should not include constant single terms.), and n.coef- how many coefficients in the maximally testeed model.
 #'
 #' @export
-#' #' #TODO: In some instances, sklearn_ebic converts input matrices into "dense" matrix object. Want to avoid this.
+#'
 calculateBIC <- function(fit, covars,y, bic.mode)
 {
     switch(
@@ -681,7 +681,7 @@ extractMinBicDat <- function(bic.dat, min.index)
 #' Model fitting routine, using the updateUV function
 #'
 #' @param option list of runtime options
-#' @param X
+#' @param X NxM matrix of SNP effect sizes
 #' @param W
 #' @param W_c
 #' @param optimal.init V at which to initialize the run, typically the output from a model selection step
@@ -730,7 +730,7 @@ return(reg.run)
 
 #' Wrapper to programmatically call the BIC-based factorization
 #'
-#' @param X data matrix to factorize, SNPs x studies
+#' @param X NxM matrix of SNP effect sizes
 #' @param W uncertainty weights (1/SE), same dimensions as X
 #' @param snp.ids the names of the SNPs in X, in order
 #' @param trait.names the names of the studies in X, in order
@@ -745,7 +745,6 @@ return(reg.run)
 #'
 #' @return
 #' @export
-#' #res <- gleaner(true.betas,1/true.ses, snps, colnames(true.ses), K=5,C=NULL)
 gleaner <- function(X,W, snp.ids, trait.names, C = NULL, K=0, gwasmfiter =5, rep.run = FALSE, covar_se=NULL,
                     bic.var= "sklearn", use.init.k = FALSE, init.mat = "V", is.sim = FALSE,
                     save.path = "", scale.mats = FALSE, regression.method = "glmnet", shrinkWL=-1,...)

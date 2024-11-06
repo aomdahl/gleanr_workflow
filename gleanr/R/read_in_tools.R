@@ -548,7 +548,6 @@ selectInitK <- function(args,X_, evals = NULL)
     k = switch(
       args$K,
       "MAX"= ncol(X_)-1,
-      "GD"= chooseGavishDonoho(X_,  var.explained=evals, noise=1), #see https://rdrr.io/github/kevinblighe/PCAtools/man/chooseGavishDonoho.html
       "KAISER"= sum(evals > mean(evals)), #described in https://wires.onlinelibrary.wiley.com/doi/epdf/10.1002/wics.101; better called avergae.
       "AVG"= sum(evals > mean(evals)), #same as tanigawa et al.
       "KAISER-1"=  sum(evals > 1),
@@ -568,60 +567,15 @@ selectInitK <- function(args,X_, evals = NULL)
   }
   return(k)
 }
-#' Issues installing PCATools, so took the code directly from there
-#' https://rdrr.io/github/kevinblighe/PCAtools/src/R/randomMethods.R
-#' Choosing PCs with the Gavish-Donoho method
+
+#' Take command-line arguments and convert them into the gleanr options object
 #'
-#' Use the Gavish-Donoho method to determine the optimal number of PCs to retain.
+#' @param args, a list as you would get from a command line argument parser
 #'
-#' @inheritParams chooseMarchenkoPastur
-#'
-#' @details
-#' Assuming that \code{x} is the sum of some low-rank truth and some i.i.d. random matrix with variance \code{noise},
-#' the Gavish-Donoho method defines a threshold on the singular values that minimizes the reconstruction error from the PCs.
-#' This provides a mathematical definition of the \dQuote{optimal} choice of the number of PCs for a given matrix,
-#' though it depends on both the i.i.d. assumption and an estimate for \code{noise}.
-#'
-#' @return
-#' An integer scalar specifying the number of PCs to retain.
-#' The effective limit on the variance explained is returned in the attributes.
-#'
-#' @author Aaron Lun
-#'
-#' @examples
-#' truth <- matrix(rnorm(1000), nrow=100)
-#' truth <- truth[,sample(ncol(truth), 1000, replace=TRUE)]
-#' obs <- truth + rnorm(length(truth), sd=2)
-#'
-#' # Note, we need the variance explained, NOT the percentage
-#' # of variance explained!
-#' pcs <- pca(obs)
-#' chooseGavishDonoho(obs, var.explained=pcs$sdev^2, noise=4)
-#'
-#' @seealso
-#' \code{\link{chooseMarchenkoPastur}}, \code{\link{parallelPCA}} and \code{\link{findElbowPoint}},
-#' for other approaches to choosing the number of PCs.
-#'
+#' @return an options list object
 #' @export
-chooseGavishDonoho <- function(x, .dim=dim(x), var.explained, noise) {
-    m <- min(.dim)
-    n <- max(.dim)
-    beta <- m/n
-
-    # Equation 11 of the Gavish-Donoho paper.
-    lambda <- sqrt( 2 * (beta + 1) + (8 * beta) / ( beta + 1 + sqrt(beta^2 + 14 * beta + 1) ) )
-
-    # Equation 3, slightly reorganized to have the variance explained on the LHS
-    # instead of the singular values 'D', where D = [ var.explained * (.dim[2] - 1) ].
-    limit <- lambda^2 * noise * n/(.dim[2] - 1)
-    gv <- sum(var.explained > limit)
-
-    output <- max(1L, gv)
-    attr(output, "limit") <- limit
-    output
-}
-
-
+#'
+#' @examples TBD
 readInSettings <- function(args)
 {
  option <- list()

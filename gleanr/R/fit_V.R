@@ -19,18 +19,18 @@
 
 #' Update the factor matrix V during the alternating least squares
 #'
-#' @param X
-#' @param W
-#' @param W_c
-#' @param U
-#' @param option
+#' @param X NxM matrix of SNP effect sizes
+#' @param W NxM matrix of SNP weightings (1/SE)
+#' @param W_c MxM decorrelating transformation matrix
+#' @param U NxK matrix of curent estimated SNP loadings
+#' @param option list of options for gleanr
 #' @param formerV - option to submit previous iteration's V. Not used
 #' @param reg.elements - list with pre-transformed outcome variable and weighting data. Helps with memory and speed
 #'
-#' @return
+#' @return list containing updated V and several additional key statistics, including BIC information
 #' @export
 #'
-#' @examples
+#' @examples TBD
 FitVGlobal <- function(X, W, W_c, U, option, formerV = NULL, reg.elements=NULL)
 {
   #Prep data for regression

@@ -175,6 +175,14 @@ pveBySVD <-function(V,U,X,K,D = NULL)
   return(c(r[1], sapply(2:K, function(i) r[i] - r[i-1])))
 }
 
+#' Helper function to omit NAs from mean calculation vector.
+#' Review,this can be replaced with mean(..., na.rm=TRUE)
+#' @param vec
+#'
+#' @return mean of vector sans NAs
+#' @export
+#'
+#' @examples mean.na(c(1,2,3,4,5,NA,NA))
 mean.na <- function(vec){
   return(mean(vec[!is.na(vec)]))
 }

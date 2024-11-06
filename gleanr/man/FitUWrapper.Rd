@@ -4,14 +4,16 @@
 \alias{FitUWrapper}
 \title{Wrapper for the U-fitting step}
 \usage{
-FitUWrapper(X, W, V, option, prevU = NULL, ...)
+FitUWrapper(X, W, W_c, V, option, prevU = NULL, ...)
 }
 \arguments{
 \item{X}{the matrix to be decomposed (N x T, N is the number of data points, T is the number of features)}
 
 \item{W}{the weight matrix, same size as in X, containing standard errors of the GWAS estimates}
 
-\item{V}{learned factor matrix  (T x K, T is the number of features, K is the number of factors)}
+\item{W_c}{the whitening matrix, associated with covariance structure, a M x M}
+
+\item{V}{learned factor matrix  (M x K, M is the number of features, K is the number of factors)}
 
 \item{option}{list with parameters including lambda1, the l1 penalty parameter for the U matrix
 (relevant arguments include: ncores,)}

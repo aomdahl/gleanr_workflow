@@ -1,13 +1,13 @@
 
-#' Title
+#' Find the K that minimize the BIC via grid search
 #'
-#' @param opath
-#' @param option
-#' @param X
-#' @param W
-#' @param W_c
-#' @param all_ids
-#' @param names
+#' @param opath to write out the K grid search data object
+#' @param option to specify gleaner running settings
+#' @param X NxM matrix of SNP effect sizes
+#' @param W NxM matrix of SNP weights
+#' @param W_c MxM matrix decorrelating transform
+#' @param all_ids SNP ids corresponding to X
+#' @param names Trait names corresponding to X
 #' @param step.limit - what is the maximum number of grid look steps you are willing to take?
 #' @param init.range - how broad should the initial search range be? Default is 4
 #' @param parallel - options are "none" or "multicore" or "snow"
@@ -160,10 +160,10 @@ gatherSearchData <- function(gs_object,k_range,grid_record,curr_grid=NULL,curr_b
 #' @param params which settings of K we tried at
 #' @param record_obj the object this is being stored in
 #'
-#' @return
+#' @return list object containing a table of all BIC score information and the data from the test
 #' @export
 #'
-#' @examples
+#' @examples TBD
 gridSearchRecord <- function(gs_object,params, record_obj)
 {
   if(is.null(record_obj))
@@ -193,20 +193,16 @@ gridSearchRecord <- function(gs_object,params, record_obj)
   record_obj
 }
 
-#Only works for N =2 at the moment
-
 #' Figure out which points to test next
 #' Currently limited to BINARY SEARCH- only searches 2 points next, at the midpoint between points that have been previously tested (integers only)
 #' @param best_K- the K that is currently best
 #' @param curr_grid-a list with all the BICs and all the Ks
 #' @param all_K- all possible Ks to consider
 #'
-#' @return
+#' @return  A list with the next K to test, and a logical saying if the search should end
 #' @export
-#'#For debugging, try:
-#load("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/run_scripts/finngen_ukbb_benchmark/v2_expanded_run/bic_method_comparisons_covar_adjusted/GRID.DEBUG.RData")
+#'
 #' @examples
-#' #chooseNextParams(curr.best.K,query.matrix,k_range)
 chooseNextParams <- function(best_K, curr_grid,all_K)
 {
   end = FALSE
@@ -251,7 +247,6 @@ chooseNextParams <- function(best_K, curr_grid,all_K)
 #' @export
 #'
 #' @examples
-#' #getNewTestBounds(best_K, curr_grid,all_K)
 getNewTestBounds <- function(best_K, curr_grid,all_K)
 {
   diffs <- (curr_grid$K - best_K)

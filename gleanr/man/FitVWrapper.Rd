@@ -4,7 +4,7 @@
 \alias{FitVWrapper}
 \title{Wrapper for the V function, not serving a purpose at the moment.}
 \usage{
-FitVWrapper(X, W, U, option, formerV = NULL)
+FitVWrapper(X, W, W_c, U, option, formerV = NULL, ...)
 }
 \arguments{
 \item{X}{the matrix to be decomposed (N x T, N is the number of data points, T is the number of features)}
