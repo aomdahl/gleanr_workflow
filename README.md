@@ -1,8 +1,9 @@
 # GLEANR: GWAS latent embeddings accounting for noise and regularization
-GLEANER is a GWAS matrix factorization tool to estimate sparse latent pleiotropic genetic factors. Factors map traits to a distribution of SNP effects that may capture biological pathways or mechanisms shared by these traits.
-This repo contains the `gleanr` R package, in addition to helpful pipeline scripts to implement and use the package.
+<img align="left" src="gleanr/gleanr_logo.png" width="125">GLEANER is a GWAS matrix factorization tool to estimate sparse latent pleiotropic genetic factors. Factors map traits to a distribution of SNP effects that may capture biological pathways or mechanisms shared by these traits.
+This repo contains the `gleanr` R package (in development), in addition to helpful pipeline scripts to implement and use the package.
 
-## Installing GLEANR
+
+
 
 ## Repo structure:
  - `rules`: Snakemake rule files to perform GLEANR analysis, including cleaning and harmonizing input GWAS data, estimating and formatting GLEANR inputs, and analyzing GLEANR factors downstream
