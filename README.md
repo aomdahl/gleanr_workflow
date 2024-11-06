@@ -2,6 +2,9 @@
 <img align="left" src="gleanr/gleanr_logo.png" width="150">GLEANER is a GWAS matrix factorization tool to estimate sparse latent pleiotropic genetic factors. Factors map traits to a distribution of SNP effects that may capture biological pathways or mechanisms shared by these traits.
 This repo contains the `gleanr` R package, in addition to helpful pipeline scripts to implement and use the package.
 
+
+
+
 ## Installing GLEANR
 
 ## Repo structure:
