@@ -3,7 +3,11 @@
 This repo contains the `gleanr` R package (in development), in addition to helpful pipeline scripts to implement and use the package.
 
 
-
+## Installing GLEANR
+This can be done directly from github using the  `devtools` package as follows:
+```
+devtools::install_github("aomdahl/gleanr/gleanr")
+```
 
 ## Repo structure:
  - `rules`: Snakemake rule files to perform GLEANR analysis, including cleaning and harmonizing input GWAS data, estimating and formatting GLEANR inputs, and analyzing GLEANR factors downstream
