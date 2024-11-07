@@ -465,7 +465,7 @@ SampleOverlapCovarHandler <- function(args, names, X)
   if(args$sample_sd != "")
   {
     message("Verify that the name order is correct. Should be...")
-    sd.df <- fread(args$sample_sd)
+    sd.df <- data.table::fread(args$sample_sd)
     sd.scaling <- 1/(as.matrix(sd.df$V2) %*% t(as.matrix(sd.df$V2)))
     diag(sd.scaling) <- 1 #make it correlation matrix
     C <- C*sd.scaling

@@ -4,8 +4,8 @@
 # Ashton Omdahl, Sept 2021
 ############################################################################################
 
-
-pacman::p_load(data.table, tidyr, dplyr, reticulate)
+`%>%` <- magrittr::`%>%`
+#pacman::p_load(data.table, tidyr, dplyr)
 
 #default setting is to always return an estimate of "additive" PVE, not cumulative.
 #As in, what is the gain in explained variance by adding in one more factor?
@@ -18,23 +18,12 @@ calcPVEAll <- function(V,U,X,K,D = NULL)
     D = rep(1, K)
   }
   var_tracker <- data.frame("Factor" = 1:K)
-  var_tracker$r2 <- r2Score(V,U,X,K,D)
-  var_tracker$var_exp <- expVarScore(V,U,X,K,D)
   var_tracker$pveBySVD <- pveBySVD(V,U,X,K,D)
   #var_tracker$flashR <- approxPVE(V,U,X,K,D)
   var_tracker$flashRWorks <-  approxPVE_init(X, V, U %*% diag(D))
   return(var_tracker)
 }
 
-#Calculate a simple r2, using sklearn's "r2_score" function
-r2Score <- function(V,U,X,K,D = NULL)
-{
-  sklran <- import("sklearn.metrics")
-  x_py= r_to_py(X)
-  xhat_py = r_to_py((matrix(U[,1]) * D[1]) %*% t(matrix(V[,1])))
-  r2 <- c(sklran$r2_score(x_py, xhat_py), sapply(2:K, function(i) sklran$r2_score(x_py, r_to_py(U[,1:i] %*% diag(D[1:i]) %*% t((V[,1:i]))))))
-   return(c(r2[1], sapply(2:K, function(i) r2[i] - r2[i-1])))
-}
 
 ## Method 1.5- vanilla R2
 #' Very basic estimation of PVE, based on R2
@@ -136,23 +125,6 @@ getPVEOrder <- function(X,V,U,W,W_c,options,...)
   allCombsLinearPVE(X,V,U,W,W_c,options,...)
 }
 #getPVEOrder(as.matrix(X)*as.matrix(W) %*% W_c, pm(ret$V), pm(ret$U),...)
-
-
-## Method 2: Explained Variance Score
-#Basically, this drops the assumption of the data being 0-centered (? still not clear on this point). This would look like $1-\frac{Var[\hat{y}-y]}{Var[y]}$
-#for reference, see:
-#`https://stats.stackexchange.com/questions/210168/what-is-the-difference-between-r2-and-variance-score-in-scikit-learn`
-#and `https://scikit-learn.org/stable/modules/generated/sklearn.metrics.explained_variance_score.html`.
-expVarScore <- function(V,U,X,K,D = NULL)
-{
-  sklran <- import("sklearn.metrics")
-     x_py= r_to_py(X)
-   xhat_py <- r_to_py(matrix(U[,1] * D[1]) %*% t(matrix(V[,1])))
-   var_exp <- c(sklran$explained_variance_score(x_py, xhat_py), sapply(2:K, function(i) sklran$explained_variance_score(x_py, r_to_py(U[,1:i] %*% diag(D[1:i]) %*% t((V[,1:i]))))))
-   return( c(var_exp[1], sapply(2:K, function(i) var_exp[i] - var_exp[i-1])))
- }
-
-
 
 
 ## Method 3: Shen and Huan 2008 method
