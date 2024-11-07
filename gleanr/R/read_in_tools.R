@@ -437,9 +437,9 @@ readInData <- function(args)
 
 #' Wrapper to get all the important data extracted and used for cohort overlap covariance adjjustment
 #'
-#' @param args
-#' @param names
-#' @param X
+#' @param args argument vector from initializing or calling gleanr.
+#' @param names list of trait names, in order corresponding to X
+#' @param X NxM matrix of SNP effect sizes
 #'
 #' @return list containing Whitening matrix W_c inverse, Block versino of the C matrix and unblocked version of C matrix.
 #' @export
@@ -575,7 +575,7 @@ selectInitK <- function(args,X_, evals = NULL)
 #' @return an options list object
 #' @export
 #'
-#' @examples TBD
+#' @examples
 readInSettings <- function(args)
 {
  option <- list()

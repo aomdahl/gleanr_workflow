@@ -103,10 +103,10 @@ DefineSparsitySpaceInit <- function(X, W,W_c, W_ld, option, burn.in = 5,reg.elem
 #' @param X NxM matrix of SNP effect sizes
 #' @param W NxM matrix of SNP weights (1/SE)
 #' @param W_cov MxM matrix for decorrelating transformation
-#' @param fixed
-#' @param learning
-#' @param option
-#' @param fit
+#' @param fixed the actual matrix object (either U or V) which is fixed
+#' @param learning a string specifying which matrix is fixed (either "U" or "V")
+#' @param option list of gleanr options
+#' @param fit fit object from glmnet
 #'
 #' @return
 #' @export
@@ -717,10 +717,10 @@ EndIterStatement <- function(iter, td, option)
 #' Generate regression explanatory variable and weighted elements
 #'
 #' @param X NxM matrix of SNP effect sizes
-#' @param W
-#' @param W_c
+#' @param W NxM matrix of SNP weights (1/SE)
+#' @param W_c MxM matrix for decorrelating transformation
 #'
-#' @return list containing the joined_weights (the per-snp weights, used in estimating V) and the weighted x Matrix
+#' @return list containing the weight matrices (the per-snp weights, used in estimating V) and the weighted x Matrix
 #' @export
 #'
 #' @examples

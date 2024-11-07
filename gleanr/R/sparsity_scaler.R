@@ -7,26 +7,6 @@
 ################################################################################################################################
 
 # Helpful stuff for debugging in Rstudio.
-if(FALSE)
-{
-  #source("/Users/ashton/Documents/JHU/Research/LocalData/snp_network/quickLoadData.R")
-  source("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/src/quickLoadData.R")
-  source("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/src/fit_F.R")
-  source("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/src/fit_L.R")
-  source("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/src/compute_obj.R")
-  source("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/src/plot_functions.R")
-  all <- quickLoadFactorization("Z", "MARCC")
-  X <- all$X
-  W <- all$W
-  option <- all$option
-  option$traitSpecificVar <- TRUE
-  option$parallel <- FALSE
-
-  #subset for faster running....
-  X <- X[1:1000, 1:10]
-  W <- W[1:1000, 1:10]
-  option$K <- 5
-}
 
 find_mode <- function(x) {
   u <- unique(x)

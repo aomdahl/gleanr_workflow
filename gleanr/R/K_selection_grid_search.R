@@ -163,7 +163,6 @@ gatherSearchData <- function(gs_object,k_range,grid_record,curr_grid=NULL,curr_b
 #' @return list object containing a table of all BIC score information and the data from the test
 #' @export
 #'
-#' @examples
 gridSearchRecord <- function(gs_object,params, record_obj)
 {
   if(is.null(record_obj))
@@ -239,9 +238,9 @@ chooseNextParams <- function(best_K, curr_grid,all_K)
 
 #' Helper function for chooseNextParams to get the bounds of the space to test next.
 #'
-#' @param best_K
-#' @param curr_grid
-#' @param all_K
+#' @param best_K K setting which minimzes the BIC
+#' @param curr_grid list of previously evaluated K points
+#' @param all_K range of valid K for consideration
 #'
 #' @return upper (above) and lower (below)
 #' @export
@@ -415,9 +414,9 @@ getGlobalBICSum <- function(fit_vect)
 #' @param global - globally minimial variance estimate
 #' @param remaining - all other variance estimates
 #' @param fit_vect - fit data for all entries
-#' @param min_index - inde corresponding to the globally minimal variacne estiamte
+#' @param min_index - inde corresponding to the globally minimal variance estiamte
 #'
-#' @return
+#' @return nothing if selected variance estimate looks reasonable; otherwise it throws a warning
 #' @export
 #'
 #' @examples
@@ -433,7 +432,7 @@ checkOverfitVar <- function(globalmin, remaining,fit_vect,min_index)
        }
      }
      #Alternative test- it doesn't match the distribution of expected variances.
-     if(length(unique(remaining)) > 1 & FALSE) #This condition throws a bug if other options are too close- don't bother with it.
+     if(length(unique(remaining)) > 1 & FALSE) #This condition throws a bug if other options are too close- Find something more reliable
      {
        fit = MASS::fitdistr(1/remaining, "gamma")
        prob.not <- min(invgamma::pinvgamma(globalmin,shape = fit$estimate[1],rate = fit$estimate[2], lower.tail = FALSE),

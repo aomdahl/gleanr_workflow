@@ -265,9 +265,6 @@ compute_obj <- function(X, W, W_c, L, FactorM, option, decomp = FALSE, loglik = 
     #message("Replacing with my calculated log lik")
     if(globalLL)
     {
-      #message("Doing global modified ll instead...")
-      #mine = penLL(nrow(X) * ncol(X),residuals )
-      #mine = penLLSimp(nrow(X), ncol(X),residuals )
       if(option[["regression_method"]] == "glmnet" )
       {
         #negative b/c swapped below
@@ -276,9 +273,6 @@ compute_obj <- function(X, W, W_c, L, FactorM, option, decomp = FALSE, loglik = 
       {
         mine = stdLogNormalFit(residuals)
       }
-
-      #message("yuan style")
-      #mine = penYuan(residuals)
     }else
     {
       mine = penalizedLogLik(X,W,W_c,L,FactorM, fixed_first = FALSE, scalar=scalar)
@@ -464,15 +458,15 @@ GetStepWiseObjective <- function(X,W,W_c,old.mat,new.mat, companion.mat,fixed.te
 
 #' Wrapper on objective update, for in between each iteration- adds a check for alignment that shouldn't ever get triggered.
 #'
-#' @param X
-#' @param W
-#' @param W_c
-#' @param U
-#' @param V
-#' @param option
-#' @param alpha
-#' @param lambda
-#' @param ...
+#' @param X NxM matrix of SNP effect sizes
+#' @param W NxM matrix of SNP weights (1/SE)
+#' @param W_c MxM matrix for decorrelating transformation
+#' @param U NxK matrix of SNP loadings
+#' @param V MxK matrix of trait loadings
+#' @param option list of gleanr options
+#' @param alpha sparsity parameter corresponding to U
+#' @param lambda sparsity parameter corresponding to V
+#' @param ... other arguments for compute_obj function
 #'
 #' @return
 #' @export

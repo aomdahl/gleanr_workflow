@@ -161,8 +161,8 @@ returnCompletionDat <- function(min.dat, rec.dat, mat.fit, conv.options, general
 #' @param matrix_on which matrix you just updated, either "U" or "V"
 #' @param iter which iteration you're on
 #' @param X NxM matrix of SNP effect sizes
-#' @param W
-#' @param W_c
+#' @param W NxM matrix of SNP weights (1/SE)
+#' @param W_c MxM matrix for decorrelating transformation
 #' @param optimal_complement the opposite matrix of matrix_on (actual matrix object)
 #' @param option
 #'
@@ -264,15 +264,15 @@ checkConvergenceBICSearch <- function(index, record.data, conv.perc.thresh = 0.0
 #' @param X NxM matrix of SNP effect sizes
 #' @param W NxM matrix of SNP weights (1/SE)
 #' @param W_c MxM matrix for decorrelating transformation
-#' @param U
-#' @param V
+#' @param U NxK matrix of SNP loadings
+#' @param V MxK matrix of trait loadings
 #' @param index whcih iteration we are currently on
 #' @param record.data
-#' @param u.alphamax - the maximum possible sparsity parameter for a given input X, V (||y'X||_INF)
-#' @param v.lambdamax  - the maximum possible sparsity parameter for a given input X, U (||y'X||_INF)
-#' @param option_old
+#' @param u.alphamaxthe maximum possible sparsity parameter for a given input X, V (||y'X||_INF)
+#' @param v.lambdamax  the maximum possible sparsity parameter for a given input X, U (||y'X||_INF)
+#' @param option_old current option settings
 #'
-#' @return track.modes list containing possible convergence criteria, including V and U norms
+#' @return track.modes list containing possible convergence criteria, including V and U norms, the objective function, BIC scores, their sum, and the U and V matrices
 #' @export
 #'
 #' @examples
@@ -514,7 +514,7 @@ extendedBIC <- function(bic.dat, fit, scale = FALSE)
 #' @param long.v the covariates matrix, sparse
 #' @param long.x the outcome variable
 #'
-#' @return a vector of BIC scores across multiple different \lambda settings
+#' @return a vector of BIC scores across multiple different lambda settings
 #' @export
 #'
 stdBIC <- function(fit, long.v, long.x)
@@ -522,7 +522,7 @@ stdBIC <- function(fit, long.v, long.x)
   all.preds <- predict(fit, newx = long.v)
   #I've already extended the dims here, so n = MN
   p = 1
-  n = nobs(fit)
+  n = glmnet::nobs(fit)
   BIC= sapply(1:ncol(all.preds), function(i) -2*penLLSimp(n, p, long.x - all.preds[,i]) + log(n) * fit$df[i])
 
   list("bic.list" = BIC,
@@ -561,25 +561,21 @@ BICglm <- function(fit, bic.mode = ""){
 #' this differs from the traditional derivation, in that the use the unbiased estimate for s rather than the MLE.
 #' Source code is here https://github.com/scikit-learn/scikit-learn/blob/872124551/sklearn/linear_model/_least_angle.py#L1991
 #'
-#' @param fit
-#' @param x
-#' @param y
-#' @param bic.mode
+#' @param fit glmnet fit object of current regression run across many sparsity settings
+#' @param x expanded sparse block matrix corresponding to U or V used in regression by FitVGlobal or FitUGlobal
+#' @param y long vector of all stacked, weighted, and transformed SNP effect sizes
 #'
 #' @return
 #' @export
 #'
 #' @examples
-sklearnBIC <- function(fit,x,y, bic.mode = "")
+sklearnBIC <- function(fit,x,y)
 {
-  #message("using SKlearn")
-  #save(fit,x,y,bic.mode, file = "/scratch16/abattle4/ashton/snp_networks/scratch/cohort_overlap_exploration/DEBUG.bic.RData")
   p = ncol(x)
   n = length(y)
   #OLS fit
   #This is expensive to do afeter taking so long to fit a goshdarn lasso. Need to find an alternative option?
   lm.fit <- glmnet::bigGlm(y=y , x=x, family = "gaussian",intercept = FALSE,trace.it = 1)
-  #fit.best.lm <- predict(lm.fit, newx = x)
 
   #our fit
   coef = coef(fit)
@@ -592,31 +588,8 @@ sklearnBIC <- function(fit,x,y, bic.mode = "")
   {
     warning("Unable to calculated BIC when initialized # factors the same as M. Output results will not make sense.")
   }
-  #stopifnot(sum((y - fit.best.lm)^2) == deviance(lm.fit))
-  #message("UPDATE sklearn to remove predict step.")
-  self.noise.variance <- deviance(lm.fit)/(n - p)
-  #For a simple benchmark test:
-  #Ask- are the results different? Is it faster?
-  #self.noise.variance <- deviance(fit)[length(fit$lambda)]/(n - p)
+  self.noise.variance <- glmnet::deviance(lm.fit)/(n - p)
   scikitlearn.bic <- n*log(2*pi*self.noise.variance) + sse/self.noise.variance + log(n)*fit$df
-  if(FALSE){ #looking at this alternative calculation
-    #alternative version with glmnet data directly
-    alt.var <- deviance(fit)[length(fit$lambda)]/(n - p)
-    alt.bic <- n*log(2*pi*alt.var) + sse/alt.var + log(n)*fit$df
-    #do the mins differ?
-    if(abs(self.noise.variance - alt.var) > 0.01)
-    {
-      message("notable difference here.")
-    }
-
-    if(which.min(alt.bic) != which.min(scikitlearn.bic))
-    {
-      message("Mins differ")
-      quit()
-    }else {message("mins agree!")}
-  }
-
-  scikitlearn.bic
   list("bic.list" = scikitlearn.bic,
        "fit.term" =sse,
        "df.term"=  log(n)*fit$df,
@@ -629,11 +602,11 @@ sklearnBIC <- function(fit,x,y, bic.mode = "")
 
 ZouBIC <- function(fit, x, y, var.meth = "mle")
 {
-  n <- nobs(fit)
+  n <- glmnet::nobs(fit)
   p=ncol(x)
   #lm.fit <- predict(fit, newx = x, s= 0)
   lm.fit <- glmnet::bigGlm(x, y, family = "gaussian", intercept = FALSE)
-  all.preds <- predict(fit, newx = x) #pretty slow step, surprisingly.
+  all.preds <- glmnet::predict(fit, newx = x) #pretty slow step, surprisingly.
   bic.new <- c()
   fit.new <-  c()
   df.term <- c()
@@ -641,7 +614,7 @@ ZouBIC <- function(fit, x, y, var.meth = "mle")
   best.fit <- deviance(lm.fit)/n
   if(var.meth == "unbiased")
   {
-    best.fit <- deviance(lm.fit)/(n - length(x))
+    best.fit <- glmnet::deviance(lm.fit)/(n - length(x))
   }
   for(i in 1:length(fit$df))
   {

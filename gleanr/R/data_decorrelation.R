@@ -21,9 +21,9 @@ blockifyCovarianceMatrix <- function(blocks, covar)
 #From Guanghao fast asset
 create_blocks <- function(cormat, cor_thr=0.2){
   # Hierarchical clustering
-  corrdist <- as.dist(1-abs(cormat))
-  hc <- hclust(corrdist)
-  htree <- cutree(hc, h=1-cor_thr) # Criterion: corr>0.2
+  corrdist <- stats::as.dist(1-abs(cormat))
+  hc <- stats::hclust(corrdist)
+  htree <- stats::cutree(hc, h=1-cor_thr) # Criterion: corr>0.2
   block <- as.integer(names(table(htree))[table(htree)>=2])
   block <- lapply(block, function(x) names(htree)[htree==x])
 
@@ -223,7 +223,6 @@ linearShrinkLWSimple <- function(sample_cov_mat, gamma)
 #' @export
 #'
 #' @examples
-#' strimmerCovShrinkage(list(), ldsc.mat,C_se, "STRIMMER")
 strimmerCovShrinkage <- function(args, covar, covar_se, sd.scaling=1)
 {
   if(all(covar == diag(nrow(covar))))
@@ -256,8 +255,6 @@ strimmerCovShrinkage <- function(args, covar, covar_se, sd.scaling=1)
 #' @export
 #'
 #' @examples
-#' #TODO: build a test case with truncatedCovarMatrix
-#' use_test("truncatedCovarMatrix")
 truncatedCovarMatrix <- function(Z, z_thresh=2)
 {
   cor.mat <- diag(ncol(Z))
@@ -273,66 +270,4 @@ truncatedCovarMatrix <- function(Z, z_thresh=2)
     }
   }
   cor.mat
-}
-
-
-#' Wrapper to update the gamma parameter based on residual variance
-#'
-#' @param X
-#' @param W
-#' @param C
-#' @param U
-#' @param V
-#' @param par_init what the current gamma is. Always start at 0 if this is the first run
-#'
-#' @return The updated gamma that better corresponds to the residual variance.
-#' @export
-#'
-#' @examples
-updateGammaShrinkage <- function(X,W,C,U,V,par_init=0)
-{
-
-  optim.version <- optim(par=par_init, fn = mleCovarFull,
-        X=X,W=W, C=C, X_hat=U %*% t(V), lower = 0, upper = 1, method = "Brent")$par
-
-  my.version <- sapply(seq(0,1,by=0.05), function(par) mleCovarFull(X, W, X_hat=U %*% t(V), C, par))
-  stopifnot(abs(seq(0,1,by=0.05)[which.min(my.version)]) - optim.version <= 0.05)
-  return(min(optim.version, my.version))
-}
-
-
-
-
-#' Calculate fit of residual variance with current covariance matrix C
-#'
-#' @param X
-#' @param W
-#' @param X_hat
-#' @param C
-#' @param par lambda parameter setting
-#'
-#' @return Frobenius norm distance of current C setting with shrinkage
-#' @export
-#'
-#' @examples
-mleCovarFull <- function(X, W, X_hat, C, par)
-{
-  lambda=par
-  z_resid = (X-X_hat) * W
-  gamma=par
-  I = diag(ncol(X))
-  full_C= lambda * I + (1-lambda) * C
-  z_resid_cor <-cor(z_resid)
-  #Alternative version- oomit likely significant effect
-  mod.z <- abs(X*W) > 2
-  z_resid_mod <- z_resid;  z_resid_mod[mod.z] <- NA
-  z_resid_cor_mod <- cor(mod.z, use = "pairwise.complete.obs")
-  z_resid_cor_mod <- blockifyCovarianceMatrix(create_blocks(z_resid_cor_mod, cor_thr=0.2), z_resid_cor_mod)
-
-
-  z_resid_cor <- blockifyCovarianceMatrix(create_blocks(z_resid_cor, cor_thr=0.2), z_resid_cor)
-  #norm(cov(z_resid)-full_C, "F" ) #This isn't fair, blockify.
-  #norm(z_resid_cor-full_C, "F" ) #This isn't fair, blockify.
-  norm(z_resid_cor_mod-full_C, "F" )#Now trying the mod versino...
-
 }
