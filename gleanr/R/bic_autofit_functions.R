@@ -519,7 +519,7 @@ extendedBIC <- function(bic.dat, fit, scale = FALSE)
 #'
 stdBIC <- function(fit, long.v, long.x)
 {
-  all.preds <- predict(fit, newx = long.v)
+  all.preds <- glmnet::predict(fit, newx = long.v)
   #I've already extended the dims here, so n = MN
   p = 1
   n = glmnet::nobs(fit)
@@ -529,7 +529,7 @@ stdBIC <- function(fit, long.v, long.x)
        "fit.term" = sapply(1:ncol(all.preds), function(i) -2*penLLSimp(n, p, long.x - all.preds[,i])),
        "df.term"=  log(n) * fit$df,
        "fit.scaler"=1,
-       "addends" =0, "n.coef"=nrow(coef(fit)[-1,]))
+       "addends" =0, "n.coef"=nrow(stats::coef(fit)[-1,]))
 
 }
 
@@ -543,18 +543,18 @@ BICglm <- function(fit, bic.mode = ""){
   #based on code from https://stackoverflow.com/questions/40920051/r-getting-aic-bic-likelihood-from-glmnet
   #Note that this isn't exactly the BIC, but the BIC +a constant (2L(saturated model)), but this doesn't impact model selection
   #I revisited this model and explanation on Aug 29, 2024. Should
-  tLL <- -deviance(fit) # 2*(loglike_sat - loglike_fit)
+  tLL <- -stats::deviance(fit) # 2*(loglike_sat - loglike_fit)
   k <- fit$df
   n <- nobs(fit)
   BIC <- log(n)*k - tLL
   BIC
 
   list("bic.list" = BIC,
-       "fit.term" = deviance(fit),
+       "fit.term" = stats::deviance(fit),
        "df.term"=  log(n)*k,
        "fit.scaler"=1,
        "addends" =0,
-       "n.coef"=nrow(coef(fit)[-1,]))
+       "n.coef"=nrow(stats::coef(fit)[-1,]))
 }
 
 #' Calculate BIC based on what is in the sci-kit learn package (see https://scikit-learn.org/stable/modules/linear_model.html#lasso-lars-ic)
@@ -578,7 +578,7 @@ sklearnBIC <- function(fit,x,y)
   lm.fit <- glmnet::bigGlm(y=y , x=x, family = "gaussian",intercept = FALSE,trace.it = 1)
 
   #our fit
-  coef = coef(fit)
+  coef = stats::coef(fit)
   #Should be using t <- predict(fit, newx=x)
   yhat=x%*%coef[-1,] #Why is there an intercept at all? all my runs request none.
   residuals = (as.vector(y)- yhat)
@@ -588,7 +588,7 @@ sklearnBIC <- function(fit,x,y)
   {
     warning("Unable to calculated BIC when initialized # factors the same as M. Output results will not make sense.")
   }
-  self.noise.variance <- glmnet::deviance(lm.fit)/(n - p)
+  self.noise.variance <- stats::deviance(lm.fit)/(n - p)
   scikitlearn.bic <- n*log(2*pi*self.noise.variance) + sse/self.noise.variance + log(n)*fit$df
   list("bic.list" = scikitlearn.bic,
        "fit.term" =sse,
@@ -611,10 +611,10 @@ ZouBIC <- function(fit, x, y, var.meth = "mle")
   fit.new <-  c()
   df.term <- c()
   #best.fit <- norm(y-lm.fit, "2")^2/n
-  best.fit <- deviance(lm.fit)/n
+  best.fit <- stats::deviance(lm.fit)/n
   if(var.meth == "unbiased")
   {
-    best.fit <- glmnet::deviance(lm.fit)/(n - length(x))
+    best.fit <- stats::deviance(lm.fit)/(n - length(x))
   }
   for(i in 1:length(fit$df))
   {
