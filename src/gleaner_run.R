@@ -124,7 +124,8 @@ args_input <- parse_args(OptionParser(option_list=option_list))#, args = t)
 #args_input <- parse_args(OptionParser(option_list=option_list), args = t)
 #TODO: cut oout this middle-man, make a more efficient argument input vector.
 
-setwd("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gleanr/"); load_all()
+#setwd("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gleanr/"); load_all()
+library(gleanr)
 args <-fillDefaultSettings(args_input)
 
 writeRunReport(args)
@@ -225,14 +226,3 @@ save(ret,option, file = paste0(outdir, "_final_dat.RData"))
 
 
 writeOutResults(ret$V,ret$U,ret$trait.names, ret$snp.ids,outdir)
-
-#Write output files
-#For write out- this will disrupt pipelines, but is for the best:
-#V.df <- data.frame(ret$trait.names, ret$V) %>% magrittr::set_colnames(c("Study", paste0("V", 1:ncol(ret$V))))
-#write.table(V.df, file = paste0(outdir, "latent.factors.txt"), quote = FALSE, row.names = FALSE, sep = " ")
-#write.table(ret$V, file = paste0(outdir, "latent.factors.txt"), quote = FALSE, row.names = ret$trait.names, sep = " ")
-#U.df <- data.frame(ret$snp.ids, ret$U) %>% magrittr::set_colnames(c("SNP", paste0("U", 1:ncol(ret$V))))
-#write.table(U.df, file = paste0(outdir, "latent.loadings.txt"), quote = FALSE, row.names = FALSE, sep = " ")
-
-#write.table(ret$U, file = paste0(outdir, "latent.loadings.txt"), quote = FALSE, row.names = ret$snp.ids, sep = " ")
-#write.table(ret$trait.names, file =paste0(outdir, "trait_out_order.txt"), quote = FALSE, row.names = FALSE,col.names = FALSE)
