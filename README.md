@@ -16,3 +16,6 @@ devtools::install_github("aomdahl/gleanr/gleanr")
 ## GLEANR method:
 This is an ongoing project to develop a flexible, interpretable, and sparse factorization framework to integrate GWAS data across studies and cohorts. We employ a basic alternating least-squares matrix factoriztion algorithm with sparse priors on learned matrices, while accounting for study uncertainty.
 Our approach was inspired by work from Yuan He [here](https://github.com/heyuan7676/ts_eQTLs).
+
+## Running GLEANR
+Tutorials and vignettes will be posted within the next month. If you'd like to try `gleanr` in the meantime, use the script `src/gleaner_run.R` to run analysis directly on input matrices of summary statistics.
