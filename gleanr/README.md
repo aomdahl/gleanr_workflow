@@ -6,17 +6,16 @@
 <!-- badges: start -->
 <!-- badges: end -->
 
-The goal of gleanr is to provide the core code for actually performing
-the factorization work. blah blah blah.
+gleanr is used to perform sparse factorization of GWAS summary statistics while adjusting for sample sharing between studies.
 
 ## Installation
 
 You can install the development version of gleanr from
-[GitHub](https://github.com/) with:
+[GitHub](https://github.com/gleanr/gleanr) with:
 
 ``` r
 # install.packages("devtools")
-devtools::install_github("aomdahl/gwas_spMF")
+devtools::install_github("aomdahl/gleanr")
 ```
 
 ## Example
