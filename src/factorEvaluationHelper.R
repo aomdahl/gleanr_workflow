@@ -611,3 +611,12 @@ loadMAFData <- function()
   full.snps$maf <- sapply(full.snps$af_EUR, function(x) ifelse(x > 0.5, 1-x, x))
   full.snps
 }
+
+
+evalTissuesLikeEQTLs <- function(tiss.df, factor_id)
+{
+  tiss.df %>%  filter(Source == factor_id) %>% group_by(new_category) %>% mutate("category_bfp"=p.adjust(Coefficient_P_value,method = "bonferroni")) %>% slice_min(category_bfp) %>%
+    ungroup() %>% mutate("max_tissue_fdr_adjusted"=p.adjust(category_bfp, method="BH"))
+
+  
+}
