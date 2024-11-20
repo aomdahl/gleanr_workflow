@@ -8,22 +8,17 @@ LDSC_REF_DAT="/data/abattle4/aomdahl1/reference_data/ldsc_reference"
 GENE_LIBS=["WikiPathways_2023_Human", 
 "Chromosome_Location",
 "DisGeNET", 
-"Disease_Perturbations_from_GEO_down",
-"Disease_Perturbations_from_GEO_up", 
 "GO_Biological_Process_2023", 
 "GO_Cellular_Component_2023", 
 "GO_Molecular_Function_2023", 
-"GTEx_Tissue_Expression_Down", 
-"GTEx_Tissue_Expression_Up", 
 "GWAS_Catalog_2023", 
 "KEGG_2021_Human", 
 "MSigDB_Hallmark_2020", 
 "OMIM_Expanded",
-"Azimuth_Cell_Types_2021",
-"Jensen_TISSUES"]
+"Azimuth_Cell_Types_2021"]
 SNP_GENE_MAP="/scratch16/abattle4/ashton/snp_networks/scratch/factor_interpretation/snp_to_gene/41K_openTargets.csv"
 analysis_scripts="/scratch16/abattle4/ashton/snp_networks/scratch/factor_interpretation/src/"
-nfactors=48
+nfactors=58
 rule all:
 	input: 
 		expand("results/panUKBB_complete_61K/META_ldsc_enrichment_Multi_tissue_chromatin/F{num}.multi_tissue.log", num=list(range(1,52))),
