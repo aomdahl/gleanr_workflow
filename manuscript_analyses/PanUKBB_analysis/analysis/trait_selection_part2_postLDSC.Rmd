@@ -1,0 +1,256 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r, setup}
+pacman::p_load(dplyr, tidyr, data.table, magrittr, ggplot2, data.table)
+source("/scratch16/abattle4/ashton/snp_networks/gwas_decomp_ldsc/src/plot_functions.R")
+```
+First- spot. check the analysis and matrix to see how well we filled it... if the new approach worked.
+```{r}
+rg.mat <- fread("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/ldsr_results/panUKBB_complete/summary_data/rg.tab.NO_SE_FILTERs.csv")
+plotCorrelationHeatmap(as.matrix(rg.mat))
+```
+Visualize:
+```{r}
+trait.cats <- fread("/scratch16/abattle4/ashton/snp_networks/scratch/panUKBB_analysis/panUKBB_traits_manifest_v2.tsv")
+trait.doc.run <- fread("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/trait_selections/panUKBB_complete.studies.tsv")
+
+all(trait.doc.run$V2 %in% trait.cats$`Clean name`)
+by.group.df <- trait.cats %>% filter(`Clean name` %in% trait.doc.run$V2) %>% group_by(Category) %>% summarize("num" = n())
+ggplot(by.group.df, aes(x = reorder(Category,num), y= num)) + geom_bar(stat="identity", fill = "coral") + theme_bw(15) + 
+  coord_flip() + ggtitle("Traits for consideration") + xlab("Trait categories") + ylab("# studies")
+```
+
+
+Spot check on numbers ?
+
+
+Now, let's look at the problematic pairs
+```{r}
+rg.mat.test <- as.matrix(rg.mat)
+diag(rg.mat.test) <- 0
+keep.entries <- which(apply(rg.mat.test, 1, function(x) any(abs(x) > 0.8)))
+
+plotCorrelationHeatmap(rg.mat.test[keep.entries, keep.entries])
+```
+Okay- as before, we are picking the ones we want:
+```{r}
+phenotype.h2 <- fread("/data/abattle4/lab_data/GWAS_summary_statistics/PanUKBB/Pan-UK_Biobank_phenotype_manifest-h2_manifest.tsv",sep = "\t") %>%
+  filter(pop == "EUR")
+
+map.traits <- fread("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/trait_selections/panUKBB_complete.studies.tsv")
+map.traits$query = gsub(pattern = "/data/abattle4/lab_data/GWAS_summary_statistics/PanUKBB/phenotype_flat_files/EUR_only/", replacement = "", x=map.traits$V1) %>% gsub(pattern = ".tsv.EUR_ONLY.gz", x=., replacement = "")
+
+phenotype.h2 <- phenotype.h2 %>% mutate("query" = 
+                                          paste0(trait_type, "-", phenocode, "-", pheno_sex, 
+                                                 ifelse(coding != "" , paste0("-", coding), ifelse(modifier != "", paste0("-", modifier), ""))))
+stopifnot(all(map.traits$query %in% phenotype.h2$query))
+h2.for.selected <- left_join(map.traits, phenotype.h2, by = "query") %>% filter(V2 %in% colnames(rg.mat)) %>% arrange(-estimates.final.h2_liability) %>% select(V2, V4,query,estimates.final.h2_z,estimates.final.h2_observed,estimates.final.h2_liability)
+
+
+phenotype.filtered.pre <- fread("/data/abattle4/lab_data/GWAS_summary_statistics/PanUKBB/Pan-UK_Biobank_phenotype_manifest-phenotype_manifest.tsv", sep = "\t") %>% filter(phenotype_qc_EUR %in% c("PASS", "not_EUR_plus_1")) %>% 
+  rowwise() %>%  mutate("Neff" = ifelse(is.na(n_controls_EUR), n_cases_EUR, psych::harmonic.mean(c(n_cases_EUR,n_controls_EUR)))) %>% ungroup() %>% 
+  filter(Neff > 5000,pheno_sex== "both_sexes") %>% mutate("query" = 
+                                          paste0(trait_type, "-", phenocode, "-", pheno_sex, 
+                                                 ifelse(coding != "" , paste0("-", coding), ifelse(modifier != "", paste0("-", modifier), "")))) %>%
+  select(query, Neff)
+#Pick out just the higher NEFF ones, as we specified earlier
+h2.for.selected <- left_join(h2.for.selected,phenotype.filtered.pre,by="query") %>% group_by(V2) %>% slice_max(Neff) %>% ungroup() %>% arrange(-estimates.final.h2_liability)
+```
+
+Now, we repeat the procedure from previously. Include p-values.
+```{r}
+rg.p.values <- fread("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/ldsr_results/panUKBB_complete/summary_data/rg_pvals.csv")
+stopifnot(all(colnames(rg.p.values) == colnames(rg.mat)))
+rg.mat <- as.matrix(rg.mat);rg.p.values <- as.matrix(rg.p.values)
+```
+Look at high correlation rg with low p-values?
+```{r}
+
+plot(as.vector(rg.mat), -log10(as.vector(rg.p.values)), xlab = bquote(r[g]), ylab = "-log10(p)"); abline(h = -log10(0.01), col = "blue")
+#rg.mat[rg.p.values > 0.01] <- 0
+```
+Now, by heritability
+```{r}
+head(h2.for.selected)
+rownames(rg.mat) <- colnames(rg.mat)
+rownames(rg.p.values) <- colnames(rg.p.values)
+rg.mat.long <- reshape2::melt(rg.mat) %>% set_colnames(c("p1", "p2", "rg"))
+p.mat.long <- reshape2::melt(rg.p.values) %>% set_colnames(c("p1", "p2", "p"))
+if(all(rg.mat.long$p1 == p.mat.long$p1) & all(rg.mat.long$p2 == p.mat.long$p2))
+   {
+     rg.mat.long$p <- p.mat.long$p
+}
+
+#porting the code over from the previous
+buildTraitSetFinal <- function(pheno.data, corr.data, thresh)
+{
+  #Use the other version, gives full report:
+  source("/scratch16/abattle4/ashton/snp_networks/scratch/panUKBB_analysis/cor_matching_function_helper.R")
+  match.set <- c()
+for(i in 1:nrow(pheno.data))
+{
+  #if(i %% 100 == 0) print(i)
+  get_id <- pheno.data[i,]$V2
+  if(passCorCheck(get_id, match.set, corr.data, thresh = thresh))
+  {
+    match.set <- c(match.set, get_id)
+  }
+}
+match.set
+}
+
+```
+Now pick out the ones...
+
+
+```{r}
+sink('/scratch16/abattle4/ashton/snp_networks/scratch/panUKBB_analysis/part2_filtering_reasons_0.8.txt', append=FALSE)
+inclusive.8 <- buildTraitSetFinal(h2.for.selected,rg.mat.long,0.8)
+sink()
+sink('/scratch16/abattle4/ashton/snp_networks/scratch/panUKBB_analysis/part2_filtering_reasons_0.7.txt', append=FALSE)
+inclusive.7 <- buildTraitSetFinal(h2.for.selected,rg.mat.long,0.7)
+sink()
+```
+Visualize these in a barplot:
+```{r}
+by.group.df <- trait.cats %>% filter(`Clean name` %in%inclusive.7) %>% group_by(Category) %>% summarize("num" = n())
+ggplot(by.group.df, aes(x = reorder(Category,num), y= num)) + geom_bar(stat="identity", fill = "skyblue") + 
+  theme_bw(15) + coord_flip() + ggtitle("Traits selected for GLEANER") + ylab("# studies") + xlab("Trait categories")
+```
+For alexis:
+```{r}
+for.alexis <- left_join(h2.for.selected %>% rename("clean_name"=V2), trait.cats %>% filter(`Clean name` %in% trait.doc.run$V2) %>% rename("clean_name"=`Clean name`), by = "clean_name") %>% select(clean_name, Category, sample_size, description, description_more,estimates.final.h2_liability,estimates.final.h2_z, Neff ) %>%
+  mutate("To_evaluate_in_GLEANER"=ifelse(clean_name %in% inclusive.7, TRUE, FALSE))
+View(for.alexis)
+write.table(for.alexis, file = "/scratch16/abattle4/ashton/snp_networks/scratch/panUKBB_analysis/traits_for_review.txt", quote = FALSE, row.names = FALSE, sep = "#")
+```
+
+## Overlap effect
+hat does the overlap effect look like on those guys?
+```{r}
+gcov_fdr <- as.matrix(fread("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/ldsr_results/panUKBB_complete/summary_data/gcov_int.tab.csv"))
+gcov_se <- as.matrix(fread("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/ldsr_results/panUKBB_complete/summary_data/gcov_int_se.tab.csv"))
+plotCorrelationHeatmap(as.matrix(gcov_fdr))
+```
+Subset to the 0.7 cutoff list:
+```{r}
+i.c <- which(colnames(gcov_fdr) %in% inclusive.7)
+plotCorrelationHeatmap(as.matrix(gcov_fdr)[i.c,i.c],drop.labels = TRUE) + theme_bw(16) + scale_y_discrete(guide = guide_axis(n.dodge = 2)) + theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+rownames(gcov_fdr) <- colnames(gcov_fdr)
+rownames(gcov_se) <- colnames(gcov_se)
+gcov_fdr_7 <- gcov_fdr[inclusive.7,inclusive.7]
+gcov_se_7 <- gcov_se[inclusive.7,inclusive.7]
+```
+So some of these have really exceptionally high overlap effects... what do I do with those?
+```{r}
+gcov_fdr_7[which(gcov_fdr_7 > 1)] #hmm some of these estimates are problematic. Like they are way above 1.
+gcov_se_7[which(gcov_fdr_7 > 1)] #A few of these are too high...
+exceeds <- apply(gcov_fdr_7,2,function(x) which(abs(x) > 1))
+danger.names <- c()
+for(i in 1:length(exceeds))
+{
+  pheno = exceeds[[i]]
+  n = names(exceeds)[i]
+  if(length(pheno) > 0)
+  {
+    print(paste(n, pheno))
+    danger.names <- c(danger.names,n)
+  }
+}
+plotCorrelationHeatmap(gcov_fdr_7[danger.names, danger.names])
+plotCorrelationHeatmap(rg.mat[danger.names, danger.names])
+```
+
+
+
+3 Phenotypes had estimated cohort overlap inflation that was very high, over 1.
+
+How to deal with this? We can assume they have complete cohort overlap here (Ns = N1=N2), but it seems unlikely that the phenotype correlation is THAT HIGH.
+Options- ignore, adjust to 1 or 0.99, or lwoer threhsold...
+```{r}
+h2.for.selected
+```
+
+I think we have an issue with some genetic correlation estimates being low. Like these traits should be much more highly correlated, no?
+#Load in all the data, and see what the z-scores look like....
+```{r}
+file.list <- paste0("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/ldsr_results/panUKBB_complete/rg_ldsr/tabular/",
+                    list.files(path = "/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/ldsr_results/panUKBB_complete/rg_ldsr/tabular/", pattern = "*.rg_report.tsv"))
+rg.all <- do.call("rbind", lapply(file.list, fread))
+
+fixStrings <- function(x)
+{
+  
+  #splitted <- str_split(x, pattern = "_")[[1]]
+   #paste(unlist(splitted[2:length(splitted)]), collapse="_")
+   splitted <- str_split(x, pattern = "\\.")[[1]]
+   splitted[4]
+  
+}
+
+rg.all$p1 <- gsub(x=rg.all$p1, pattern = "/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwas_extracts/panUKBB_complete/", replacement = "") %>% sapply(., fixStrings)
+  #gsub(x=., pattern = "both_sexes-irnt.tsv.EUR_ONLY.", replacement = "") %>% gsub(x=., pattern = ".sumstats.gz", replacement = "") %>% sapply(., fixStrings)
+
+rg.all$p2 <- gsub(x=rg.all$p2, pattern = "/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwas_extracts/panUKBB_complete/", replacement = "") %>% sapply(., fixStrings)
+  #gsub(x=., pattern = "both_sexes-irnt.tsv.EUR_ONLY.", replacement = "") %>% gsub(x=., pattern = ".sumstats.gz", replacement = "") %>% sapply(., fixStrings)
+
+View(rg.all)
+```
+Now just look at those in our list
+```{r}
+View(rg.all %>% filter(p1 %in% inclusive.7, p2 %in% inclusive.7))
+write.table(x= data.frame("pheno_keep"=inclusive.7), row.names = FALSE, col.names = FALSE, quote = FALSE, file = "/scratch16/abattle4/ashton/snp_networks/scratch/panUKBB_analysis/rg_filtered_0.7_traits.txt")
+
+```
+
+FINAL VISUALS:
+```{r}
+rg.mat <- as.matrix(fread("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/ldsr_results/panUKBB_complete/summary_data/rg.tab.NO_SE_FILTERs.csv"))
+rownames(rg.mat) <- colnames(rg.mat)
+plotCorrelationHeatmap(rg.mat[inclusive.7, inclusive.7]) + theme_bw(16) + scale_y_discrete(guide = guide_axis(n.dodge = 2))
+
+head(phenotype.h2)
+
+ggplot(for.alexis, aes(x = reorder(clean_name,as.numeric(estimates.final.h2_liability)), y = estimates.final.h2_liability)) + geom_bar(stat = "identity", fill = "coral") +  
+  ylab(bquote("Liability scale" ~h^2 )) + xlab("GWAS study") + theme_bw(16) + scale_x_discrete(guide = guide_axis(n.dodge = 2)) + coord_flip()
+mean(for.alexis$estimates.final.h2_liability)
+
+summary(h2.for.selected$estimates.final.h2_liability)
+#+ theme(axis.text.x = element_text(angle = 90, vjust = 1, hjust=1))
+```
+
+## Manually get the new set of files
+First, the missingness report
+```{r}
+mreport <- fread("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwas_extracts/panUKBB_complete/missingness_report.COMPLETE.tsv")
+mreport$names <- sapply(str_split(mreport$V1, pattern ="\\."), function(x) x[length(x)-2])
+write.table(filter(mreport, names %in% inclusive.7) %>% select(V1, V2), file = "/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwas_extracts/panUKBB_complete/missingness_report.tsv", row.names = FALSE, col.names = FALSE,quote = FALSE)
+```
+Next, the SD report
+```{r}
+sdreport <- fread("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwas_extracts/panUKBB_complete/sample_sd_report.tsv")
+sdreport$names <- sapply(str_split(sdreport$V1, pattern ="\\."), function(x) x[length(x)-2])
+file.rename("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwas_extracts/panUKBB_complete/sample_sd_report.tsv", "/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwas_extracts/panUKBB_complete/sample_sd_report.OLD.tsv")
+
+write.table(filter(sdreport, names %in% inclusive.7) %>% select(V1, V2), file = "/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwas_extracts/panUKBB_complete/missingness_report.tsv", row.names = FALSE, col.names = FALSE,quote = FALSE)
+```
+
+
+Next, the gcov matrix
+```{r}
+write.table(data.frame((gcov_fdr[inclusive.7,inclusive.7])) %>% set_colnames(inclusive.7), row.names = FALSE, quote = FALSE, file = "/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/ldsr_results/panUKBB_complete/summary_data/gcov_int.tab.SELECTED.csv")
+
+write.table(data.frame((gcov_se[inclusive.7,inclusive.7])) %>% set_colnames(inclusive.7), row.names = FALSE, quote = FALSE, file = "/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/ldsr_results/panUKBB_complete/summary_data/gcov_int_se.tab.SELECTED.csv")
+```
+
+
+## Review of the SNPs selected:
+```{r}
+
+```
+
