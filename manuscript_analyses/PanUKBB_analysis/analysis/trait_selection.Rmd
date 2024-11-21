@@ -1,0 +1,556 @@
+---
+title: "Select UKBB Phenotypes for the GLEANER broad analysis"
+output: html_document
+date: "2024-02-08"
+---
+
+```{r, setup}
+pacman::p_load(dplyr, tidyr, data.table, magrittr, ggplot2, data.table, stringr)
+```
+## Prep PanUKBB Phenotypes
+Load in traits from the PanUKBB
+Files downloaded as `.csv` files from `https://docs.google.com/spreadsheets/d/1AeeADtT0U1AukliiNyiVzVRdLYPkTbruQSk38DeutU8/edit#gid=1450719288` on Feb 8, 2024
+```{r}
+phenotype.names <- fread("/data/abattle4/lab_data/GWAS_summary_statistics/PanUKBB/Pan-UK_Biobank_phenotype_manifest-phenotype_manifest.tsv", sep = "\t")
+phenotype.h2 <- fread("/data/abattle4/lab_data/GWAS_summary_statistics/PanUKBB/Pan-UK_Biobank_phenotype_manifest-h2_manifest.tsv",sep = "\t")
+```
+
+Filter by h2 and Neff 
+```{r}
+hist(phenotype.names$n_cases_EUR)
+phenotype.names %>% group_by(phenotype_qc_EUR) %>% summarize("Count"=n())
+phenotype.names %>% group_by(trait_type) %>% summarize("Count"=n())
+which(is.na(phenotype.names$phenocode))
+length(unique(phenotype.names$phenocode))
+dim(phenotype.names)
+```
+First- adopt their QC, requiring pass and no EUR, and then filtering to Neff (harmonic mean) > 5000
+```{r}
+phenotype.filtered.pre <- phenotype.names %>% filter(phenotype_qc_EUR %in% c("PASS", "not_EUR_plus_1")) %>% 
+  rowwise() %>%  mutate("Neff" = ifelse(is.na(n_controls_EUR), n_cases_EUR, psych::harmonic.mean(c(n_cases_EUR,n_controls_EUR)))) %>% ungroup() %>% 
+  filter(Neff > 5000,pheno_sex== "both_sexes")
+phenotype.filtered <- phenotype.filtered.pre %>% select(phenocode, n_controls_EUR,n_cases_EUR,Neff,phenotype_qc_EUR,pheno_sex, coding, modifier) %>% print()
+
+
+lookup <- function(query){
+  query = toupper(query)
+  f <- unique(c(which(grepl(toupper(phenotype.filtered.pre$description), pattern = query)),
+   which(grepl(toupper(phenotype.filtered.pre$description_more), pattern = query)),
+   which(grepl(toupper(phenotype.filtered.pre$coding), pattern = query)),
+   which(grepl(toupper(phenotype.filtered.pre$coding_description), pattern = query))))
+  phenotype.filtered.pre[f,] %>% select(phenocode, n_controls_EUR,n_cases_EUR,Neff,phenotype_qc_EUR,pheno_sex, coding, modifier)
+  
+}
+
+```
+Visualize:
+```{r}
+hist(phenotype.filtered$Neff,breaks = 50); abline(v=5000)
+#Some of these are duplicates:
+print(phenotype.filtered[which(duplicated(phenotype.filtered$phenocode)),])
+
+
+table(phenotype.h2$qcflags.significant_z)
+
+
+#Z-score distribution.... is it valid?? Ah shiz.
+summary(phenotype.h2$estimates.final.h2_z[phenotype.h2$qcflags.significant_z])
+summary(phenotype.h2$estimates.final.h2_z[!phenotype.h2$qcflags.significant_z])
+zscore.df <- rbind(data.frame("z_score"=phenotype.h2$estimates.final.h2_z[phenotype.h2$qcflags.significant_z], "inclusion"="included"),
+data.frame("z_score"= phenotype.h2$estimates.final.h2_z[!phenotype.h2$qcflags.significant_z], "inclusion"= "excluded"))
+ggplot(zscore.df, aes(x = z_score, fill = inclusion)) + geom_histogram(position="identity", alpha = 0.5) + theme_bw()
+```
+
+Now, we filter further by heritability
+Note that the filters applied didn't necessarily push through, so need to ensure all here
+```{r}
+final.herit <- phenotype.h2 %>% filter(phenocode %in% phenotype.filtered$phenocode) %>% filter(pop == "EUR") %>% 
+  filter(qcflags.GWAS_run == TRUE) %>% 
+  filter(estimates.final.h2_liability > 0.05) %>%
+  filter(qcflags.ancestry_reasonable_n == TRUE) %>% 
+  filter(qcflags.defined_h2 == TRUE) %>% 
+  filter(qcflags.significant_z == TRUE) %>% 
+  filter(qcflags.in_bounds_h2 == TRUE) %>% 
+  filter(qcflags.normal_lambda == TRUE) %>% 
+  filter(qcflags.normal_ratio == TRUE) 
+
+#we use final:  Final estimates; 25 bin SLDSC for EUR and 25 bin
+std.herit <- phenotype.h2 %>% filter(phenocode %in% phenotype.filtered$phenocode) %>% filter(pop == "EUR") %>% filter(qcflags.GWAS_run == TRUE) %>% filter(estimates.ldsc.h2_liability > 0.05)
+
+strat.herit <- phenotype.h2 %>% filter(phenocode %in% phenotype.filtered$phenocode) %>% filter(pop == "EUR") %>% filter(qcflags.GWAS_run == TRUE) %>% filter(estimates.sldsc_25bin.h2_liability > 0.05)
+
+ #Do the final herit one
+```
+This leaves us with a little over 730 phenotypes. Nice.
+From these, we want those that pass our Rg conditions. Moving onto that.
+## Prepare the Neale Lab rg reference
+```{r}
+corr.dat <- fread("/scratch16/abattle4/lab_data/UKBB/GWAS_Neale/genetic_correlations/geno_correlation.r2.no_paths.tsv")
+
+#Need to make sure the phenocodes match..,
+phenocodes <- unique(c(corr.dat$p1, corr.dat$p2))
+#We can't just pull them all apart- many of them would have duplicates. We need to look at these side-by-side.
+mapping.code <- data.frame("phenocodes_full"=phenocodes) %>% separate(phenocodes_full,into = c("pheno_true", "modifier"),remove = FALSE) %>% mutate("use_code" = ifelse(modifier %in% c("irnt", "raw"), pheno_true, phenocodes_full))
+```
+
+## Create mappings from PanUKBB Phenotypes to Neale lab phenotypes, since different codings used
+### **Approach 1**- build the phenocode queryes as in group_id
+```{r}
+h2.phenocodes <- final.herit %>% rowwise() %>% 
+  mutate("phenocodes_full"= ifelse(phenocode == coding, phenocode, ifelse(!(is.na(coding) | coding == ""), paste(phenocode, coding,sep = "_"), ifelse(!(is.na(modifier) | modifier ==""), paste(phenocode, modifier,sep = "_"), phenocode)))) %>% ungroup() %>% 
+  select(trait_type, phenocodes_full,phenocode,coding,modifier,estimates.final.h2_observed, estimates.final.h2_observed, estimates.final.h2_observed_se,
+  estimates.final.h2_liability,estimates.final.h2_liability_se,estimates.final.h2_z) %>%
+  filter(!grepl(pattern = "_raw", phenocodes_full)) %>%  mutate("uniq_id" = paste0(trait_type, "_", phenocodes_full))
+
+#Learning slowly
+#We need to handle biomarkers, icd10 and phecode entries differenttly
+
+
+#For convenience downstream- get the names in there
+name.match <- phenotype.names %>% select(trait_type, phenocode, coding, pheno_sex, modifier, description, description_more, coding_description, category) %>% rowwise() %>% 
+  mutate("phenocodes_full"= ifelse(phenocode == coding, phenocode, ifelse(!(is.na(coding) | coding == ""), paste(phenocode, coding,sep = "_"), ifelse(!(is.na(modifier) | modifier ==""), paste(phenocode, modifier,sep = "_"), phenocode)))) %>% ungroup()  %>% mutate("uniq_id" = paste0(trait_type, "_", phenocodes_full)) %>% select(uniq_id, phenocodes_full, description, description, description_more, coding_description, category)
+
+h2.phenocodes <- left_join(h2.phenocodes,name.match, by = "uniq_id" ) %>%
+  select(trait_type, phenocodes_full.x, phenocode, coding, modifier, uniq_id, description, description_more, coding_description, category, 
+  estimates.final.h2_observed,estimates.final.h2_observed_se,estimates.final.h2_liability,estimates.final.h2_liability_se,estimates.final.h2_z) %>%
+  rename("phenocodes_full"=phenocodes_full.x)
+
+#Additional phenotype filters we want
+#Some based on categories:
+trait.cats.drop <- fread("/scratch16/abattle4/ashton/snp_networks/scratch/panUKBB_analysis/clean_final_traits.txt") %>% 
+  filter(`Watanabe_domain/my adds` %in% c("Activities", "Nutritional","Environment", "Social interactions"))
+
+h2.phenocodes <- h2.phenocodes %>% filter(trait_type != "prescriptions") %>% filter(trait_type != "biomarkers") %>% 
+  filter(!(phenocodes_full %in% trait.cats.drop$phenocodes_full)) %>%
+  filter(!(phenocode %in% c("20004", "41200", "41245","41246","41247", "41250", "41251","102090", "1845", "2946")))
+##these filter out operation codes, consultatnt specialties, hospital admission metrics, yogurt intake, mothers's age, father's age. Other things we didn't care for.
+
+#write.table(h2.phenocodes, file="/scratch16/abattle4/ashton/snp_networks/scratch/panUKBB_analysis/intermediate_h2_for_manual_review.txt", quote = FALSE, row.names = FALSE,sep = "#")
+manual.drop.review <- fread("/scratch16/abattle4/ashton/snp_networks/scratch/panUKBB_analysis/remove_intermediate_traits.txt") %>% filter(`Drop?` == 1)
+
+h2.phenocodes <- filter(h2.phenocodes, !(uniq_id %in% manual.drop.review$uniq_id))
+
+h2.phenocodes %>% group_by(trait_type) %>% summarize("count" = n())
+message("Number of unique traits: ", length(unique(h2.phenocodes$uniq_id)))
+dim(h2.phenocodes)
+```
+Now do the actual filter
+```{r}
+pandata.avail.std <- h2.phenocodes %>% filter(phenocodes_full %in% mapping.code$phenocodes_full) %>% mutate("original_val" = "")
+
+pandata.unavail.std <- h2.phenocodes %>% filter(!(phenocodes_full %in% mapping.code$phenocodes_full)) %>% filter(trait_type != "biomarkers")
+#Biomarkers are omitted because they are known to not be included in the rg analysis.
+
+message(round(nrow(pandata.avail.std)/nrow(h2.phenocodes), digits =3) * 100, "% of phenotypes found matches in Neale rg data")
+message(round(nrow(pandata.unavail.std)/nrow(h2.phenocodes), digits =3) * 100, "% of phenotypes found no matches in Neale rg data")
+
+#Unique traits overall
+length(unique(h2.phenocodes$uniq_id))
+dim(h2.phenocodes)
+```
+
+Down to 266 missing entries
+Notably, none of the phecodes ended up in here. These are the ones we need to target:
+```{r}
+pandata.avail.std %>% group_by(trait_type) %>% summarize("count" = n())
+
+pandata.unavail.std %>% group_by(trait_type) %>% summarize("count" = n())
+```
+
+### **Approach 2**:convert Phecodes to ICD codes using the furnished mapping by the PanUKBB
+Look at the subset that didn't get a match, and map them to ICD codes, if possible
+```{r}
+#File from the panukbb describing their mapping.
+icd.conversion <- fread("https://raw.githubusercontent.com/atgu/ukbb_pan_ancestry/master/data/UKB_Phecode_v1.2b1_ICD_Mapping.txt")
+#make them characters for joining
+icd.conversion$phecode <- as.character(icd.conversion$phecode)
+pandata.unavail.phecodes <- pandata.unavail.std %>% filter(trait_type == "phecode")
+icd.map.lookups <- NULL
+for(r in 1:nrow(icd.conversion))
+{
+  code.options <- strsplit(icd.conversion[r,]$icd_codes,split = ",")[[1]]
+  pt <- icd.conversion[r,]$phecode
+  edit.row <- filter(pandata.unavail.phecodes, phenocode == pt)
+  if(nrow(edit.row) > 0)
+  {
+      edit.row$original_val <- pt
+      icd.map.lookups <- rbind(icd.map.lookups, edit.row) 
+      for(alt in code.options)
+      {
+        edit.row$phenocode <- alt
+        edit.row$phenocodes_full <- alt
+        if(nchar(alt) > 3)
+        {
+          edit.row$phenocode <- paste0(str_sub(alt,start = 1, end = 3), ".", str_sub(alt,start = 4))
+          edit.row$phenocodes_full <- paste0(str_sub(alt,start = 1, end = 3), ".", str_sub(alt,start = 4))
+        }
+        icd.map.lookups <- rbind(icd.map.lookups, edit.row)
+      }
+  }
+
+}
+
+pandata.avail.step2 <- rbind(icd.map.lookups %>% filter(phenocodes_full %in% mapping.code$phenocodes_full), pandata.avail.std)
+
+pandata.unavail.step2 <- pandata.unavail.std %>% filter(!(phenocodes_full %in% pandata.avail.step2$original_val))
+  #this was wrong- just looking atht esubset we could actually update
+  #icd.map.lookups %>% filter(!(phenocodes_full %in% mapping.code$phenocodes_full)) %>% 
+  #filter(!(original_val %in% pandata.avail.step2$original_val)) %>% filter(phenocodes_full == original_val) %>% distinct()
+
+
+message("An additional ", round(nrow(pandata.avail.step2)/nrow(h2.phenocodes), digits =3) * 100, "% of phenotypes found matches in Neale rg data")
+message(round(nrow(pandata.unavail.step2)/nrow(h2.phenocodes), digits =3) * 100, "% of phenotypes still lack a match in Neale rg data")
+
+```
+Count the distinct entries, since we get a many-to-one mapping in some of these...
+```{r}
+pandata.avail.step2 %>% group_by(uniq_id) %>% slice_head() %>% ungroup() %>% group_by(trait_type) %>% summarize("count" = n())
+ pandata.unavail.step2 %>% group_by(trait_type) %>% summarize("count" = n())
+```
+
+
+
+### Step 3- map any remaining phecodes to ICD-10 codes for search from general pheas.
+Since many of these are a many-to-one mapping, we create a new table for querying to look at these entries specifically
+```{r}
+phecode.conversion <- fread("https://phewascatalog.org/files/Phecode_map_v1_2_icd10_beta.csv")
+
+#Repeat the above procedure with this one...
+icd.map.lookups.2 <- NULL
+for(r in 1:nrow(pandata.unavail.step2))
+{
+  pt <- pandata.unavail.step2[r,]$phenocode
+  edit.row <- pandata.unavail.step2[r,]
+  query.row <- filter(phecode.conversion, PHECODE == pt)
+  if(nrow(query.row) > 0)
+  {
+    edit.row$original_val <- pt
+    icd.map.lookups.2 <- rbind(icd.map.lookups.2, edit.row) 
+    for(alt in query.row$ICD10)
+    {
+      edit.row$phenocode <- alt
+      edit.row$phenocodes_full <- alt
+      icd.map.lookups.2 <- rbind(icd.map.lookups.2, edit.row)
+    }
+  }
+
+}
+
+
+pandata.avail.step3 <- rbind(icd.map.lookups.2 %>% filter(phenocodes_full %in% mapping.code$phenocodes_full), pandata.avail.step2)
+pandata.unavail.step3 <- pandata.unavail.step2 %>% filter(!(phenocodes_full %in% pandata.avail.step3$original_val))
+
+  #icd.map.lookups.2 %>% filter(!(phenocodes_full %in% mapping.code$phenocodes_full)) %>% 
+  #filter(!(original_val %in% pandata.avail.step3$original_val)) %>%
+  #filter(phenocodes_full == original_val) %>% distinct()
+
+```
+Summarize results
+```{r}
+
+message("An additional ", round(nrow(pandata.avail.step3)/nrow(h2.phenocodes), digits =3) * 100, "% of phenotypes found matches in Neale rg data")
+message(round(nrow(pandata.unavail.step3)/nrow(h2.phenocodes), digits =3) * 100, "% of phenotypes still lack a match in Neale rg data")
+
+pandata.avail.step3 %>% group_by(uniq_id) %>% slice_head() %>% ungroup() %>% group_by(trait_type) %>% summarize("count" = n())
+ pandata.unavail.step3 %>% group_by(trait_type) %>% summarize("count" = n())
+
+```
+
+Reviewing all the missing traits
+```{r}
+phenotype.names %>% filter(phenocode %in% pandata.unavail.step3$phenocode)
+write.out.df <- left_join(pandata.unavail.step3, phenotype.names, by = "phenocode") %>% group_by(phenocodes_full) %>% 
+  slice_head() %>% select(phenocodes_full, phenocode, trait_type.x, estimates.final.h2_liability, description.x, description_more.x, category.x)
+write.table(write.out.df, file = "/scratch16/abattle4/ashton/snp_networks/scratch/panUKBB_analysis/no_match_list_march7.txt", sep = "\t")
+```
+Review all the available traits
+Note some are repeated since we have many-to-one mappings
+```{r}
+all.avail <- pandata.avail.step3
+#Note that some of these had to be duplicated in order to find a match with the UKBB versions
+length(unique(all.avail$uniq_id)) #only 372
+dups <- all.avail[which(duplicated(all.avail$original_val)),]$original_val
+View(all.avail %>% filter(original_val %in% dups))
+
+write.table(all.avail,file="/data/abattle4/lab_data/GWAS_summary_statistics/PanUKBB/phenotype_flat_files/panukkb_for_rg_filtering_intermediate.tsv",quote = FALSE, row.names = FALSE,sep = "\t")
+```
+
+
+2 directions- one is mapping PanUKBB onto NEale lab, and one is the opposite
+```{r}
+#Maping code is based on the correlation data
+available <- mapping.code %>% filter(phenocodes_full %in% all.avail$phenocodes_full) #%>% mutate("p1"=phenocodes_full) #for use downstream
+
+unavailable <- mapping.code %>% filter(!(phenocodes_full %in% all.avail$phenocodes_full))
+
+pandata.avail <- all.avail %>% filter(phenocodes_full %in% mapping.code$phenocodes_full)
+pandata.unavail <- all.avail %>% filter(!(phenocodes_full %in% mapping.code$phenocodes_full))
+any(pandata.unavail$phenocodes_full %in% mapping.code$phenocodes_full)
+```
+**Sanity check- heritability**
+```{r}
+summary(pandata.avail$estimates.final.h2_liability)
+```
+
+
+We have done it. Every single phenotype is accounted for.
+
+To achieve this required extensive manual review. For an idea of how this took place, look at the `trait_selection_OLD.Rmd` version of this file, the excels I have on my mac, and the accompanying slides. This summarizes the exploration processI went through to get here.
+
+Sanity check- are all biomarkers really not available in the rg analysis?
+```{r}
+biomarks.neale <- fread("/scratch16/abattle4/lab_data/UKBB/GWAS_Neale/heritability_estimates/ukb31063_h2_all.02Oct2019.tsv") %>% select(phenotype,sex, gwas_file, variable_type, source, description, n) %>% filter(sex == "both_sexes") %>% filter(source == "biomarkers")
+mapping.code
+any(biomarks.neale$phenotype %in% corr.dat$p1)
+any(biomarks.neale$phenotype %in% corr.dat$p2)
+```
+
+I am reasonably satisfied that those that are dropping aren't due to an error on my part.
+
+```{r}
+subsetted.for.consideration <- corr.dat %>% filter(p1 %in% pandata.avail$phenocodes_full) %>% filter(p2 %in% pandata.avail$phenocodes_full)
+save(subsetted.for.consideration, final.herit, file = "/scratch16/abattle4/ashton/snp_networks/scratch/panUKBB_analysis/acceptable_pheno_list.RData")
+```
+
+Final filters- valid rg score (above 0), no "raw" things
+```{r}
+#Note- after all this not all the things are the same- many to one.
+#So we pick the best by heritability, and then choose randomly if its the same
+pandata.lookup <- pandata.avail %>% group_by(phenocodes_full) %>% 
+  slice_max(order_by = estimates.final.h2_observed) %>% slice_head() %>% ungroup()%>% arrange(-estimates.final.h2_observed)
+
+dups <- pandata.lookup$phenocodes_full[which(duplicated(pandata.lookup$phenocodes_full))]
+```
+Now build the list with our heuristic of picking the most heritable first...
+```{r}
+
+#Does it pass our correlation threshold:
+#@lookup the phenotype query to look up
+#@current_set the list of phenotypes in the set so far
+#@corr_file_f the reference correlation file.
+source("/scratch16/abattle4/ashton/snp_networks/scratch/panUKBB_analysis/cor_matching_function_helper.R")
+#Function to implement the check
+buildTraitSet <- function(pheno.data, corr.data, thresh)
+{
+  match.set <- c()
+for(i in 1:nrow(pheno.data))
+{
+  #if(i %% 100 == 0) print(i)
+  get_id <- pheno.data[i,]$phenocodes_full
+  if(passCorCheck(get_id, match.set, corr.data, thresh = thresh))
+  {
+    match.set <- c(match.set, get_id)
+    #Quick sanity check
+    ch <- corr.data %>% filter(p1 %in% match.set, p2 %in% match.set)
+    #if(nrow(ch) >=0 )
+    #{
+    #  print(max(ch$rg,na.rm = TRUE))
+    #}
+  }
+}
+match.set
+}
+
+```
+
+Now get the sets:
+```{r}
+sink('/scratch16/abattle4/ashton/snp_networks/scratch/panUKBB_analysis/init_filtering_reasons_nealerg.txt', append=TRUE)
+cor_0.8_set <- buildTraitSet(pandata.lookup,subsetted.for.consideration, 0.8) 
+sink()
+
+sink('/scratch16/abattle4/ashton/snp_networks/scratch/panUKBB_analysis/init_filtering_reasons_nealerg_0.7.txt', append=TRUE)
+cor_0.7_set <- buildTraitSet(pandata.lookup,subsetted.for.consideration, 0.7)
+sink()
+```
+
+*Sanity check*: none of the pairwise phenos exceed our target threshold
+```{r}
+rg.check.plot <- subsetted.for.consideration %>% filter(p1 %in% cor_0.7_set) %>% filter(p2 %in% cor_0.7_set) %>% arrange(-abs(rg))
+hist((rg.check.plot %>% filter(abs(rg) > 0.7))$p, breaks = 100)
+hist(rg.check.plot$rg, breaks = 100)
+filter(rg.check.plot, abs(rg) > 0.7) %>% filter(p < 0.05)
+
+```
+Correct
+We end up with more traits than in cor_##_set. Why?
+```{r}
+
+```
+
+Add in the bonus traits;
+```{r}
+manual.adds <- pandata.unavail.step3 %>% group_by(phenocode) %>% slice_max(abs(estimates.final.h2_z)) %>% ungroup() %>% arrange(phenocode) %>%select(phenocodes_full,description, estimates.final.h2_z) %>% print()
+manual.adds %>% filter()
+keep.traits <- c("22677_irnt","272.1", "272.11","411.1","411.4", "51_irnt",
+                 "728.71", "735.3","AG_irnt","DBP_combined_medadj_irnt","FEV1FVC_irnt",
+                 "LDLC_medadj_irnt","MAP_combined_irnt","MCP_irnt", "NAP_irnt","PP_combined_medadj_irnt",
+                 "SBP_combined_irnt","eGFRcys_irnt","whr_irnt", "960.2", "30150_irnt","IBil_irnt")
+
+add.traits.uniq.ids <- (pandata.unavail.step3 %>% filter(phenocodes_full %in% keep.traits))$uniq_id
+```
+
+Clean up the traits- because its a many-to-one-mapping, for phenotypes with multiple mappings, pick just the onbe with the max z-score or just the top if they are the same.
+```{r}
+chosen.uniq.ids <- pandata.avail %>% filter(phenocodes_full %in% cor_0.7_set) %>% group_by(uniq_id) %>% slice_max(abs(estimates.final.h2_z)) %>% 
+       slice_head() %>% ungroup() %>% print()
+
+check.dups <- chosen.uniq.ids$phenocodes_full[duplicated(chosen.uniq.ids$phenocodes_full)]
+chosen.uniq.ids %>% filter(phenocodes_full %in% check.dups)
+
+#final set of unique ids
+complete.analysis.set <- unique(c(chosen.uniq.ids$uniq_id,add.traits.uniq.ids) )
+```
+Get the h2 data and the download keys
+```{r}
+#h2 data
+h2.set.data <- final.herit %>% rowwise() %>% 
+  mutate("phenocodes_full"= ifelse(phenocode == coding, phenocode, ifelse(!(is.na(coding) | coding == ""), paste(phenocode, coding,sep = "_"), ifelse(!(is.na(modifier) | modifier ==""), paste(phenocode, modifier,sep = "_"), phenocode)))) %>% ungroup() %>%  mutate("uniq_id" = paste0(trait_type, "_", phenocodes_full)) %>% 
+  filter(uniq_id %in% complete.analysis.set) %>% arrange(phenocodes_full)
+
+summary(h2.set.data$estimates.final.h2_liability) 
+
+
+#Download keys
+phenotype.set.data <- phenotype.filtered.pre %>% rowwise() %>% 
+  mutate("phenocodes_full"= ifelse(phenocode == coding, phenocode, ifelse(!(is.na(coding) | coding == ""), paste(phenocode, coding,sep = "_"), ifelse(!(is.na(modifier) | modifier ==""), paste(phenocode, modifier,sep = "_"), phenocode)))) %>% ungroup() %>%  mutate("uniq_id" = paste0(trait_type, "_", phenocodes_full)) %>% 
+  filter(uniq_id %in% complete.analysis.set) %>% arrange(phenocodes_full)
+
+#Check for duplicate entries, if any
+phenotype.set.data$phenocodes_full[which(duplicated(phenotype.set.data$phenocodes_full))]
+```
+
+
+
+Write out a file to download these
+UPDATe: only download if its not there already. YEa boi!
+```{r}
+write.df <- data.frame(c("#!/bin/bash","#SBATCH -p express", 
+                         "#SBATCH --time=60:00","set -e","source /data/apps/go.sh", 
+                         "cd /data/abattle4/lab_data/GWAS_summary_statistics/PanUKBB/phenotype_flat_files/",
+                        gsub(x=unlist(phenotype.set.data$wget),pattern = "wget ", replacement = "wget -nc ")))
+write.csv(write.df,file="/data/abattle4/lab_data/GWAS_summary_statistics/PanUKBB/download_phenos_flat_v2.sh",quote = FALSE, row.names = FALSE, col.names = FALSE)
+```
+Add back in the biomarkers
+```{r}
+biomarkers.only <- final.herit %>% filter(trait_type == "biomarkers")
+
+any(biomarkers.only$phenocodes_full %in% mapping.code$phenocodes_full)
+```
+Quick plot:
+```{r}
+hist(c(h2.set.data$estimates.final.h2_liability, biomarkers.only$estimates.final.h2_liability),
+     breaks = 50, xlab = "Liability-scale heritability", main = "Heritability distribution of trait set"); abline(v = 0.05, col = "blue")
+```
+
+
+Get the download for these guys...
+```{r}
+biomarkers.download.dat <- phenotype.filtered.pre %>% rowwise() %>% 
+  mutate("phenocodes_full"= ifelse(phenocode == coding, phenocode, ifelse(!(is.na(coding) | coding == ""), paste(phenocode, coding,sep = "_"), ifelse(!(is.na(modifier) | modifier ==""), paste(phenocode, modifier,sep = "_"), phenocode)))) %>% ungroup() %>% filter(trait_type =="biomarkers")
+biomarkers.download.dat$wget
+
+write.df <- data.frame(c("#!/bin/bash","#SBATCH -p express", 
+                         "#SBATCH --time=60:00","set -e","source /data/apps/go.sh", 
+                         "cd /data/abattle4/lab_data/GWAS_summary_statistics/PanUKBB/phenotype_flat_files/",
+                         unlist(biomarkers.download.dat$wget)))
+write.csv(write.df,file="/data/abattle4/lab_data/GWAS_summary_statistics/PanUKBB/download_biomarkers_flat.sh",quote = FALSE, row.names = FALSE, col.names = FALSE)
+```
+## Write out file for later users:
+```{r}
+out <- rbind(phenotype.set.data %>% 
+               select(phenocodes_full,phenocode, trait_type, pheno_sex, coding, modifier, description, description_more, category, coding_description,n_cases_EUR,n_controls_EUR),
+biomarkers.download.dat %>% 
+  select(phenocodes_full,phenocode, trait_type, pheno_sex, coding, modifier, description, description_more, category,coding_description,n_cases_EUR,n_controls_EUR)) %>%  
+  mutate("file_name" = ifelse(trait_type != "categorical", paste0(trait_type, "-", phenocode, "-", pheno_sex, "-", modifier, ".tsv.bgz"),paste0(trait_type, "-", phenocode, "-", pheno_sex, "-", coding, ".tsv.bgz")))  %>% 
+  rowwise() %>% mutate("file_name" = gsub(x=file_name, pattern = "-.tsv.", replacement = "\\.tsv\\.")) %>% ungroup() %>%
+  mutate("sample_size"=ifelse(is.na(n_controls_EUR), n_cases_EUR, paste0(n_cases_EUR, "/",n_controls_EUR))) %>%
+  select(phenocodes_full, pheno_sex, category, description, description_more,coding_description, sample_size,file_name)
+write.table(out,file="/data/abattle4/lab_data/GWAS_summary_statistics/PanUKBB/phenotype_flat_files/file_manifest.tsv",quote = FALSE, row.names = FALSE,sep = "\t")
+```
+
+And finally, grandly, check the md5sums...
+```{r}
+mdsums_check <- rbind(phenotype.set.data %>% select(phenocodes_full,phenocode, trait_type, pheno_sex, coding, modifier, description, description_more, category,md5_hex),
+biomarkers.download.dat %>% select(phenocodes_full,phenocode, trait_type, pheno_sex, coding, modifier, description, description_more, category,md5_hex)) %>%  
+  mutate("file_name" = ifelse(trait_type != "categorical", paste0(trait_type, "-", phenocode, "-", pheno_sex, "-", modifier, ".tsv.bgz"),paste0(trait_type, "-", phenocode, "-", pheno_sex, "-", coding, ".tsv.bgz")))  %>% 
+  rowwise() %>% mutate("file_name" = gsub(x=file_name, pattern = "-.tsv.", replacement = "\\.tsv\\.")) %>% ungroup() %>%
+  select(phenocodes_full, pheno_sex, category, description, description_more, file_name,md5_hex) 
+
+#update the categorical ones, since they get named differently
+files.to.check <- paste0("/data/abattle4/lab_data/GWAS_summary_statistics/PanUKBB/phenotype_flat_files/", mdsums_check$file_name)
+```
+Do it
+```{r}
+library(tools)
+sums.out <- tools::md5sum(unlist(files.to.check))
+save(sums.out, file="/data/abattle4/lab_data/GWAS_summary_statistics/PanUKBB/phenotype_flat_files/sum.check.new.RData")
+
+#save(sums.out, file="/data/abattle4/lab_data/GWAS_summary_statistics/PanUKBB/phenotype_flat_files/sum.check.TMP.RData")
+head(mdsums_check)
+head(files.to.check)
+stopifnot(all(names(sums.out) == files.to.check))
+mdsums_check$download_sums = sums.out 
+mdsums_check <- (mdsums_check %>% mutate("Matching_mdsums" = (download_sums == md5_hex )))
+```
+Finally, remove redundant phenotypes from the list, after a manual review
+Load list
+Look at those with redundant names, evaluate their h2, h2z, and Neff
+Pick the "better" one
+Manually review the list, make sure its okay.
+MAke the manifest file for snakemake pipeline
+Satart extracting where necessary. Avoid redundant work if possible (i.e. many are extracted already)
+```{r}
+
+formal_names_list <- fread("/scratch16/abattle4/ashton/snp_networks/scratch/panUKBB_analysis/pheno_list_v2_march11.txt") 
+
+#remove those from environment, Activities, and others flagged for droppage
+drops <- c("deformaties_fingers_toes_aquired", "noisy_workplace","reduce_alcohol_for_health_reasons" )
+formal_names_list <- formal_names_list %>%
+  filter(!(Category %in% c("Environment","Activities", "Social Interactions"))) %>% filter(!(`Clean name` %in% drops))
+#redundant ones
+
+redun <- formal_names_list$`Clean name`[which(duplicated(formal_names_list$`Clean name`))]
+redun.phenos.samples <- left_join(filter(formal_names_list, `Clean name` %in% redun), h2.phenocodes, by = "phenocodes_full") %>%
+  select(phenocodes_full, category.x, description.x, description_more.x, sample_size, file_name, `Clean name`, Category, estimates.final.h2_liability,estimates.final.h2_z,`Present in prev`  )
+
+redun.phenos.samples <- left_join(redun.phenos.samples, phenotype.filtered %>%  mutate("phenocodes_full"= ifelse(phenocode == coding, phenocode, ifelse(!(is.na(coding) | coding == ""), paste(phenocode, coding,sep = "_"), ifelse(!(is.na(modifier) | modifier ==""), paste(phenocode, modifier,sep = "_"), phenocode)))) %>% ungroup() %>% 
+  select(phenocodes_full, n_cases_EUR, Neff), by = "phenocodes_full")
+redun.phenos.samples$alternatives <- rep(c(0,1), nrow(redun.phenos.samples)/2)
+
+ggplot(redun.phenos.samples, aes(x = `Clean name`, y = as.numeric(Neff), fill =as.factor(alternatives) )) + 
+  geom_bar(stat= "identity", position = "dodge") + coord_flip() + theme_bw() + theme(legend.position = "none") + xlab("Trait") + ylab(bquote(N[eff]))
+
+ggplot(redun.phenos.samples, aes(x = `Clean name`, y = as.numeric(estimates.final.h2_liability), fill =as.factor(alternatives) )) + 
+  geom_bar(stat= "identity", position = "dodge") + coord_flip() + theme_bw() + theme(legend.position = "none") + xlab("Trait") + ylab(bquote(h^2~"liability scale"))
+
+ggplot(redun.phenos.samples, aes(x = `Clean name`, y = as.numeric(estimates.final.h2_z), fill =as.factor(alternatives) )) + 
+  geom_bar(stat= "identity", position = "dodge") + coord_flip() + theme_bw() + theme(legend.position = "none") + xlab("Trait") + ylab(bquote(h^2~"z score"))
+```
+Checks to see:
+```{r}
+by.neff <- redun.phenos.samples %>% group_by(`Clean name`) %>% slice_max(Neff) %>% select(`Clean name`,phenocodes_full, Neff ) %>% print()
+by.z <- redun.phenos.samples %>% group_by(`Clean name`) %>% slice_max(estimates.final.h2_z^2) %>% select(`Clean name`,phenocodes_full, estimates.final.h2_z )%>% print()
+
+by.h2 <-redun.phenos.samples %>% group_by(`Clean name`) %>% slice_max(estimates.final.h2_liability) %>% select(`Clean name`,phenocodes_full, estimates.final.h2_liability )%>% print()
+data.frame("name" = by.neff$`Clean name`, "neff_z" = (by.neff == by.z)[,2], "z_h2"=(by.z == by.h2)[,2], "neff_h2"=(by.neff == by.h2)[,2]) %>% mutate("All same " = neff_z & z_h2 & neff_h2)
+
+```
+A TRUE in "All same" means that all 3 measures nominate the same study.
+While there's plenty of ways I could split it, I am just going with sample size.
+```{r}
+keep.traits <- c((redun.phenos.samples %>% group_by(`Clean name`) %>% slice_max(Neff) %>% ungroup())$phenocodes_full, (formal_names_list %>% filter(!(`Clean name` %in% redun.phenos.samples$`Clean name`)))$phenocodes_full)
+trait.doc.run <- 
+  formal_names_list %>% filter(phenocodes_full %in% keep.traits) %>% mutate("filename" = paste0("/data/abattle4/lab_data/GWAS_summary_statistics/PanUKBB/phenotype_flat_files/EUR_only/",file_name)) %>%
+  mutate("build" ="hg19","cohort" = "PanUKBB" ) %>% select(filename, `Clean name`, build, sample_size, cohort)
+
+trait.doc.run$filename <- gsub(trait.doc.run$filename, pattern=".bgz", replacement = ".EUR_ONLY.gz")
+write.table(trait.doc.run, file = "/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/trait_selections/panUKBB_complete.studies.tsv", quote = FALSE, row.names = FALSE, col.names = FALSE)
+```
+
+Spot check the sample sizes, I am not sure where these even came from. I didn't put them in.
+looks good
+```{r}
+phenotype.names
+```
+

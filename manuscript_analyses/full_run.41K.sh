@@ -2,7 +2,7 @@
 
 #######################################################################
 #
-#  Script for performing download XT-LDSC of PanUKBB phenotypes
+#  Script for performing full analysis of PanUKBB phenotypes
 #
 #	Ashton Omdahl, January 2024
 # 	These commandes were run using on an HPC `slurm` workload manager and so utilize functions like `sbatch`
@@ -28,6 +28,9 @@ NOTEBOOKS=manuscript_analyses/PanUKBB_analysis/
 SCRATCH=/scratch16/abattle4/ashton/snp_networks/scratch/panUKBB_analysis/
 
 #1) Download target GWAS files
+	#First get the manifests and do your filtering. 
+	#These were interactively downloaded as `.csv` files from `https://docs.google.com/spreadsheets/d/1AeeADtT0U1AukliiNyiVzVRdLYPkTbruQSk38DeutU8/edit#gid=1450719288` on Feb 8, 2024.
+	#These were processed in /manuscript_analyses/PanUKBB_analysis/analysis/trait_selection.Rmd
 	cd ${GWAS_DIR}
   	sbatch ${DWNLD_SCRIPTS}/download_biomarkers_flat.sh
   	sbatch ${DWNLD_SCRIPTS}/download_phenos_flat.sh
@@ -172,56 +175,3 @@ snakemake --snakefile rules/ldsr_pairwise.smk -j 5 ldsr_results/panUKBB_complete
 
 #21) Generate figures and analysis
 	#For a comprehensive list, see the "generating_figures" directory
-
-########Alternative version- run it directly on the factors
-#Build the summary stats directly
-
-
-#17) run LDSC on those
-snakemake --snakefile rules/project_assess.smk results/panUKBB_complete_61K/NONE_ldsc_enrichment_Multi_tissue_chromatin//factor_global_fdr.heatmap.png
-
-
-loading_ss_files_NONE
-2024-09-06T142732.835502.snakemake.log
-
-
-
-rw-r--r-- 1 aomdahl1 abattle4  7050 Jan 17  2024 ukbb_benchmark_2.studies.tsv
--rw-r--r-- 1 aomdahl1 abattle4  6133 Feb 20  2024 finngen_benchmark_2.studies.tsv
--rw-r--r-- 1 aomdahl1 abattle4 23692 Mar 29  2024 panUKBB_complete.studies.tsv
--rw-r--r-- 1 aomdahl1 abattle4  8743 Apr 12  2024 panUKBB_complete.studies.reprocess.tsv
-drwxr-xr-x 2 aomdahl1 abattle4  4096 Nov 20 12:14 panUKBB_OLD
--rw-r--r-- 1 aomdahl1 abattle4 33524 Nov 20 12:20 panUKBB_complete_unfiltered.studies.tsv
-[aomdahl1@login02 trait_selections]$  panUKBB_complete_41K_final^C
-[aomdahl1@login02 trait_selections]$ cp panUKBB_complete.studies.tsv panUKBB_complete_41K_final.studies.tsv
-[aomdahl1@login02 trait_selections]$ vim panUKBB_complete_41K_final.studies.tsv
-[aomdahl1@login02 trait_selections]$ vim README
-
-
-
-#to add
-git add /scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwas_extracts/panUKBB_complete/missingness_report.tsv
-git add /scratch16/abattle4/ashton/snp_networks/scratch/panUKBB_analysis/rg_filtered_0.7_traits.txt
-git add /scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwas_extracts/panUKBB_complete/missingness_report.tsv
-git add  ldsr_results/panUKBB_complete/rg_filtered_0.7_traits.txt
-#?/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/ldsr_results/panUKBB_complete/summary_data/gcov_int_se.tab.SELECTED.csv
-
-run_scripts/GLEANER_panUKBB_41K_snps.build_sklearn-eBIC.sh
-
-
-#check- do I have the rigth covar matrix information? I don't think I updated that....
-
-
-option_list <- list(
-  make_option(c("-f", "--factorization"),
-              type = "character", default = NULL,
-              help = "Path to an Rdata object of factorization to load in"),
-  make_option(c("-a", "--maf_column"),
-              type = "character", default = "af_EUR",
-              help = "Specify the name of the MAF column to use"),
-  make_option(c("-m", "--maf_reference"),
-              type = "character", default = "/data/abattle4/lab_data/GWAS_summary_statistics/PanUKBB/high_quality_common_variants_EUR.txt.bgz",
-              help = "Path to MAF reference file"),
-  make_option(c("-o", "--output"),
-              type = "character", default = NULL,
-              help = "Output location")
