@@ -1,0 +1,5 @@
+filelist: "/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/trait_selections/finngen_benchmark.studies.txt"
+pval_thresh: "1e-5"
+file_ext: ".sumstats.gz"
+#target output file:
+#"ldsr_results/finngen_benchmark/summary_data/gcov_int.png"

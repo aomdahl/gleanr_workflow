@@ -1,0 +1,8 @@
+filelist: "/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/trait_selections/panUKBB_complete.studies.tsv"
+ldscref: "/data/abattle4/lab_data/GWAS_summary_statistics/PanUKBB/phenotype_ldsc_files/UKBB.ALL.ldscore"
+pval_thresh: "1e-5"
+file_ext: ".sumstats.gz"
+ldscref: "/data/abattle4/lab_data/GWAS_summary_statistics/PanUKBB/phenotype_ldsc_files/UKBB.ALL.ldscore"
+#target output file:
+#filelist: "/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/trait_selections/panUKBB_selected.studies.tsv" #this was the previious cleaned up version
+#"ldsr_results/finngen_benchmark/summary_data/gcov_int.png"

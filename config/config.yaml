@@ -1,0 +1,7 @@
+# Global setting
+input_dir: "data/example"
+output_dir: "output/example"
+
+# Example setting
+battle_projects: ["eqtl", "prs", "network", "sc", "randomforest"]
+

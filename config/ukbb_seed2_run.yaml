@@ -1,0 +1,6 @@
+filelist: "/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/trait_selections/ukbb_seed2_fall2022.txt"
+#target output file:
+#"ldsr_results/saige_benchmark/summary_data/gcov_int.png"
+
+file_ext: ".sumstats.gz"
+pval_thresh: "1e-5"
