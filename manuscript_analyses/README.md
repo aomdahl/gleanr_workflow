@@ -1,4 +1,4 @@
-# Analysis performed in published manuscript
+# Analysis performed in GLEANR manuscript
 The directories here provide the primary code and documentation describing how the analyses in the manuscript were conducted. Each subdirectory contains an `*.md` file that describes the workflow for each in detail.
 
 These include: 
