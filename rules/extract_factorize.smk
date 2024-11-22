@@ -1,7 +1,7 @@
 # load modules
 shell.prefix("ml anaconda;") 
 # configurations
-src_path="/scratch16/abattle4/ashton/snp_networks/gwas_decomp_ldsc/src/"
+src_path="/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/src/"
 ldsc_ref_dat="/data/abattle4/aomdahl1/reference_data/ldsc_reference"
 #Sample counts need to come from somehwere...
 #For later:
