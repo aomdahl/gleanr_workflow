@@ -18,3 +18,7 @@ Our approach was inspired by work from Yuan He [here](https://github.com/heyuan7
 
 ## Running GLEANR
 Tutorials and vignettes will be posted within the next month. If you'd like to try `gleanr` in the meantime, use the script `src/gleaner_run.R` to run analysis directly on input matrices of summary statistics.
+
+## Analysis from the paper
+- For a detailed outline of the steps and scripts used in the cross-cohort analysis of FinnGen and UKBB GWAS, see the document [here](https://github.com/aomdahl/gleanr_workflow/blob/main/manuscript_analyses/FinnGen_vs_UKBB_analysis/full_analysis.md)
+- For a detailed outline of the steps and scripts used in the analysis of 137 diverse phenotypes, see TBD
