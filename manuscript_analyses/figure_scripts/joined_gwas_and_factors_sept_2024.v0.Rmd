@@ -1,0 +1,260 @@
+---
+title: "Figure for cohort overlap and simulations."
+output: html_notebook
+---
+Here, creating the simulation based figure
+Note that previous sims were incorrect in that they didn't quite use the sd specifications in the right way. We should be able to get this to work
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+source("/scratch16/abattle4/ashton/snp_networks/scratch/cohort_overlap_exploration/gwas_sim_style/simulation_processing_tools.R")
+source("/scratch16/abattle4/ashton/snp_networks/gwas_decomp_ldsc/src/plot_functions.R")
+source("/scratch16/abattle4/ashton/snp_networks/gwas_decomp_ldsc/src/factorization_methods.R")
+source("/data/abattle4/aomdahl1/gene_utils/qqplot.R")
+library(data.table)
+library(magrittr)
+library(dplyr)
+library(stringr)
+library(ggplot2)
+library(RColorBrewer)
+library(NatParksPalettes)
+library(ggbeeswarm)
+
+```
+
+first, the null simulations based on GWAS
+```{r}
+load("/scratch16/abattle4/ashton/snp_networks/scratch/cohort_overlap_exploration/gwas_sim_style/null_matrix_spearman/N30000_multi-overlap_SD-1_h2-0-0_bmi-like.SCALED_Aug2024/null_covarfactorization.summaries.RData")
+
+#The format has changed a little- I had to do the whitened svd separately
+load("/scratch16/abattle4/ashton/snp_networks/scratch/cohort_overlap_exploration/gwas_sim_style/null_matrix_spearman/N30000_multi-overlap_SD-1_h2-0-0_bmi-like.SCALED_Aug2024/null_covarfactorization.summaries.WHITENED_PCA.RData")
+save.list$elbow.point <- elbow.point
+save.list$flashr.runs <- flashr.runs
+save.list$gd.point <- gd.point
+save.list$gleaner.runs.covar <- gleaner.runs.covar
+save.list$gleaner.runs.std <- gleaner.runs.std
+save.list$sim.pca.alt <- sim.pca.alt
+save.list$sim.pca.std <- sim.pca.std
+save.list$kaiser.point <- kaiser.point
+#temporary hack while bringing things up to the newest organization fo the software
+tables.alt <- tableSimResultsFromList(save.list)
+factors.by.method.long <- tables.alt$long
+```
+Now we can work as in the previous ones:
+```{r}
+#Do by percent of overlapping samples
+factors.by.method.long %<>% 
+  mutate("overlap_percent" = overlap_score/90000*100) %>%  
+  mutate("overap_bins" = cut_interval(overlap_percent, n=4)) %>% 
+  filter(method != "whitened_gd.point", method != "gd.point")
+
+```
+Build specific color pallette
+Choices here- dropping SVD-beta
+```{r}
+map.to.new <- data.frame(
+  "method"=unique(factors.by.method.long$method),
+"method_label"=c("GLEANER", "GLEANER (unadj.)", "SVD-adj (elbow)", 
+               "SVD-adj (avg)","flash", "SVD (elbow)", "SVD (avg)"))
+
+#ordered
+"new.method"=c("SVD (avg)", "SVD (elbow)", "SVD-adj (avg)","SVD-adj (elbow)","flash", "GLEANER (unadj.)","GLEANER")
+
+full.list=c("SVD", "SVD (avg)", "SVD (elbow)","SVD-adj", "SVD-adj (avg)","SVD-adj (elbow)",
+            "flash","flash (Z)","flash (Kronecker)","FactorGo","GLEANER (unadj.)","GLEANER")
+#Trying some color things....
+flash.cols <- natparks.pals(name="Acadia",n=3,type="discrete")
+pca.unadj.cols <- natparks.pals(name="Glacier",n=3,type="discrete")
+pca.adj.cols <- natparks.pals(name="CapitolReef",n=3,type="discrete")
+gleaner.cols <- natparks.pals(name="BryceCanyon",n=2,type="discrete")
+factorgo.cols <- natparks.pals(name="Arches",n=1,type="discrete")
+#
+
+flash.cols <- brewer.pal(5,"Greens")[3:5]
+pca.unadj.cols <- brewer.pal(3,"Blues")
+pca.adj.cols <- brewer.pal(8,"BuPu")[6:8]
+gleaner.cols <- brewer.pal(2,"Oranges")[2:3]
+factorgo.cols <- brewer.pal(5,"PuRd")[4]
+
+
+
+
+all.colors <- c(pca.unadj.cols,pca.adj.cols, flash.cols, factorgo.cols,gleaner.cols )
+color.map.pub <- data.frame("method_label"=full.list, "color" = all.colors)
+```
+
+Map
+```{r}
+factors.by.method.long.sub.plot <- left_join(factors.by.method.long, map.to.new, by="method") %>% left_join(., color.map.pub, by="method_label")%>%  mutate("method_label"=factor(method_label, levels=color.map.pub$method_label)) %>% arrange(method_label)
+
+sub.pub <- color.map.pub %>% mutate("method_label"=factor(method_label, levels=color.map.pub$method_label)) %>% filter(method_label %in% factors.by.method.long.sub.plot$method_label)
+
+```
+Plot
+```{r}
+
+myColors <- color.map.pub$color
+names(myColors) <- levels(factors.by.method.long.sub.plot$method_label)
+#names(myColors) <- unique(factors.by.method.long.sub.plot$method_label)
+colScale <- scale_colour_manual(name = "Method",values = myColors)
+fillScale <- scale_fill_manual(name = "Method",values = myColors)
+ggplot(factors.by.method.long.sub.plot, aes(x=method_label,y=as.numeric(value), fill=method_label))+
+  geom_boxplot(aes(fill = method_label)) +theme_bw(15)+  ggtitle("Null simulation with increasing cohort overlap") + 
+  xlab("% overlapping samples") + ylab(expression( hat(K) )) + fillScale + facet_wrap(~overap_bins, nrow = 1)
+
+
+hum_names <- as_labeller(
+     c(`[0,22.8]` = "0-23%", `(22.8,45.6]` = "23-46%",`(45.6,68.3]` = "46-68%", 
+       `(68.3,91.1]` = "68-91%"))
+
+gwas.based <- ggplot(factors.by.method.long.sub.plot, aes(x=method_label,y=as.numeric(value), fill=method_label))+
+  geom_violin(aes(fill = method_label)) +theme_bw(12) +  geom_jitter(alpha = 0.1,aes(color=method_label))+
+  xlab("% overlapping samples") + ylab(expression( hat(K) )) + fillScale + facet_wrap(~overap_bins, nrow = 1,labeller = hum_names, strip.position = "bottom") +  theme(strip.background =element_rect(fill="white")) + colScale + theme(axis.text.x = element_blank(), axis.ticks.x = element_blank())
+```
+Great, Im' actually pretty happy with that.
+##################################
+Next, the factor based simulations. Moment of truth!!!
+
+Unscaled flavor
+```{r}
+no.covar.unscaled <- mergeTabularResults(query="",base.dir = "/scratch16/abattle4/ashton/snp_networks/scratch/cohort_overlap_exploration/simulating_factors/custom_easy/simulation_outputs/final_sims_june_2024/no_overlap/", scale=FALSE)  %>% mutate("Covar"=  "none")
+
+oneb.covar.unscaled  <- mergeTabularResults(query="",base.dir = "/scratch16/abattle4/ashton/snp_networks/scratch/cohort_overlap_exploration/simulating_factors/custom_easy/simulation_outputs/final_sims_june_2024/1b_overlap/", scale=FALSE) %>%   mutate("Covar"=  "1b")
+twob.covar.unscaled  <- mergeTabularResults(query="",base.dir = "/scratch16/abattle4/ashton/snp_networks/scratch/cohort_overlap_exploration/simulating_factors/custom_easy/simulation_outputs/final_sims_june_2024/2b_overlap/", scale=FALSE)  %>%   mutate("Covar"=  "2b")
+
+all.sims.joined.unscaled <- rbind(no.covar.unscaled,oneb.covar.unscaled,twob.covar.unscaled)
+```
+
+Scaled flavor (preferred, more comparable across since most methods autoscale)
+```{r}
+no.covar <- mergeTabularResults(query="",base.dir = "/scratch16/abattle4/ashton/snp_networks/scratch/cohort_overlap_exploration/simulating_factors/custom_easy/simulation_outputs/final_sims_june_2024/no_overlap/")  %>% 
+  mutate( "Covar"=  "none")
+
+oneb.covar <- mergeTabularResults(query="",base.dir = "/scratch16/abattle4/ashton/snp_networks/scratch/cohort_overlap_exploration/simulating_factors/custom_easy/simulation_outputs/final_sims_june_2024/1b_overlap/")  %>% 
+  mutate("Covar"=  "1b")
+twob.covar <- mergeTabularResults(query="",base.dir = "/scratch16/abattle4/ashton/snp_networks/scratch/cohort_overlap_exploration/simulating_factors/custom_easy/simulation_outputs/final_sims_june_2024/2b_overlap/")  %>% 
+  mutate("Covar"=  "2b")
+
+all.sims.joined.scaled <- rbind(no.covar,oneb.covar,twob.covar)
+
+```
+
+
+
+```{r}
+all.sims.joined.scaled$N <- factor(all.sims.joined.scaled$N, levels = c("5000","10000","50000","1e+05","2e+05","mixed"))
+all.sims.joined.unscaled$N  <- factor(all.sims.joined.unscaled$N, levels = c("5000","10000","50000","1e+05","2e+05","mixed"))
+#Methods:
+
+full.list=c("SVD", "SVD (avg)", "SVD (elbow)","SVD-adj", "SVD-adj (avg)","SVD-adj (elbow)",
+            "flash","flash (Z)","flash (Kronecker)","FactorGo","GLEANER (unadj.)","GLEANER")
+
+
+#add a fake
+fake.row <- all.sims.joined.scaled[1,]; fake.row$method="SVD (elbow)";  fake.row[,7:35] <- NA
+all.sims.joined.scaled <- rbind(all.sims.joined.scaled, fake.row)
+#all.sims.joined.unscaled <- rbind(all.sims.joined.unscaled, fake.row)
+
+name.map = data.frame("method_label"=c("SVD", "flash (Z)", "flash", "flash (Kronecker)","SVD (avg)", "GLEANER", "GLEANER (unadj.)", "SVD-adj", "SVD (beta)", "FactorGo", "SVD (elbow)"), "method" = unique(all.sims.joined.scaled$method))
+
+level_order=name.map$method_label
+all.sims.joined.scaled %<>% left_join(.,name.map, by="method") %>% 
+  mutate("method_label"=factor(method_label, levels=color.map.pub$method_label)) %>% arrange(method_label) %>% filter(method != "SVD_beta",method_label != "flash (Z)")
+
+#all.sims.joined.unscaled %<>% left_join(.,name.map, by="method") %>% 
+#  mutate("method_label"=factor(method_label, levels=color.map.pub$method_label)) %>% arrange(method_label) %>% filter(method != #"SVD_beta",method_label != "flash (Z)")
+
+```
+Make the plot
+Decision to drop blash Z, too compli
+```{r}
+##Scaled
+pop_names <- as_labeller(
+     c(`5000` = "N=5k", `10000` = "N=10k",`50000` = "N=50k", 
+       `1e+05` = "N=100k",`2e+05` = "N=200k", "mixed"="N=[5K,200K]",
+     `1b`="1-block", `2b`="2-block", `none`="No overlap"))
+
+
+
+
+v.sim <- ggplot(all.sims.joined.scaled%>% filter(method_label != "flash (Z)"), aes(x = method_label, y = yuan_V, fill = method_label)) + geom_boxplot() + facet_grid(Covar~N,labeller = pop_names) +  theme_bw() + xlab("Factorization method") +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) + 
+  theme(axis.text.x=element_blank(), axis.ticks.x = element_blank()) + ylab(bquote(R^2 ~ "with simulated V")) + fillScale +  theme(strip.background =element_rect(fill="white"),legend.position = "left")
+
+
+u.sim <- ggplot(all.sims.joined.scaled%>% filter(method_label != "flash (Z)"), aes(x = method_label, y = yuan_U, fill = method_label)) + geom_boxplot() + facet_grid(Covar~N,labeller = pop_names) +  theme_bw() +xlab("Factorization method") +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) + 
+  theme(axis.text.x=element_blank(), axis.ticks.x = element_blank()) + ylab(bquote(R^2 ~ "with simulated U")) + fillScale +  theme(strip.background =element_rect(fill="white"), legend.position = "left")
+
+```
+Try the unscaled version for good measure- do not use these
+```{r}
+ggplot(all.sims.joined.unscaled%>% filter(method_label != "flash (Z)"), aes(x = method_label, y = yuan_V, fill = method_label)) + geom_boxplot() + facet_grid(Covar~N,labeller = pop_names) +  theme_bw() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) + 
+  theme(axis.text.x=element_blank(), axis.ticks.x = element_blank()) + ylab(bquote(R^2 ~ "with simulated V")) + fillScale +  theme(strip.background =element_rect(fill="white"))
+
+
+ggplot(all.sims.joined.unscaled%>% filter(method_label != "flash (Z)"), aes(x = method_label, y = yuan_U, fill = method_label)) + geom_boxplot() + facet_grid(Covar~N,labeller = pop_names) +  theme_bw() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) + 
+  theme(axis.text.x=element_blank(), axis.ticks.x = element_blank()) + ylab(bquote(R^2 ~ "with simulated U")) + fillScale +  theme(strip.background =element_rect(fill="white"))
+```
+Results basically look the same, kinda. Scaled is more favorable for us, and I think its more fair all around.
+
+
+
+All right. The only figures remaining here are the- adjcacent 
+```{r}
+oneb.version <- fread("/scratch16/abattle4/ashton/snp_networks/scratch/cohort_overlap_exploration/simulating_factors/custom_easy/simulation_outputs/final_sims_june_2024/1b_overlap/V101_U101_MAF-mix_eur_N-10000_RHO-1b_high_mixed_p_No-1b_high_no/sim1.c_matrix.txt")
+
+oneb.plot <- plotCorrelationHeatmap(as.matrix(oneb.version),typin = "none") + theme_minimal()+
+  theme(axis.text.x=element_blank(),axis.text.y = element_blank(), legend.position = "none",
+        axis.ticks = element_blank(),panel.border = element_rect(colour = "black", fill=NA, size=5)) + 
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) + theme(plot.margin = unit(c(0,0,0,0), "cm"))
+  
+```
+```{r}
+twob.version <- fread("/scratch16/abattle4/ashton/snp_networks/scratch/cohort_overlap_exploration/simulating_factors/custom_easy/simulation_outputs/final_sims_june_2024/2b_overlap/V101_U101_MAF-mix_eur_N-10000_RHO-2b_mid_mixed_p_No-2b_high_no/sim1.c_matrix.txt")
+
+twob.plot <- plotCorrelationHeatmap(as.matrix(twob.version),typin = "none") + theme_minimal()+
+  theme(axis.text.x=element_blank(),axis.text.y = element_blank(), legend.position = "none",
+        axis.ticks = element_blank(),panel.border = element_rect(colour = "black", fill=NA, size=5)) + 
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) + theme(plot.margin = unit(c(0,0,0,0), "cm"))
+```
+
+```{r}
+nob.version <- fread("/scratch16/abattle4/ashton/snp_networks/scratch/cohort_overlap_exploration/simulating_factors/custom_easy/simulation_outputs/final_sims_june_2024/no_overlap/V101_U101_MAF-mix_eur_N-10000_RHO-none_No-none/sim1.c_matrix.txt")
+
+nob.plot <- plotCorrelationHeatmap(as.matrix(nob.version),typin = "none") + theme_minimal()+
+  theme(axis.text.x=element_blank(),axis.text.y = element_blank(), legend.position = "none",
+        axis.ticks = element_blank(),panel.border = element_rect(colour = "black", fill=NA, size=5)) + 
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())+ theme(plot.margin = unit(c(0,0,0,0), "cm"))
+```
+Now, the correlation on real data.
+This is more involved, so just loading the data s it was generated in `/scratch16/abattle4/ashton/snp_networks/presentation_figures/cohort_overlap_ukbb_may2024.R`
+```{r}
+#load("/scratch16/abattle4/ashton/snp_networks/presentation_figures/gleaner_manuscript_draft/ukbb_overlap_dat.RData")
+overlap.no.herit.half <- overlap.no.herit
+overlap.no.herit.half[upper.tri(overlap.no.herit.half)] <- NA
+noherit.corr <- plotCorrelationHeatmap(no.herit.query.corr, drop.labels=TRUE, col_limit=c(-1,1.2), font_size = 8,show.nums = TRUE,print.nums = overlap.no.herit.half) + 
+  theme(legend.position = "right")+  labs(fill=bquote(g[cov_int]))  + theme(axis.text = element_blank()) + 
+  annotate(geom="text",label = bquote(h^2 ~"= 0"),y = 12,x=4, size= 17/.pt)
+
+
+overlap.selected.traits.half <- overlap.selected.traits
+overlap.selected.traits.half[upper.tri(overlap.selected.traits.half)] <- NA
+herit.corr <- plotCorrelationHeatmap(manual.query.corr, drop.labels=TRUE, col_limit=c(-1,1.2), font_size = 8,show.nums = TRUE,print.nums = overlap.selected.traits.half) + 
+  theme(legend.position = "right")+  labs(fill=bquote(g[cov_int]))   + theme(axis.text = element_blank()) + 
+  annotate(geom="text",label = bquote(h^2 ~"> 0"),y = 12,x=4, size= 17/.pt)
+
+```
+Okay, I need to merge the color schemes
+```{r}
+library(ggpubr)
+cor.shapes <- cowplot::plot_grid(plotlist=list(oneb.plot, twob.plot, nob.plot),ncol=1)
+factor.sim <- cowplot::plot_grid(plotlist = list(u.sim + theme(plot.margin = unit(c(0,0,0,0), "cm")),cor.shapes), nrow=1, rel_widths = c(1.2,0.1))
+upper.panel.corr <- cowplot::plot_grid(plotlist=list(noherit.corr+ theme(legend.position = "none"), herit.corr ),nrow  =1, rel_widths = c(0.8,1))
+upper.panel <- cowplot::plot_grid(plotlist = list(upper.panel.corr, gwas.based + theme(legend.position = "none")), rel_widths = c(1,1),labels = c('A', 'B'), rel_heights = c(0.6,1))
+ggarrange(upper.panel, factor.sim,
+          labels = c("", "C"),
+          ncol = 1, nrow = 2)
+```
+TODO: need to add in an additional entry for the missing SVD-elbow
