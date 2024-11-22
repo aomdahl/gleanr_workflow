@@ -1,0 +1,116 @@
+---
+title: "UKBB-FinnGen post-XT-LDSR trait selection"
+output: html_document
+date: "2024-01-16"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+pacman::p_load(dplyr, magrittr, data.table, ggplot2)
+```
+
+## 1/16- select out the  50 phenotypes
+
+Conditions for selection:
+1) highly correlated phenotypes
+2) Higher neff
+
+```{r}
+rg.ldsc.results <- fread("~/OneDrive - Johns Hopkins/Research_Ashton_MacBook_Pro/snp_network/ukbb_V_finngen/updated_rg_tab_jan_2024.tsv") %>% 
+  rowwise() %>% mutate("pheno1"=unlist(stringr::str_match(p1, ".([\\w_]+).sumstats.gz")[,2]),
+                       "pheno2"=unlist(stringr::str_match(p2, ".([\\w_]+).sumstats.gz")[,2])) %>%
+  select(pheno1, pheno2, rg, se, z, p, h2_obs, h2_obs_se, h2_int, h2_int_se, gcov_int, gcov_int_se) 
+write.table(rg.ldsc.results, quote = FALSE, row.names = FALSE, file="~/OneDrive - Johns Hopkins/Research_Ashton_MacBook_Pro/snp_network/ukbb_V_finngen/CLEAN_rg_tab_jan_2024.csv", sep = ",")
+which(rg.ldsc.results$pheno1!=rg.ldsc.results$pheno2)
+rg.ldsc.results %>% arrange(-rg)
+```
+Okay- looks like most traits have high correlation, as expected, but some might not.
+
+
+```{r}
+hist(-log10(rg.ldsc.results$p),breaks = 20)
+View(rg.ldsc.results %>% filter(rg > 0.8, p < (0.01/nrow(rg.ldsc.results))) %>% arrange(-rg)) #this is approximately bonferroni correction
+```
+I don't want to be too limiting here, because LDSC seems to really only work for polygenic kinds of traits- if its not polygenic, may not detect the effects, so need to look elsewhere for heritabaility.
+The above list contains 43 phenotypes which seem worth keeping. I think I start with those..
+
+Do I keep either of the diabetes ones?
+Both type2d and type2d_w were kept- select the one with the larger overall sample size I think.
+```{r}
+rg.ldsc.results %>% filter(pheno2 %in% c("type_2_diabetes", "type_1_diabetes"))
+```
+Type 1 diabetes isn't bad either..., similarity isn't there.
+Maybe for instsances where LDSC fails, could just look at manual correlation?
+Final list:
+```{r}
+rg.ldsc.results.df <- rg.ldsc.results %>% filter(rg > 0.8, p < (0.01/nrow(rg.ldsc.results))) %>% arrange(-rg) %>% filter(pheno1 != "type_2_diabetes")
+write.table(rg.ldsc.results.df, quote = FALSE, row.names = FALSE,file = "~/OneDrive - Johns Hopkins/Research_Ashton_MacBook_Pro/snp_network/ukbb_V_finngen/selected_traits_clean.jan_2024.csv", sep = ",")
+```
+For convenience, write out all the files we will lneed to move...
+```{r}
+head(sub.list)
+head(rg.ldsc.results.df)
+(sub.list %>% filter(!(clean_names %in% c(rg.ldsc.results.df$pheno1, rg.ldsc.results.df$pheno2) )))$clean_names
+```
+Visualize for slides:
+```{r}
+rg.ldsc.results.plot <- rg.ldsc.results %>% 
+  mutate("inclusion" =ifelse(!is.na(rg) & rg > 0.8 & (rg < 1.2) &  p < (0.01/nrow(rg.ldsc.results)), 
+                             "Include", ifelse(is.na(rg) | (rg > 1.2 & p > (0.01/nrow(rg.ldsc.results))), "Invalid", "Exclude"))) %>% mutate("lower"=max(rg-se,0),"upper" = min(rg+se,2))%>% mutate("rg_flat" = ifelse(rg > 1.5,1.5,rg)) %>% mutate("p.thresh"=ifelse(p < 0.01/nrow(rg.ldsc.results), "pass", "fail"))
+#manually assign the t2d to exclude
+rg.ldsc.results.plot[72,]$inclusion <- "Exclude"
+
+ggplot(data=rg.ldsc.results.plot , aes(x=reorder(pheno1,rg_flat), y = rg_flat, fill = inclusion)) + geom_bar(stat= "identity") +
+  geom_errorbar( aes(ymin = lower, ymax = upper), data = rg.ldsc.results.plot, width = 0.2)  + theme_bw() + coord_flip() + 
+  ylab(bquote(r[g])) + xlab("Phenotype") + labs(fill="Included in\nlater analysis")
+
+
+ggplot(data=rg.ldsc.results.plot , aes(x=reorder(pheno1,rg_flat), y = rg_flat, fill = -log10(p))) + geom_bar(stat= "identity") +
+  geom_errorbar( aes(ymin = lower, ymax = upper), data = rg.ldsc.results.plot, width = 0.2)  + theme_bw() + coord_flip() + 
+  ylab(bquote(r[g])) + xlab("Phenotype") + scale_fill_continuous(high = "red", low = "grey") + facet_wrap(~inclusion)
+
+
+ggplot(data=rg.ldsc.results.plot , aes(x=reorder(pheno1,rg_flat), y = rg_flat, fill = p.thresh)) + geom_bar(stat= "identity") +
+  geom_errorbar( aes(ymin = lower, ymax = upper), data = rg.ldsc.results.plot, width = 0.2)  + 
+  theme_bw(15) + geom_hline(yintercept = 1, linetype=2) + coord_flip() + 
+  ylab(bquote(r[g])) + xlab("Phenotype") +  facet_wrap(~inclusion) + labs(fill="p_bonf\n< 0.01")
+```
+
+
+--------------------------------------------------------
+# Testing to remove excessive traits:
+```{r}
+ukbb_covar <- fread("~/OneDrive - Johns Hopkins/Research_Ashton_MacBook_Pro/snp_network/ukbb_V_finngen/ldsr_results_rockfish/saige_benchmark/summary_data/gcov_int.tab.csv")
+raw.form <- solve(chol(as.matrix(ukbb_covar)))
+source("~/Documents/Research/LocalData/snp_networks/gleaner_local/gleaner/gwasMF/R/data_decorrelation.R")
+covar.blocks <- blockifyCovarianceMatrix(as.matrix(ukbb_covar))
+covar.blocks <- as.matrix(Matrix::forceSymmetric(covar.blocks))
+solve((chol(covar.blocks)))
+
+#That's good! Now the other one
+finngen_covar <- fread("~/OneDrive - Johns Hopkins/Research_Ashton_MacBook_Pro/snp_network/ukbb_V_finngen/ldsr_results_rockfish/finngen_benchmark/summary_data/gcov_int.tab.csv")
+raw.form <- solve(chol(as.matrix(finngen_covar)))
+covar.blocks <- blockifyCovarianceMatrix(as.matrix(finngen_covar))
+covar.blocks <- as.matrix(Matrix::forceSymmetric(covar.blocks))
+solve((chol(covar.blocks)))
+block.struct <- create_blocks(as.matrix(finngen_covar))
+
+```
+Does removing MI, as I intend to do, fix the problem?
+```{r}
+#The problem child
+mit <- which(colnames(finngen_covar) %in% block.struct[[1]])
+(as.matrix(finngen_covar)[mit,mit])
+chol((as.matrix(finngen_covar)[mit,mit]))
+mit
+chol((as.matrix(finngen_covar)[c(2,6,14),c(2,6,14)]))
+
+chol((as.matrix(finngen_covar)[c(2,6,15),c(2,6,15)])) #YES. dropping ischemic_heart_disease fixes the problem
+
+chol((as.matrix(finngen_covar)[c(6,14,15),c(6,14,15)]))
+
+chol((as.matrix(finngen_covar)[c(2,14,15),c(2,14,15)])) #YES, dropping coronary_atherosclerosis fixes the problem.
+solve(chol(covar.blocks[-14,-14]))
+image(chol(covar.blocks[-14,-14]))
+```
+

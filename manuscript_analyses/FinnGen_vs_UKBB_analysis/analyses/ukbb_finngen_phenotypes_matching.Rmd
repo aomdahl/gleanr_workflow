@@ -1,0 +1,403 @@
+---
+title: "Pairing and selecting phenotypes for analysis."
+output: html_notebook
+---
+
+Goal here is to match as many phenotypes as possible to each other
+*1/8- looking to add another 20 or so...*
+*This was copied up to marcc
+```{r setup}
+pacman::p_load(dplyr, magrittr, data.table, ggplot2)
+```
+
+```{r}
+ukbb.ref <- fread("~/OneDrive - Johns Hopkins/Research_Ashton_MacBook_Pro/snp_network/ukbb_V_finngen/ukbb_description_lookup.csv", header = FALSE) %>% set_colnames(c("ukbb_identifier", "description"))
+ukbb.ref
+
+finngen.ref <-fread("~/OneDrive - Johns Hopkins/Research_Ashton_MacBook_Pro/snp_network/ukbb_V_finngen/endpoints.csv", header = TRUE) %>% print()
+alt.finngen <- fread("https://storage.googleapis.com/finngen-public-data-r2/summary_stats/r2_manifest.tsv")
+finngen.ref$`MAF-score` <- sapply(1:nrow(finngen.ref), function(i) 25/(2*min(finngen.ref$num_cases[i], finngen.ref$num_controls[i])))
+View(finngen.ref %>% filter(`MAF-score`<= 0.01, num_gw_significant_prev > 1) %>% arrange(phenotype))
+ukbb.herit.ref <-fread("~/OneDrive - Johns Hopkins/Research_Ashton_MacBook_Pro/snp_network/ukbb_V_finngen/ukb31063_h2_all.02Oct2019.tsv", header = TRUE) %>% print()
+```
+Those that match just by phenocode:
+```{r}
+code.matches <- ukbb.ref %>% filter(ukbb_identifier %in% finngen.ref$phenocode) %>% distinct() %>% print()
+
+#get the ones w
+ref.filtered <- ukbb.herit.ref %>% filter(phenotype %in% code.matches$ukbb_identifier) %>% filter(h2_p < 0.01,h2_liability > 0.05, abs(h2_z) > 4) %>% print()
+
+```
+
+How to do a soft search in the reference?
+```{r}
+ukbb.ref[grepl(pattern = "mood", ukbb.ref$description, ignore.case = TRUE),]
+"KRA_PSY_MOOD" %in% finngen.ref$phenocode
+filter(ukbb.herit.ref, phenotype == "KRA_PSY_MOOD")
+```
+```{r}
+library(fuzzyjoin)
+finngen.join <- finngen.ref %>% mutate("description"=phenotype) %>% filter(num_gw_significant > 5)
+compare.ukbb <- ukbb.herit.ref %>% filter(source != "finngen")
+#match wrt finngen
+first.pass <- stringdist_join(finngen.join, compare.ukbb, by = "description", max_dist = 40, ignore_case = TRUE, distance_col = "name_dist", method = "cosine")
+#fuzzy match
+```
+A test case:
+```{r}
+obesity.names <- compare.ukbb$description[which(grepl(x=compare.ukbb$description, pattern = "obesity", ignore.case = TRUE))]
+
+filter(first.pass,phenotype.x == "Obesity") %>% arrange(name_dist) %>% select(description.x, description.y, name_dist) 
+filter(first.pass, description.y %in%  obesity.names,phenotype.x == "Obesity") %>% select(description.x, description.y, name_dist) 
+```
+Distnace is really high for the true ones:
+qgram: 28
+lcs: 28
+osa: 28
+hamming: NA
+dl:28
+cosine:0.399
+
+
+
+```{r}
+top.by.term <- first.pass %>% group_by(phenocode) %>% slice_min(name_dist)
+hist(top.by.term$name_dist)
+top.by.term %>% select(description.x, description.y, phenocode, name_dist) %>%
+  filter(name_dist < 9) %>% distinct()
+```
+huh. lots of noise here..... which phenotypes should we drop?
+```{r}
+unique(first.pass$`description.x`)
+```
+
+## DOing a direct match
+that wasn't working
+Something more straightforwad?
+```{r}
+maf_thresh <- sapply(1:nrow(finngen.ref),
+                     function(i)25/(2*min(finngen.ref$num_cases[i],finngen.ref$num_controls[i])))
+finngen.ref.overlap <- finngen.ref %>% mutate("maf_thresh" = maf_thresh) %>% filter(maf_thresh < 0.01)
+saige.ref <- fread("~/Downloads/saige_pheno_info.csv") %>% rename("maf_thresh" = Maf_score)
+
+saige.ref.overlap <- saige.ref %>% filter(maf_thresh < 0.01)
+dim(saige.ref.overlap)
+dim(finngen.ref.overlap)
+```
+
+First just any "exact" matches
+```{r}
+head(saige.ref.overlap)
+finngen.straight.match <- filter(finngen.ref.overlap, tolower(phenotype) %in% tolower(saige.ref.overlap$`Phenotype Description`)) %>% arrange(phenotype) %>% print()
+hist(finngen.straight.match$num_gw_significant,breaks = 30)
+summary(finngen.straight.match$num_gw_significant)
+
+saige.straight.match <- filter(saige.ref.overlap, tolower(`Phenotype Description`) %in% tolower(finngen.ref.overlap$phenotype)) %>% arrange(`Phenotype Description`) %>% rename("phenotype" =`Phenotype Description`) %>% print()
+
+joined.match.compu <- inner_join(finngen.straight.match, saige.straight.match, by = "phenotype") %>% select(phenotype, phenocode, PheCode) %>% mutate("saige_phenotype"=phenotype) %>%
+  select(phenotype, saige_phenotype, phenocode, PheCode) %>% set_colnames(c("finngen_phenotype","ukbb_phenotype",  "finngen_code", "ukbb_code"))
+
+write.table(saige.straight.match, file = "~/OneDrive - Johns Hopkins/Research_Ashton_MacBook_Pro/snp_network/ukbb_V_finngen/saige_finngen_matched.csv", sep=",", quote = FALSE, row.names = FALSE)
+```
+
+## from manual search
+Adding in phenos from the manual search...
+```{r}
+#load the ones I curated manually
+manual.choices <- fread("~/OneDrive - Johns Hopkins/Research_Ashton_MacBook_Pro/snp_network/ukbb_V_finngen/manual_saige_finngen.csv") %>% print()
+
+#Make sure they pass my MAF threshold.
+phenotypes.to.keep <- manual.choices %>% filter(phenocode %in% finngen.ref.overlap$phenocode) %>% filter(code %in% saige.ref.overlap$PheCode) %>% 
+  select(phenotype, phenotype_ukbb, phenocode, code) %>% set_colnames(c("finngen_phenotype","ukbb_phenotype",  "finngen_code", "ukbb_code"))
+  
+final.options <- rbind(phenotypes.to.keep,joined.match.compu) %>% distinct() %>% print()
+final.options
+```
+While this is great, some of these combinations I am more confident about than others. So I am going to drop some specific rows before building my query machine:
+
+```{r}
+library("psych")  
+finngen.prioritized <- filter(finngen.ref.overlap,phenocode %in% final.options$finngen_code) 
+finngen.prioritized$neff <- sapply(1:nrow(finngen.prioritized), 
+                                   function(i) harmonic.mean(finngen.prioritized$num_cases[i],finngen.prioritized$num_controls[i]))
+finngen.prioritized <- finngen.prioritized %>% arrange(-neff) %>% select(phenocode, neff)  %>% set_colnames(c("finngen_code", "finngen_neff"))
+print(finngen.prioritized)
+final.options <- left_join(final.options,finngen.prioritized, by = "finngen_code")
+
+
+saige.prioritized <- filter(saige.ref.overlap, PheCode %in% final.options$ukbb_code)
+saige.prioritized$`n_cases` <- as.numeric(gsub(pattern = ",",x=saige.prioritized$`Number of cases`,replacement = ''))
+saige.prioritized$`n_controls` <- as.numeric(gsub(pattern = ",",x=saige.prioritized$`Number of controls`,replacement = ''))
+saige.prioritized$neff <- sapply(1:nrow(saige.prioritized), 
+                                   function(i) harmonic.mean(c(saige.prioritized$n_cases[i],saige.prioritized$n_controls[i])))
+saige.prioritized <- saige.prioritized %>% select(PheCode, neff) %>% 
+  set_colnames(c("ukbb_code", "saige_neff"))
+#saige.prioritized$ukbb_code <- as.character(saige.prioritized$ukbb_code)
+final.options <- left_join(final.options,saige.prioritized, by = "ukbb_code")
+print(final.options)
+```
+Next step- pick the ones with the largest Neff?
+
+```{r}
+hist(final.options$saige_neff)
+hist(final.options$finngen_neff)
+final.options <- final.options %>% mutate("sum_neff" = saige_neff + finngen_neff, 
+                                          "diff_neff" = abs(saige_neff - finngen_neff))%>% filter(saige_neff > 5000, finngen_neff > 5000)
+
+final.list <- final.options  %>% group_by(ukbb_code) %>% slice_max(sum_neff) %>% ungroup()
+final.list$clean_names <- tolower(gsub(pattern = " ", x=final.list$ukbb_phenotype, replacement="_")) %>%
+  gsub(pattern = "\\[|\\]", x=., replacement="") %>% gsub(pattern = "\\/", x=.,replacement = "_")
+final.list$clean_names
+```
+Manual omit list:
+We don't want the following phenotype:
+*abdominal hernia*: possibly similar to inguinal hernia, no genetic component. Could be good to include actually, a nice controol
+*ischemic heart*: very similar to other phenotypes, and ruins cholesky decomp.
+
+```{r}
+remove.list <- c("ischemic_heart_disease")
+```
+## January pass at this- longer list
+NOTe: still need to add continuous phenotypes previously selected
+Computational Filters in place:
+1) Ensure that variants at MAF 0.01 have at least 25 case representatives (so at least 25 samples for SNPs we'd consider)
+2) In Finngen, at least 1 GWAS hit in most recent run.
+Its possible there is a newer version of these files I should be looking at. humbug.
+Then manually matched them
+```{r}
+jan.list <- fread("~/OneDrive - Johns Hopkins/Research_Ashton_MacBook_Pro/snp_network/ukbb_V_finngen/jan_2024_phenotype_matching.csv")
+head(jan.list)
+
+#select the corresponding entries from each 
+finngen.choice <- finngen.ref %>% filter(phenocode %in% jan.list$Finngen_Phenocode) %>% arrange(phenotype) %>% print()
+jan.list[which(!(jan.list$Finngen_Phenocode %in% finngen.choice$phenocode)),]
+
+ukbb.choice <- saige.ref %>% filter(PheCode %in% jan.list$UKBB_SAIGE_PheCode) %>% arrange(`Phenotype Description`) %>% print()
+jan.list[which(!(jan.list$UKBB_SAIGE_PheCode %in% saige.ref$PheCode)),]
+```
+Okay- now combine these to a common set of unique idnetifiers (the Phecode ones?)
+
+```{r}
+drop.commas <- function(x) as.numeric(gsub(pattern = ",", replacement="", x))
+ref.list <- jan.list %>% select(Finngen_Phenocode,UKBB_SAIGE_PheCode, Possible_phenotype_mismatch,clean_names) %>% rename("phenocode"=Finngen_Phenocode,"PheCode"=UKBB_SAIGE_PheCode ) %>%
+  left_join(.,finngen.choice, by = "phenocode") %>% left_join(., ukbb.choice, by= "PheCode") %>% 
+  set_colnames(c("FG_code", "UK_code", "Pheno_match_flag","clean_names",
+                 "FG_pheno", "FG_category", "FG_cases", "FG_cases_prev", "FG_controls", "FG_gwas_hits", "FG_gwas_hits_prev", "FG_lambda", "FG_MAF-score",
+                 "UK_pheno", "UK_cases", "UK_controls", "UK_excluded_controls", "UK_category", "URL-ManhattanPlot","UK_MAF-score")) %>%
+  select(-`URL-ManhattanPlot`,-UK_excluded_controls,-FG_gwas_hits_prev,-FG_cases_prev ) %>% 
+  mutate_at(c('UK_cases', 'UK_controls','FG_cases', 'FG_controls'), drop.commas) %>%
+  mutate("FG_prop_cases" = FG_cases/(FG_cases + FG_controls), 
+         "UK_prop_cases"=UK_cases/(UK_cases + UK_controls))
+
+library(psych)
+#harmonic mean
+ref.list$FG_neff = sapply(1:nrow(ref.list), function(i) harmonic.mean(c(ref.list$FG_cases[i],ref.list$FG_controls[i])))
+ref.list$UK_neff = sapply(1:nrow(ref.list), function(i) harmonic.mean(c(ref.list$UK_cases[i],ref.list$UK_controls[i])))
+
+head(ref.list)
+```
+Visualize the new ref list for downsteram analysis
+
+Now to pick the phenotypes.....
+Remember we will have +2 of the continuous ones..
+```{r}
+ref.list <- ref.list %>% ungroup() %>% mutate("avg_neff" = rowMeans(select(.,FG_neff, UK_neff)), "avg_prop" =rowMeans(select(.,FG_prop_cases, UK_prop_cases)))
+#View(ref.list %>% filter(UK_neff > 5000) %>% filter(FG_neff > 5000) %>% arrange(Pheno_match_flag))
+sub.list <- ref.list %>% filter(UK_neff > 5000) %>% filter(FG_neff > 5000)
+```
+Okay, so we have. 84 phenotype possibilities. I'd like to download them and then do some comparison on them.
+But first, some final filters since we have some breahting room...
+Review those with potentially conflicting phenotype definitions
+```{r}
+sub.list %>% filter(Pheno_match_flag == 1) %>% select(FG_pheno, UK_pheno, FG_code, UK_code)
+
+```
+Drop the following:
+1) Some uncertainty if the the phenotypes line up (whether based on description or "other" labels that leave room for ambiguity)
+```{r}
+drops <- c("Arthropathies", "Dental_caries_1_only_avohilmo","Ganglion","Other_diseases_of_the_respiratory_system","Spondylosis")
+sub.list <- sub.list %>% filter(!(FG_pheno %in% drops))
+```
+
+Quick visuals for help
+```{r}
+head(sub.list)
+library(ggplot2)
+df.sublist <- sub.list  %>% tidyr::pivot_longer(cols = c("FG_neff", "UK_neff"), names_to = "Source", values_to="Neff") %>% rowwise() %>%
+         mutate("Source" = gsub(x=Source, pattern = "_neff",replacement = "")) %>% ungroup()
+df.differences <- sub.list %>% mutate("case_diff"=FG_cases- UK_cases, "control_diff" = FG_controls-UK_controls, "neff_diff"=FG_neff - UK_neff) %>%  tidyr::pivot_longer(cols = c("case_diff", "control_diff","neff_diff"), names_to = "Differences", values_to="diff") 
+
+ggplot(data=  df.sublist, aes(x=log10(Neff), fill = Source)) +
+  geom_histogram(position="identity", alpha = 0.4,bins = 20, color = "black" ) + 
+  theme_classic() + xlab("log10(Effective sample size)") + ylab("# of studies") + 
+  ggtitle("Finngen studies typically have more cases than UKBB studies") + 
+  scale_x_continuous(breaks=scales::pretty_breaks(10)) + 
+  geom_vline(xintercept = log10(5000), linetype = 2) + annotate("text", x= 3.8, y=11, label = "n=5000")
+
+ggplot(data=  df.differences, aes(x=Differences, y=diff, fill = Differences)) +
+  geom_boxplot() + theme_classic() + xlab("Effective sample size") + ylab(bquote(N[FG]-N[UK])) + xlab("Sample size measure") + 
+  scale_x_discrete(labels= c("case_diff" = "Cases", "control_diff" = "Controls", "neff_diff" = bquote(N[eff]))) + geom_hline(yintercept = 0,linetype =2) + theme(legend.position = "none") + ggtitle("Finngen studies typically have more cases than UKBB studies")
+```
+For the liability scale test:
+```{r}
+#sub.list <- sub.list %>% mutate("prev.uk"=UK_)
+```
+
+
+
+Now for writing out
+```{r}
+head(final.list)
+#overwrite the "final.list" file
+final.list.prev <- final.list
+final.list <- sub.list %>% select(clean_names,FG_code, UK_code) %>% rename("ukbb_code"=UK_code,"finngen_code"=FG_code)
+#columns for output: 
+```
+Then for the remaining, we will need to choose phenotypes that have the best concordance (i.e. like diabetes, some of the weird "other)
+
+# DOwnload the files:
+Okay, cool. now build the queries
+```{r}
+#Original version
+#sink("~/OneDrive - Johns Hopkins/Research_Ashton_MacBook_Pro/snp_network/ukbb_V_finngen/saige_download_commands.sh")
+#Jan 2024 version
+sink("~/OneDrive - Johns Hopkins/Research_Ashton_MacBook_Pro/snp_network/ukbb_V_finngen/saige_download_commands_jan2024.sh")
+for(i in 1:nrow(final.list))
+{
+  if(!(final.list$clean_names[i] %in% remove.list))
+  {
+      cat(paste0("wget -O GWAS_", final.list$clean_names[i],"_UKBB_",final.list$ukbb_code[i], ".txt.vcf.gz ",
+               "ftp://share.sph.umich.edu/UKBB_SAIGE_HRC/PheCode_", 
+               final.list$ukbb_code[i], "_SAIGE_MACge20.txt.vcf.gz\n"))
+  cat(paste0("wget -O GWAS_", final.list$clean_names[i],"_UKBB_",final.list$ukbb_code[i], ".txt.vcf.gz.tbi ", "ftp://share.sph.umich.edu/UKBB_SAIGE_HRC/PheCode_", final.list$ukbb_code[i], "_SAIGE_MACge20.txt.vcf.gz.tbi\n"))
+  }
+
+}
+#manual add- BMI
+
+sink()
+```
+ Alternative downloads, using the hack on pheweb:
+```{r}
+sink("~/OneDrive - Johns Hopkins/Research_Ashton_MacBook_Pro/snp_network/ukbb_V_finngen/saige_download_commands_jan2024_HACK.sh")
+for(i in 1:nrow(final.list))
+{
+  if(!(final.list$clean_names[i] %in% remove.list))
+  {
+      cat(paste0("wget -O GWAS_", final.list$clean_names[i],"_UKBB_",final.list$ukbb_code[i], ".PHEWEB.txt.vcf.gz ",
+               "https://pheweb.org/UKB-SAIGE/download/", 
+               final.list$ukbb_code[i], "\n"))
+  }
+
+}
+#manual add- BMI
+sink()
+
+#and the numbers:
+sink("~/OneDrive - Johns Hopkins/Research_Ashton_MacBook_Pro/snp_network/ukbb_V_finngen/ukbb_init_table_jan2024_HACK.sh")
+
+  for(i in 1:nrow(final.list))
+{
+      if(!(final.list$clean_names[i] %in% remove.list))
+    {
+        c1 = paste0("/data/abattle4/lab_data/GWAS_summary_statistics/SAIGE_UKBB/GWAS_",final.list$clean_names[i], "_UKBB_",final.list$ukbb_code[i],".PHEWEB.txt.vcf.gz")
+        c2 = paste0(final.list$clean_names[i])
+        c3 = "hg37"
+        df <- saige.ref %>% filter(PheCode == final.list[i,]$ukbb_code)
+        c4= (paste0(unlist(df[,3]), "/",unlist(df[,4])) %>% gsub(pattern = ',', replacement = "", x = .))
+        c5="SAIGE_UKBB"
+        #paste0(c1, "\t", c2, "\t", c3, "\t", c4, "\t", c5)
+        cat(paste0(paste(c1, c2, c3, c4, c5, sep = "    "), "\n"))
+      }
+  } 
+#manually add in a row for the BMI:
+cat(paste("/scratch16/abattle4/lab_data/UKBB/GWAS_Neale/highly_heritable_traits_2/21001_irnt.gwas.imputed_v3.both_sexes.tsv.bgz","BMI", "hg37", "359983", "NEALE_UKBB", sep = "    "))
+sink()
+```
+ 
+ Get the numbers for the run file:
+```{r}
+#sink("~/OneDrive - Johns Hopkins/Research_Ashton_MacBook_Pro/snp_network/ukbb_V_finngen/ukbb_init_table.tsv")
+#Jan 2024 version
+sink("~/OneDrive - Johns Hopkins/Research_Ashton_MacBook_Pro/snp_network/ukbb_V_finngen/ukbb_init_table_jan2024.sh")
+
+  for(i in 1:nrow(final.list))
+{
+      if(!(final.list$clean_names[i] %in% remove.list))
+    {
+        c1 = paste0("/data/abattle4/lab_data/GWAS_summary_statistics/SAIGE_UKBB/GWAS_",final.list$clean_names[i], "_SAIGE_",final.list$ukbb_code[i],".txt.vcf.gz")
+        c2 = paste0(final.list$clean_names[i])
+        c3 = "hg37"
+        df <- saige.ref %>% filter(PheCode == final.list[i,]$ukbb_code)
+        c4= (paste0(unlist(df[,3]), "/",unlist(df[,4])) %>% gsub(pattern = ',', replacement = "", x = .))
+        c5="SAIGE_UKBB"
+        #paste0(c1, "\t", c2, "\t", c3, "\t", c4, "\t", c5)
+        cat(paste0(paste(c1, c2, c3, c4, c5, sep = "    "), "\n"))
+      }
+  } 
+#manually add in a row for the BMI:
+cat(paste("/scratch16/abattle4/lab_data/UKBB/GWAS_Neale/highly_heritable_traits_2/21001_irnt.gwas.imputed_v3.both_sexes.tsv.bgz","BMI", "hg37", "359983", "NEALE_UKBB", sep = "    "))
+sink()
+```
+ 
+ 
+ The queries for finngen?
+ wget https://storage.googleapis.com/finngen-public-data-r9/summary_stats/finngen_R9_AB1_ASPERGILLOSIS.gz
+```{r}
+
+#sink("~/OneDrive - Johns Hopkins/Research_Ashton_MacBook_Pro/snp_network/ukbb_V_finngen/finngen_download_commands.sh")
+#Jan 2024 version
+sink("~/OneDrive - Johns Hopkins/Research_Ashton_MacBook_Pro/snp_network/ukbb_V_finngen/finngen_download_commands_jan2024.sh")
+
+for(i in 1:nrow(final.list))
+{
+   if(!(final.list$clean_names[i] %in% remove.list))
+  {
+  cat(paste0("wget -O GWAS_", final.list$clean_names[i],"_FinnGen_",final.list$finngen_code[i], ".gz ",
+               "https://storage.googleapis.com/finngen-public-data-r9/summary_stats/finngen_R9_", 
+               final.list$finngen_code[i], ".gz\n"))
+ cat(paste0("wget -O GWAS_", final.list$clean_names[i],"_FinnGen_",final.list$finngen_code[i], ".gz.tbi ",
+               "https://storage.googleapis.com/finngen-public-data-r9/summary_stats/finngen_R9_", 
+               final.list$finngen_code[i], ".gz.tbi\n"))
+   }
+}
+#manual add- BMI
+  cat(paste0("wget -O GWAS_BMI_FinnGen_BMI_IRN.gz ",
+               "https://storage.googleapis.com/finngen-public-data-r9/summary_stats/finngen_R9_", 
+               "BMI_IRN", ".gz\n"))
+ cat(paste0("wget -O GWAS_BMI_FinnGen_BMI_IRN.gz.tbi ",
+               "https://storage.googleapis.com/finngen-public-data-r9/summary_stats/finngen_R9_", 
+              "BMI_IRN", ".gz.tbi\n"))
+
+sink()
+```
+
+Get the numbers for the run file:
+```{r}
+#sink("~/OneDrive - Johns Hopkins/Research_Ashton_MacBook_Pro/snp_network/ukbb_V_finngen/finngen_init_table.tsv")
+sink("~/OneDrive - Johns Hopkins/Research_Ashton_MacBook_Pro/snp_network/ukbb_V_finngen/finngen_init_table_jan2024.tsv")
+  for(i in 1:nrow(final.list))
+{
+     if(!(final.list$clean_names[i] %in% remove.list))
+  {
+    c1 = paste0("/data/abattle4/lab_data/GWAS_summary_statistics/FinnGen/GWAS_",final.list$clean_names[i], "_FinnGen_",final.list$finngen_code[i],".gz")
+    c2 = paste0(final.list$clean_names[i])
+    c3 = "hg37"
+    df <- finngen.ref %>% filter(phenocode == final.list[i,]$finngen_code)
+    c4= (paste0(unlist(df[,4]), "/",unlist(df[,6])) %>% gsub(pattern = ',', replacement = "", x = .))
+    c5="FinnGen"
+      cat(paste0(paste(c1, c2, c3, c4, c5, sep = "    "), "\n"))
+     } 
+  }
+#Manually add BMI
+  c1 = paste0("/data/abattle4/lab_data/GWAS_summary_statistics/FinnGen/GWAS_BMI_FinnGen_BMI_IRN.gz")
+  c2 = paste0("BMI")
+  c3 = "hg37"
+  c4= as.character(377277) #based on https://finngen.gitbook.io/documentation/methods/phewas/quality-checks
+  c5="FinnGen"
+    cat(paste0(paste(c1, c2, c3, c4, c5, sep = "    "), "\n"))
+sink()
+```
+
+
+

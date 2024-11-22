@@ -1,0 +1,320 @@
+---
+title: "Comparing (RAW) SNP data, v2"
+output: html_notebook
+---
+
+This notebook is the v2 analog of "comparing_raw_data.Rmd", with all the benefits of hindsight.
+Phenotypes have been selected in a much more stringent manner, so comparison of LDSC results is not done here (See the results in local notebookk, "ukbb_finngen_phenotypes.Rmd").
+The main aim here is to determine which subset of SNPs to use, and if my current rhesholds are sufficient.
+
+```{r}
+source("~/scratch16-abattle4/ashton/snp_networks/custom_l1_factorization/src/plot_functions.R")
+source("/scratch16/abattle4/ashton/snp_networks/scratch/cohort_overlap_exploration/src/evaluateSimR2.R")
+pacman::p_load(ggplot2, magrittr, tidyr)
+```
+
+Read in the SNPs, pre pruning.
+Note, we need to do the inngen_benchmark.union. VERSION TO KEEP IT IN RSIDS, THE SNP IDS WON'T work for the previous lookups.
+
+```{r}
+#snps.finngen <- fread("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwas_extracts/finngen_benchmark_2/finngen_benchmark_2.1000G.txt", header = F)$V1
+#snps.ukbb <-  fread("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwas_extracts/ukbb_benchmark_2/ukbb_benchmark_2.1000G.txt", header = F)$V1
+
+snps.finngen <- fread("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwas_extracts/finngen_benchmark_2/p1e-5/finngen_benchmark_2.union.txt", header = F)$V1
+snps.ukbb <-  fread("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwas_extracts/ukbb_benchmark_2/p1e-5/ukbb_benchmark_2.union.txt", header = F)$V1
+
+length(snps.finngen)
+length(snps.ukbb)
+```
+
+Unsurprisingly, FG has alot more SNPs `(51755-34518)/34518= 49.9%` more to be exact
+
+What is the overlap between these?
+```{r}
+joined.list <-list("Finngen"=snps.finngen, "UKBB"=snps.ukbb)
+snps.in.both <- snps.finngen[snps.finngen %in% snps.ukbb]
+snps.in.fg.only <- snps.finngen[!(snps.finngen %in% snps.ukbb)]
+snps.in.uk.only <- snps.ukbb[!(snps.ukbb %in% snps.finngen)]
+length(union(snps.finngen, snps.ukbb))
+library(ggvenn)
+ggvenn(
+  joined.list, 
+  fill_color = c("#0073C2FF", "#EFC000FF"),
+  stroke_size = 0.5
+  )
+```
+Thinking about why this is-
+- Some small number not sampled in both (based on previous work, not many) (somewhere between)
+
+
+How about the pruned?
+```{r}
+snps.finngen.pruned <- fread("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwas_extracts/finngen_benchmark_2/p1e-5/finngen_benchmark_2.250kb.0.2r2.prune.in", header = F)$V1
+snps.ukbb.pruned <-  fread("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwas_extracts/ukbb_benchmark_2/p1e-5/ukbb_benchmark_2.250kb.0.2r2.prune.in", header = F)$V1
+length(snps.finngen.pruned)
+length(snps.ukbb.pruned)
+```
+
+Once again, FG has alot more SNPs `(6864-4004)/4004= 71.4%` more to be exact
+
+What is the overlap between these?
+```{r}
+joined.list.pruned <-list("Finngen"=snps.finngen.pruned, "UKBB"=snps.ukbb.pruned)
+library(ggvenn)
+ggvenn(
+  joined.list.pruned, 
+  fill_color = c("#0073C2FF", "#EFC000FF"),
+  stroke_size = 0.5
+  )
+```
+I think what I'd like to do, to get us closer to like ~10,000 SNPs or so for the downstream analysis, be as inclusive as possible.
+Options:
+- Drop threshold to 1e-4 and re-run (probably the easiest)
+- Keep any SNPs in one that aren't in the other that are at least 1e-4 in the other (a bit more involved)
+   - how could I do this quickly? Run an p-value extract on all the SNPs that are in the other and use that one.
+   Let's try it.
+```{r}
+finngen.exclusives <- data.frame("rsid" = snps.in.fg.only)
+ukbb.exclusives <- data.frame("rsid" = snps.in.uk.only)
+
+#Write these out and search for them
+write.table(finngen.exclusives, col.names = FALSE, row.names = TRUE, quote = FALSE,
+            file = "/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwas_extracts/finngen_benchmark_2/finngen_benchmark_2.p1e-5exclusives.txt")
+
+
+write.table(ukbb.exclusives, col.names = FALSE, row.names = TRUE, quote = FALSE,
+            file = "/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwas_extracts/ukbb_benchmark_2/ukbb_benchmark_2.p1e-5_exclusives.txt")
+```
+  
+   
+   don't run this in R please
+```{bash, eval=FALSE}
+ml anaconda
+conda activate std
+FG=finngen_benchmark_2
+UK=ukbb_benchmark_2
+python src/quickGWASIter.py  --type ldsc_custom --output gwas_extracts/${FG}/${UK}.p1e-5_exclusives \
+--gwas_list gwas_extracts/${FG}/missingness_report.tsv --snp_list gwas_extracts/${UK}/${UK}.p1e-5_exclusives.txt \
+--extension "sumstats.gz" --gwas_dir gwas_extracts/${FG}/
+
+python src/quickGWASIter.py  --type ldsc_custom --output gwas_extracts/${UK}/${FG}.p1e-5_exclusives \
+--gwas_list gwas_extracts/${UK}/missingness_report.tsv --snp_list gwas_extracts/${FG}/${FG}.p1e-5exclusives.txt \
+--extension "sumstats.gz" --gwas_dir gwas_extracts/${UK}/
+```
+
+With this set, I intend to evaluate these SNPs against those selected from the UKBB/Finngen.
+Look at the ones in A and not B- are the p-values close?
+If they are close (i.e. 1e-4), keep them.
+```{r}
+original.finngen <- fread("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwas_extracts/finngen_benchmark_2/p1e-5/finngen_benchmark_2.p.tsv")
+trait.names.ogf <- unlist(stringr::str_match(colnames(original.finngen)[-1], ".([\\w_]+).sumstats.gz")[,2])
+#make sure the condition is right:
+all(apply(original.finngen[,2:43], 1, function(x) { x[is.na(x)] <- 1; any(x < 1e-5)}))
+
+omitted.from.ukbb <- fread("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwas_extracts/ukbb_benchmark_2/finngen_benchmark_2.p1e-5_exclusives.p.tsv")
+trait.names.ofu <- unlist(stringr::str_match(colnames(omitted.from.ukbb)[-1], ".([\\w_]+).sumstats.gz")[,2])
+all(trait.names.ofu == trait.names.ogf)
+#First- make sure this omitted set lines up with the lists above
+head(omitted.from.ukbb)
+print(paste("Proportion included:", sum(finngen.exclusives$rsid %in% omitted.from.ukbb$ids)/length(omitted.from.ukbb$ids)))
+```
+Look at the distribution of p-values amongs those that don't match:
+```{r}
+
+sum(apply(omitted.from.ukbb[,2:43], 1, function(x) { x[is.na(x)] <- 1; min(x)}) < 1e-5)
+sum(apply(omitted.from.ukbb[,2:43], 1, function(x) { x[is.na(x)] <- 1; min(x)}) < 1e-4)
+sum(apply(omitted.from.ukbb[,2:43], 1, function(x) { x[is.na(x)] <- 1; min(x)}) < 1e-3)
+
+dist.df <- data.frame(omitted.from.ukbb) %>% set_colnames(c("rsid",trait.names.ofu)) %>% pivot_longer(cols = trait.names.ofu)
+ggplot(dist.df, aes(y = -log10(value), x= reorder(name, (value)))) + geom_boxplot() +theme_bw() + theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) + geom_hline(yintercept = -log10(1e-5)) + ylab("-log10(pvalue)") + xlab("Study") + ggtitle("P-value distribution of UKBB SNPs that are p<1e-5 in Finngen but p>=1e-5 in UKBB")
+``` 
+
+
+
+Let's compare the p-values as a reference (across all SNPs)
+```{r}
+
+original.finngen.df <- data.frame(original.finngen) %>% filter(ids %in% finngen.exclusives$rsid) %>% 
+  set_colnames(c("rsid",trait.names.ofu)) %>% mutate("Source" = "Finngen") %>% 
+  pivot_longer(cols = all_of(trait.names.ofu), names_to = "study", values_to = "pval")%>% arrange(rsid, study)
+
+omitted.from.ukbb.df <- data.frame(omitted.from.ukbb)  %>% set_colnames(c("rsid",trait.names.ofu)) %>%  dplyr::mutate("Source" = "UKBB") %>%
+  pivot_longer(cols = all_of(trait.names.ofu), names_to = "study", values_to = "pval") %>% arrange(rsid, study)
+
+#because the finngen ones are just the pruned ones, its not a complete sample
+omitted.from.ukbb.df.sub <- omitted.from.ukbb.df %>% filter(rsid %in% unique(original.finngen.df$rsid)) %>% arrange(rsid, study)
+stopifnot(all(original.finngen.df$rsid == omitted.from.ukbb.df.sub$rsid))
+stopifnot(all(original.finngen.df$study == omitted.from.ukbb.df.sub$study))
+plot(original.finngen.df$pval, omitted.from.ukbb.df.sub$pval)
+
+finngen.exclusives.joined.df <- rbind(data.frame(original.finngen) %>% filter(ids %in% finngen.exclusives$rsid) %>% 
+                                        set_colnames(c("rsid",trait.names.ofu)) %>% mutate("Source" = "Finngen"),
+                   data.frame(omitted.from.ukbb)  %>% set_colnames(c("rsid",trait.names.ofu)) %>%  filter(rsid %in% unique(original.finngen.df$rsid)) %>% 
+                     dplyr::mutate("Source" = "UKBB")) %>%
+  pivot_longer(cols = all_of(trait.names.ofu), names_to = "study", values_to = "pval")
+head(finngen.exclusives.joined.df)
+ggplot(finngen.exclusives.joined.df, aes(x=study, y= -log10(pval), fill = Source)) + geom_boxplot() + ggtitle("Finngen SNPs are generally more significant\n(unsurprising, they were selected to be so)")
+#head(finngen.exclusives.joined.df)
+```
+My question is- do the effects correlate? For a given study or a given SNP?
+```{r}
+original.finngen.wide <- data.frame(original.finngen) %>% filter(ids %in% finngen.exclusives$rsid) %>% 
+  set_colnames(c("rsid",trait.names.ofu)) %>% mutate("Source" = "Finngen") %>% arrange(rsid)
+
+omitted.from.ukbb.wide <- data.frame(omitted.from.ukbb)  %>% set_colnames(c("rsid",trait.names.ofu)) %>%  
+  dplyr::mutate("Source" = "UKBB") %>% filter(rsid %in% unique(original.finngen.wide$rsid)) %>% arrange(rsid)
+
+#Ensue our condition holds
+sum(apply(omitted.from.ukbb.wide[,2:43], 1, function(x) { x[is.na(x)] <- 1; min(x)}) < 1e-5)
+sum(apply(omitted.from.ukbb.wide[,2:43], 1, function(x) { x[is.na(x)] <- 1; min(x)}) < 1e-4)
+sum(apply(omitted.from.ukbb.wide[,2:43], 1, function(x) { x[is.na(x)] <- 1; min(x)}) < 1e-3)
+#revisit prior sanity checks... It all chc
+hist(apply(omitted.from.ukbb.wide[,2:43], 1, function(x) { x[is.na(x)] <- 1; min(x)}),breaks = 50, xlab="pval")
+#Make sure IDs line up.
+stopifnot(all(omitted.from.ukbb.wide$rsid == original.finngen.wide$rsid))
+head(original.finngen.wide)
+head(omitted.from.ukbb.wide)
+all.cors <- lapply(trait.names.ofu, function(x) cor.test(x=original.finngen.wide[,x],omitted.from.ukbb.wide[,x]))
+cor.metric <- data.frame("study" = trait.names.ofu, 
+           "pval" = sapply(all.cors, function(x) x$p.value),
+           "cor" = sapply(all.cors, function(x) x$estimate),
+           "upper" = sapply(all.cors, function(x) x$conf.int[2]),
+           "lower" = sapply(all.cors, function(x) x$conf.int[1]))
+ggplot(cor.metric, aes(x = reorder(study,cor), y = cor)) + geom_bar(stat = "identity") +  
+  geom_errorbar( aes(ymin = lower, ymax = upper), data = cor.metric, width = 0.2) + theme_bw() + ggtitle("Correlation of p-values between (p<1e-5) Finngen\nand (unspecified) UKBB SNPs ")+theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) + 
+  ylab("Correlation of p-values") + xlab("Studies")
+```
+^Note- this is SNPs that aren't both passing the same significance threshold.
+Can we look at that subset instead?
+1) Look at just those SNPs passing the 1e-4 threshold in at least 1 study.
+```{r}
+head(omitted.from.ukbb.wide)
+head(original.finngen.wide)
+#Check assumptions abouf finngen
+stopifnot(all(apply(original.finngen.wide[,2:43], 1, function(x) any(x < 1e-5)),na.rm = TRUE))
+omitted.from.ukbb.wide
+#Get rows passing the rule
+keep.rows <- apply(omitted.from.ukbb.wide[,2:43], 1, function(x) { x[is.na(x)] <- 1; any(x < 1e-4)}) #this cannot be.
+all(keep.rows, na.rm = TRUE)
+
+which.correspond <- apply(omitted.from.ukbb.wide[,2:43], 1, function(x) { x[is.na(x)] <- 1; which(x < 1e-4)[1]})
+contributing.phenos <- table(colnames(omitted.from.ukbb.wide[,2:44])[which.correspond])
+contributing.phenos
+dim(contributing.phenos)
+```
+All but 2 phenotypes are contributing to this.
+I wonder if we should drop those 2?
+```{r}
+colnames(omitted.from.ukbb.wide[,2:43])[!(colnames(omitted.from.ukbb.wide[,2:43]) %in% names(contributing.phenos))]
+```
+Okay, might not be a bad idea to drop these 2, unless we see some correlation in these plots:
+```{r}
+keep.rsid<- omitted.from.ukbb.wide$rsid[apply(omitted.from.ukbb.wide[,2:43], 1, function(x) { x[is.na(x)] <- 1; any(x < 1e-4)})] #this cannot be.
+original.finngen.wide.1e04 <- original.finngen.wide %>% filter(rsid %in% keep.rsid)
+omitted.from.ukbb.wide.1e04 <- omitted.from.ukbb.wide %>% filter(rsid %in% keep.rsid)
+getCrosswiseCors <- function(first, second,thresh,names)
+{
+  all.cors.1e04 <- lapply(names, function(x) cor.test(x=first[,x],second[,x]))
+cor.metric.1e04  <- data.frame("study" = names, 
+           "pval" = sapply(all.cors.1e04, function(x) x$p.value),
+           "cor" = sapply(all.cors.1e04, function(x) x$estimate),
+           "upper" = sapply(all.cors.1e04, function(x) x$conf.int[2]),
+           "lower" = sapply(all.cors.1e04, function(x) x$conf.int[1]))
+cor.metric.1e04
+}
+cor.metric.1e04_ <- getCrosswiseCors(original.finngen.wide.1e04,omitted.from.ukbb.wide.1e04, 1e-4,trait.names.ofu)
+
+ggplot(cor.metric.1e04, aes(x = reorder(study,cor), y = cor)) + geom_bar(stat = "identity") +  
+  geom_errorbar( aes(ymin = lower, ymax = upper), data = cor.metric.1e04, width = 0.2) + theme_bw() + ggtitle("Correlation of p-values between (p<1e-5) Finngen\nand (p<1e-4) UKBB SNPs ")+theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) + 
+  ylab("Correlation of p-values") + xlab("Studies")
+```
+
+
+
+Weird. So the subset of just pruned SNPs
+2) Look at all the SNPs that do pass the thresholds in both
+So it seems like this set of SNPs is really uninformative for traits on the far left, and pretty good for everything from colorectal cancer on.
+
+Only 30 phenotypes contribute to this condition- if its 1e-5 in 1, its 1e-4 in other.
+How many traits are contributing
+```{r}
+original.finngen.wide
+which.correspond.fg <- apply(original.finngen.wide[,2:43], 1, function(x) { x[is.na(x)] <- 1; which(x < 1e-5)[1]})
+by.name <- colnames(omitted.from.ukbb.wide[,2:44])[which.correspond]
+```
+What is our reference point?
+```{r}
+original.ukbb <- fread("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwas_extracts/ukbb_benchmark_2/ukbb_benchmark_2.p.tsv")
+ukbb.in.fg <- data.frame(original.ukbb) %>% filter(ids %in% original.finngen$ids) %>% set_colnames(c("rsid",trait.names.ofu))
+finngen.in.uk <- data.frame(original.finngen)  %>% filter(ids %in% ukbb.in.fg$rsid)%>% set_colnames(c("rsid",trait.names.ofu))
+cross.1e5 <- getCrosswiseCors(ukbb.in.fg,finngen.in.uk, 1,trait.names.ofu)
+
+
+ggplot(cross.1e5, aes(x = reorder(study,cor), y = cor)) + geom_bar(stat = "identity") +  
+  geom_errorbar( aes(ymin = lower, ymax = upper), data = cross.1e5, width = 0.2) + theme_bw() + ggtitle("Correlation of p-values between (p<1e-5) Finngen\nand (p<1e-5) UKBB SNPs ")+theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) + 
+  ylab("Correlation of p-values") + xlab("Studies")
+```
+
+
+I wonder if I was to do a simple PCA
+**Question**- if you wanted to make the analysis as similar as possible, how woudl you do it?
+- Run PCA on each and drop out phenotypes that have very low reconstruction error.
+- That might not be the mest bmetric- just might be low genetic signal, noisy, etc. Well that is what we are going foro, so maybe that's what to doo
+Maybe we look at z-scores instead? later
+
+After more than enough hemming and hawing, I think I will stick with the smaller set of SNPs as a test, to see what comes out of it.
+If it goes well, great.
+If not, circle back to THIS POINT and increase the # of SNPs.
+
+Remove the HLA region
+Get the joined list
+
+Move on.
+Now, just going to proceed with joint of the 2:
+```{r}
+snps.finngen <- fread("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwas_extracts/finngen_benchmark_2/finngen_benchmark_2.1000G.txt", header = F)$V1
+snps.ukbb <-  fread("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwas_extracts/ukbb_benchmark_2/ukbb_benchmark_2.1000G.txt", header = F)$V1
+
+length(snps.finngen)
+length(snps.ukbb)
+```
+
+FG has `(47995-32172)/32172= 49.9%` more SNPs
+
+What is the overlap between these?
+```{r}
+joined.list <-list("Finngen"=snps.finngen, "UKBB"=snps.ukbb)
+snps.in.both <- snps.finngen[snps.finngen %in% snps.ukbb]
+snps.in.fg.only <- snps.finngen[!(snps.finngen %in% snps.ukbb)]
+snps.in.uk.only <- snps.ukbb[!(snps.ukbb %in% snps.finngen)]
+length(union(snps.finngen, snps.ukbb))
+library(ggvenn)
+ggvenn(
+  joined.list, 
+  fill_color = c("#0073C2FF", "#EFC000FF"),
+  stroke_size = 0.5
+  )
+write.table(data.table("rsids"=snps.in.both), file="/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwas_extracts/ukbb_benchmark_2/snps_in_both.txt", 
+            row.names = FALSE, quote = FALSE, col.names = FALSE)
+
+write.table(data.table("rsids"=snps.in.both), file="/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwas_extracts/finngen_benchmark_2/snps_in_both.txt", 
+            row.names = FALSE, quote = FALSE, col.names = FALSE)
+```
+One last bar plot for visualization purposes- the correlation of the output snps....
+```{r}
+final.finngen <- fread("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwas_extracts/finngen_benchmark_2/finngen_benchmark_2_conservative.z.tsv")
+trait.names.ofu <- unlist(stringr::str_match(colnames(final.finngen)[-1], ".([\\w_]+).sumstats.gz")[,2])
+final.ukbb <- fread("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwas_extracts/ukbb_benchmark_2/ukbb_benchmark_2_conservative.z.tsv")
+stopifnot(all(final.ukbb$ids==final.finngen$ids))
+colnames(final.ukbb) <- c("rsid",trait.names.ofu)
+colnames(final.finngen) <- c("rsid",trait.names.ofu)
+cross.1e5 <- getCrosswiseCors(data.frame(final.ukbb),data.frame(final.finngen), 1,trait.names.ofu)
+
+
+ggplot(cross.1e5, aes(x = reorder(study,cor), y = cor)) + geom_bar(stat = "identity") +  
+  geom_errorbar( aes(ymin = lower, ymax = upper), data = cross.1e5, width = 0.2) + theme_bw() + ggtitle("Correlation of z-scores between intersecting Finngen\nand  UKBB pruned SNPs (p<1e-5) ")+ coord_flip() +
+  ylab("Correlation of Z-scores") + xlab("Studies")
+
+theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) + 
+```
+
