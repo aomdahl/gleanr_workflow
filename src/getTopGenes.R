@@ -444,6 +444,17 @@ main <- function(snp_gene_map_file,snp_id_map, snp_scores_file, method, odir) {
   #Have a nice, clean, combined source of all the SNPs that is unique:
    clean.joined <- rbind(joined.singular %>% dplyr::select(hg38, rsid, ref, alt, overall_score, gene_id),
                          hg37.missed.snps %>% dplyr::select(-distance))
+   #Save a copy for the supplement and for other reference:
+   write_ref="/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results/panUKBB_complete_41K_final/gene_snp_mappings.csv"
+   if(!file.exists(write_ref))
+   {
+     write.out.joined <- rbind(joined.singular %>% dplyr::select(hg38, rsid, ref, alt, overall_score, gene_id,d) %>% dplyr::rename("distance"=d),
+                               hg37.missed.snps) %>% dplyr::select(rsid, hg38, ref, alt, gene_id, overall_score, distance) %>%
+       dplyr::rename("OpenTargets_score"=overall_score)
+     write.table(write.out.joined,file="/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results/panUKBB_complete_41K_final/gene_snp_mappings.csv", sep=",",row.names = FALSE,
+                 quote = FALSE)
+   }
+
   stopifnot(length(unique(clean.joined$rsid)) == nrow(clean.joined))
   stopifnot(nrow(clean.joined) == nrow(snp_scores))
   

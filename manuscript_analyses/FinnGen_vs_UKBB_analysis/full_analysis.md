@@ -152,9 +152,6 @@ Analysis reported in manuscript carried out in `/manuscript_analyses/figure_scri
 
 
 #Files 
-/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results/finngen_benchmark_2/conservative_1e-5/covar_influence
-/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results/ukbb_benchmark_2/conservative_1e-5/covar_influence/
-
 *BIC-sklearn_eBIC_K-41_no_covarlatent.factors.txt
 *BIC-sklearn_eBIC_K-41*
 #Compare performance with and without adjustment
@@ -162,27 +159,5 @@ fig_3_overlap_and_bar.R
 
 #add in all config files:
 config/ukbb_comparative_2_config.yaml
-munging scripts
-reference data where can yo get it?
 
-ldscref=/data/abattle4/aomdahl1/reference_data/eur_w_ld_chr #Location is hard-coded into scripts....
 
-/data/abattle4/aomdahl1/reference_data/ldsc_reference/1000G_EUR_Phase3_baseline
-/data/abattle4/aomdahl1/reference_data/eur_w_ld_chr
-
-/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/run_scripts/finngen_ukbb_benchmark/v2_expanded_run/covar_influence
-
-${RUN_SCRIPTS}/ukbb_benchmark_2_GRID_sklearn_eBIC.14K.sh
-
-files in gwas_decomp_ldsc/src/
-
-/variant_lookup.sh
-/snp_cleanup.sh
-/variant_to_rsid.sh
-update the paths on the thing.
-
-finngen_benchmark_2.FULL_OLD.studies.tsv and 
-
-ukbb_benchmark_2.FULL_OLD.studies.tsv
-
-./trait_selections/drop.names.txt

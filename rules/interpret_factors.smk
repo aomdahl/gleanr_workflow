@@ -21,13 +21,12 @@ analysis_scripts="/scratch16/abattle4/ashton/snp_networks/scratch/factor_interpr
 nfactors=58
 rule all:
 	input: 
-		expand("results/panUKBB_complete_61K/META_ldsc_enrichment_Multi_tissue_chromatin/F{num}.multi_tissue.log", num=list(range(1,52))),
-		
-		#expand("results/panUKBB_complete_61K/NONE_ldsc_enrichment_Multi_tissue_chromatin/F{num}.multi_tissue.log", num=list(range(1,52))),
+		expand('results/panUKBB_complete_41K_final/top_elements_by_factor/gene_factor_enrichments/F{factor}.joined_enrichments.txt', factor=range(1,nfactors+1))	
+		#expand("results/panUKBB_complete_61K/NONE_ldsc_enrichment_Multi_tissue_chromatin/F{num}.multi_tissue.log", num=list(range(1,nfactors))),
 		#"results/panUKBB_complete_61K/NONE_ldsc_enrichment_Multi_tissue_chromatin/factor_global_fdr.heatmap.png"
 
 rule selective_pressure:
-	input: "results/{identifier}/_final_dat.RData"
+	input: "results/{identifier}/{identifier}_final_dat.RData"
 	output: "results/{identifier}/selective_pressure/allFigs.RData"
 	params:
 		odir="results/{identifier}/selective_pressure/"
@@ -46,34 +45,34 @@ rule top_genes_by_factor:
         snp_scores="results/{identifier}/latent.loadings.txt"
     #How did I map these previously? Don't need to do it again....
     output:
-        background_set=expand("results/{{identifier}}/top_elements_by_factor/F{F}_background_genes.csv", F=range(1,nfactors+1)),
-        fg_set = expand("results/{{identifier}}/top_elements_by_factor/F{F}_genes_in_factor.csv", F=range(1,nfactors+1))
+        background_set=expand("results/{{identifier}}/top_elements_by_factor/{{sel_method}}/F{F}_background_genes.txt", F=range(1,nfactors+1)),
+        fg_set = expand("results/{{identifier}}/top_elements_by_factor/{{sel_method}}/F{F}_genes_in_factor.txt", F=range(1,nfactors+1))
     params:
-        outdir="results/{identifier}//top_elements_by_factor/"
+        outdir="results/{identifier}//top_elements_by_factor/{sel_method}",
     shell:
         """
             conda activate renv
-            Rscript {analysis_scripts}/getTopGenes.R --snp_gene_map {input.snp_gene_map} --snp_scores {input.snp_scores} --output {params.outdir}
+            Rscript src/getTopGenes.R --snp_gene_map {input.snp_gene_map} --snp_scores {input.snp_scores} --output {params.outdir} --method {wildcards.sel_method}
         """
 
 rule gene_set_enrichment:
     input: 
-        gene_set="results/{identifier}/top_elements_by_factor/genes/F{factor}.gene_set.txt",
-        background_set="results/{identifier}/top_elements_by_factor/genes/F{factor}.background_set.txt",
+    	gene_set = "results/{identifier}/top_elements_by_factor/{sel_method}/F{factor}_genes_in_factor.txt",
+	background_set="results/{identifier}/top_elements_by_factor/{sel_method}/F{factor}_background_genes.txt"
     output: 
-       "results/{identifier}/top_elements_by_factor/gene_factor_enrichments/F{factor}.{gene_lib}.txt",
+       "results/{identifier}/top_elements_by_factor/{sel_method}/gene_factor_enrichments_unique/F{factor}.{gene_lib}.txt",
     shell:
         """
         conda activate std
-        python {analysis_scripts}/gsea_enrichr.py -t {input.gene_set} -b {input.background_set} -o {output} -g {gene_lib}
+        python src/gsea_enrichr.py -t {input.gene_set} -b {input.background_set} -o {output} -g {gene_lib} --unique_only
         """
 
 
 rule join_enrichment_dat:
     input:
-        expand("results/{{identifier}}/top_elements_by_factor/gene_factor_enrichments/F{{factor}}.{gene_list}.txt", gene_list=GENE_LIBS)
+        expand("results/{{identifier}}/top_elements_by_factor/{{sel_method}}/gene_factor_enrichments/F{{factor}}.{gene_list}.txt", gene_list=GENE_LIBS)
     output:
-        "results/{identifier}/top_elements_by_factor/gene_factor_enrichments/F{factor}.joined_enrichments.txt"
+        "results/{identifier}/top_elements_by_factor/{sel_method}/gene_factor_enrichments_unique/F{factor}.joined_enrichments.txt"
     shell:
         """
         touch {output}
@@ -82,3 +81,13 @@ rule join_enrichment_dat:
         done
         """
 
+rule complete_enrichment_analysis:
+        input:
+        	expand('results/{{identifier}}/top_elements_by_factor/{{sel_method}}/gene_factor_enrichments_unique/F{factor}.joined_enrichments.txt', factor=range(1,nfactors+1))
+        output:
+                "results/{identifier}/top_elements_by_factor/{sel_method}/gene_factor_enrichments_unique/all_factors_evaluated.txt"
+        shell:
+         	"""
+		touch {output}
+		"""
+		
