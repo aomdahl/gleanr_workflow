@@ -32,7 +32,7 @@ writeReconError <- function(dat, desc, X)
   {
     r <- stats::cor(as.vector(X), as.vector(dat$X_hat))
   }
-  
+
   write.table(x=data.frame("Frobenius_norm" = frob, "Correlation" = r),file=paste0(args$outdir, desc,".recon_error.txt"),row.names = FALSE, quote = FALSE )
 }
 
@@ -113,27 +113,6 @@ t=c("--se_data=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/y
     "--outdir=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/yuan_simulations//simMANUAL.",
     "--only_run=GLEANER,PCA", "--K=5", "--bic_var=dev",
     "--no_plots", "--init_mat=V")
-#
-#####SANN_brent
-t=c("--se_data=/scratch16/abattle4/ashton/snp_networks/scratch/cohort_overlap_exploration/simulating_factors/custom_easy/simulation_outputs/fast_runs/V1_U1_maf0.4_n50000.new_seed.SANN-Brent//sim3.std_error.txt",
-    "--beta_data=/scratch16/abattle4/ashton/snp_networks/scratch/cohort_overlap_exploration/simulating_factors/custom_easy/simulation_outputs/fast_runs/V1_U1_maf0.4_n50000.new_seed.SANN-Brent//sim3.effect_sizes.txt",
-    "--seed=100001", "--outdir=/scratch16/abattle4/ashton/snp_networks/scratch/cohort_overlap_exploration/simulating_factors/custom_easy/simulation_outputs/fast_runs/V1_U1_maf0.4_n50000.new_seed.SANN-Brent/factorization_results/sim3MaNUAL",
-    "--only_run=GLEANER_glmnet", "--K=5", "--no_plots", "--bic_var=mle", "--init_mat=V",
-    "--C=/scratch16/abattle4/ashton/snp_networks/scratch/cohort_overlap_exploration/simulating_factors/custom_easy/simulation_outputs/fast_runs/V1_U1_maf0.4_n50000.new_seed.SANN-Brent//sim3.c_matrix.txt")
-
-t=c("--se_data=/scratch16/abattle4/ashton/snp_networks/scratch/cohort_overlap_exploration/simulating_factors/custom_easy/simulation_outputs/broad25Sims/V1_U1_MAF-mix_N-2500_RHO-1b_high_p_No-1b_high_no//sim10.std_error.txt",
-    "--beta_data=/scratch16/abattle4/ashton/snp_networks/scratch/cohort_overlap_exploration/simulating_factors/custom_easy/simulation_outputs//broad25Sims/V1_U1_MAF-mix_N-2500_RHO-1b_high_p_No-1b_high_no//sim10.effect_sizes.txt",
-    "--seed=10", "--outdir=/scratch16/abattle4/ashton/snp_networks/scratch/cohort_overlap_exploration/simulating_factors/custom_easy/simulation_outputs/broad25Sims/V1_U1_MAF-mix_N-2500_RHO-1b_high_p_No-1b_high_no//factorization_results/sim10MaNUAL",
-    "--only_run=GLEANER_noCovar", "--K=5", "--no_plots", "--bic_var=mle", "--init_mat=V",
-    "--C=/scratch16/abattle4/ashton/snp_networks/scratch/cohort_overlap_exploration/simulating_factors/custom_easy/simulation_outputs/broad25Sims/V1_U1_MAF-mix_N-2500_RHO-1b_high_p_No-1b_high_no//sim10.c_matrix.txt")
-
-#BFGS DOES WELL IN THIS CONTEXT
-t=c("--se_data=/scratch16/abattle4/ashton/snp_networks/scratch/cohort_overlap_exploration/simulating_factors/custom_easy/simulation_outputs/fast_runs/V1_U1_maf0.4_n5000.high_covar_1block_SCALED_Wc_t//sim10.std_error.txt",
-"--beta_data=/scratch16/abattle4/ashton/snp_networks/scratch/cohort_overlap_exploration/simulating_factors/custom_easy/simulation_outputs/fast_runs/V1_U1_maf0.4_n5000.high_covar_1block_SCALED_Wc_t//sim10.effect_sizes.txt",
-"--seed=1", "--outdir=/scratch16/abattle4/ashton/snp_networks/scratch/cohort_overlap_exploration/simulating_factors/custom_easy/simulation_outputs/fast_runs/V1_U1_maf0.4_n5000.high_covar_1block_SCALED_Wc_t//factorization_results/sim10MaNUAL",
-"--only_run=gwasMF_BIC", "--K=5", "--no_plots", "--bic_var=mle", "--init_mat=V",
-"--C=/scratch16/abattle4/ashton/snp_networks/scratch/cohort_overlap_exploration/simulating_factors/custom_easy/simulation_outputs/fast_runs/V1_U1_maf0.4_n5000.high_covar_1block_SCALED_Wc_t//sim10.c_matrix.txt")
-
 
 #generic sim
 t=c("--se_data=/scratch16/abattle4/ashton/snp_networks/scratch/cohort_overlap_exploration/simulating_factors/custom_easy/simulation_outputs/fast_runs/V7_U7_mafmixed_n5000.COVAR_cont_scaling//sim8.std_error.txt",
@@ -159,10 +138,10 @@ t=c(paste0("--se_data=",simp,"seed4.replicate23.0.SE.csv"),
       "--outdir=/scratch16/abattle4/ashton/snp_networks/scratch/cohort_overlap_exploration/gwas_sim_style/sandbox/gleaner_test",
       "--only_run=GLEANER_glmnet,GLEANER_glmnet_noCovar", "--K=5",
       "--no_plots")
-  
+
 #Testing factorGo yikes
 
-  
+
   over="/scratch16/abattle4/ashton/snp_networks/scratch/cohort_overlap_exploration/simulating_factors/custom_easy/simulation_outputs/final_sims_june_2024/1b_overlap_dev_grid/V101_U101_MAF-mix_eur_N-10000_RHO-1b_high_mixed_p_No-1b_high_no/"
   t=c(paste0("--se_data=",over,"sim1.std_error.txt"),
       paste0("--beta_data=",over,"sim1.effect_sizes.txt"),
@@ -170,9 +149,9 @@ t=c(paste0("--se_data=",simp,"seed4.replicate23.0.SE.csv"),
       paste0("--outdir=", over, "/factorization_results/"),
       "--only_run=GLEANER_glmnet", "--K=5",paste0("--C=", over, "/sim1.c_matrix.txt"),
       "--no_plots")
-  
-  
-  
+
+
+
   over="/scratch16/abattle4/ashton/snp_networks/scratch/cohort_overlap_exploration/simulating_factors/custom_easy/simulation_outputs/final_sims_june_2024/1b_overlap//V102_U102_MAF-mix_eur_N-50000_RHO-1b_high_mixed_p_No-1b_high_no/"
   t=c(paste0("--se_data=",over,"sim10.std_error.txt"),
       paste0("--beta_data=",over,"sim10.effect_sizes.txt"),
@@ -181,9 +160,9 @@ t=c(paste0("--se_data=",simp,"seed4.replicate23.0.SE.csv"),
       paste0("--n_samples=",over,"sim10.N.txt"),
       paste0("--outdir=", over, "/factorization_results/sim10DEBUG"),
       "--only_run=GLEANER_glmnet", "--K=5",paste0("--C=", over, "/sim10.c_matrix.txt"))
-  
-  
-  
+
+
+
 #args <- parse_args(OptionParser(option_list=option_list),args=t)
 args <- parse_args(OptionParser(option_list=option_list))
 
@@ -320,7 +299,7 @@ if(args$all_run || args$only_run != "")
       message("Changing to converge at just 0.005")
       message(args$WLgamma)
 	    run.data <- runSingle(meth, effect.matrix, K, se_m=se, covar = c.mat, bic.var = args$bic_var,
-                            init.mat = args$init_mat, is.sim = TRUE, save.path = paste0(args$outdir, meth), 
+                            init.mat = args$init_mat, is.sim = TRUE, save.path = paste0(args$outdir, meth),
 	                          scale.mats = args$step_scaling,shrinkWL=args$WLgamma,conv_objective=0.005,min_bic_search_iter=5) #change on july 11,for testing#not accounting for BIC typoe here...
 	    end_time <- Sys.time()
     } else
@@ -348,4 +327,4 @@ if(args$all_run || args$only_run != "")
   message("writing out time stamps to..", paste0(args$outdir, "time.stamps.Rdata"))
   save(time.perf , file = paste0(args$outdir, "time.stamps.Rdata"))
 }
-  
+

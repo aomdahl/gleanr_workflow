@@ -1,6 +1,6 @@
 ################################################################################################################################
 ## Ashton Omdahl, November 2024
-## Wrapper script to run gleanr fro mthe command line
+## Wrapper script to run gleanr from the command line
 ## Input:
 ##              - X: the matrix to be decomposed (N x M, N is the number of SNPs, M is the number of traits/studies)
 ##              - V: learned factor matrix  (M x K, M is the number of traits, K is the number of factors)
