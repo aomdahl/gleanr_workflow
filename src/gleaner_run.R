@@ -25,7 +25,7 @@
 
 library(devtools)
 library(optparse)
-
+ `%>%` <- magrittr::`%>%`
 writeOutResults <- function(V,U,traits, snps,outdir)
 {
   if(length(ncol(V)) == 0) #If we get nothing back
