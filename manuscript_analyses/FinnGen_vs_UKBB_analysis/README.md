@@ -149,15 +149,3 @@ sbatch ${RUN_SCRIPTS}/ukbb_benchmark_2_GRID_sklearn_eBIC.no_adj.41K.sh
 
 **11) Evaluate and compare output factorizations:**
 Analysis reported in manuscript carried out in `/manuscript_analyses/figure_scripts/fig_3_overlap_and_bar.R`
-
-
-#Files 
-*BIC-sklearn_eBIC_K-41_no_covarlatent.factors.txt
-*BIC-sklearn_eBIC_K-41*
-#Compare performance with and without adjustment
-fig_3_overlap_and_bar.R
-
-#add in all config files:
-config/ukbb_comparative_2_config.yaml
-
-
