@@ -19,7 +19,7 @@ We then evaluate the output factorizations in `../../figure_scripts/fig2_simulat
 *Paths are set relative to running from `manuscript_analyses/simulations/2_factor_based`*
 Most of the necessary commands are wrapped up in several scripts.
 
-**0) Generate simulated undelrying data (factors, sample sharing structures)**
+**0) Generate simulated underlying data (factors, sample sharing structures)**
 
 The command for this is wrapped up in the script in *Step 2*, but is called with the script `Rscript src/buildSimDataClean.R`.
 
