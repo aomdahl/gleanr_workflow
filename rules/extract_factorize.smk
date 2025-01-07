@@ -138,7 +138,7 @@ rule hapmap_extract: #Pull the hapmap3 snps from the LDSC summary stats. This st
 	    python src/quickGWASIter.py  --type {params.type} --output {params.outfile} --gwas_list {input[1]} --snp_list {input[0]} --extension {config[file_ext]} --gwas_dir {params.gwas_dir} 
         """
         
-#this will be the last big change
+#NOT IN USE-for later development
 rule factorize:
     input:
         input_gwas="gwas_extracts/{identifier}/{identifier}.z.tsv", 
