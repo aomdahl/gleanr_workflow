@@ -58,6 +58,10 @@ sbatch run_scripts/2b_overlap_gwas.first_third.sh
 sbatch run_scripts/2b_overlap_gwas.second_third.sh
 sbatch run_scripts/2b_overlap_gwas.third_third.sh
 ```
-**4) Execute the simulations**
+Special case simulations- all sparse or additional dense factors in V:
+```bash
+for i in run_scripts/special_*.sh; do sbatch $i; done
+```
+**4) Evaluate the simulations**
 
-We valuate the output factorizations in `../../figure_scripts/fig2_simulations_gleaner_performance.Rmd` to generate figures for the text.
+We evaluate the output factorizations in `../../figure_scripts/fig2_simulations_gleaner_performance.Rmd` to generate figures for the text. Please review that R-Markdown notebook for a description of our analyses.
