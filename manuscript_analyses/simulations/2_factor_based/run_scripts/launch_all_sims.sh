@@ -64,13 +64,19 @@ buildSims()
   echo "All necessary files built. Please inspect"
 }
 
-#buildSims no_overlap
-#buildSims 1b_overlap
-#buildSims 2b_overlap
-#Special cases- super sparse and super dense
+#Main simulations
+buildSims no_overlap
+buildSims 1b_overlap
+buildSims 2b_overlap
+
+#Special cases- no dense factors, muliple dense factors, and some "dens-er" (mid-density) factors
 buildSims special_2b_overlap
 buildSims special_1b_overlap
 buildSims special_no_overlap
+buildSims special_mid-density_2b_overlap
+buildSims special_mid-density_1b_overlap
+buildSims special_mid-density_no_overlap
+
 #cd run_scripts/final_sim_june_2024/
 cd ${NEW_DIR}/run_scripts/
 for i in *_third.sh; do

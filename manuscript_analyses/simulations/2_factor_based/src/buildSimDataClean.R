@@ -64,7 +64,7 @@ propNMixedTwoBlock <- function(o, prop)
 nsnps=500
 ntraits=10
 nfactors=5
-########################  U and V ########################
+########################  U and V (main cases) ########################
 
 #### 3 different Us, 3 different Vs, for a total of 9 ######
 ## For 100 SNPs across 10 traits, we are simulating U and V drawn from the same distributions, but with varying levels of sparsity
@@ -135,9 +135,8 @@ for(i in 105:106)
 for(i in c(107,109))
 {
   set.seed(i)
-  n.dense=i-104
+  n.dense <- i-104
   v.sparsity <-  c(runif(5,0.5,0.75))
-  v.sparsity[1:n.dense] <- 0
   dense.indices <- sample.int(5,1)
   v.new <- do.call("cbind", lapply(v.sparsity, function(s) rnorm(ntraits,sd=sqrt(v.variance)) * rbinom(10,size = 1,prob = 1-s)))
   if(any(apply(v.new,2,function(x) sum(x==0)) == nrow(v.new)))
@@ -148,6 +147,30 @@ for(i in c(107,109))
   }
   #print(plotFactors(v.new, trait_names=paste0("T",1:10), paste0("Seed = ",i),cluster = "None"))
   write.csv(v.new, file = paste0(dout, "/V", i, "_M", ntraits, "_K",nfactors,"_", n.dense, "dense.csv"),quote = FALSE, row.names = FALSE)
+}
+
+## 2 more Vs, with relatively more dense factors (V)
+for(i in 110:111)
+{
+  set.seed(i)
+  v.sparsity <- c(0,runif(4,0.1,0.5))
+  v.new <- do.call("cbind", lapply(v.sparsity, function(s) rnorm(ntraits,sd=sqrt(v.variance)) * rbinom(10,size = 1,prob = 1-s)))
+
+  if(any(apply(v.new,2,function(x) sum(x==0)) == nrow(v.new)))
+  {
+    message("Change the seed or the probabilities we don't want a 0 column in V.")
+    print(i)
+    break
+  }
+  if(any(apply(v.new,1,function(x) sum(x==0)) == ncol(v.new)))
+  {
+    message("One of the rows is totally empty. This simulation isn't meant to generate null phenotypes.\nChoosing one at random to populate")
+    add_rand <- which(any(apply(v.new,1,function(x) sum(x==0)) == ncol(v.new)))
+    rand.index <- sample(1:nfactors,1)
+    v.new[add_rand, rand.index] <- rnorm(1,sd=sqrt(v.variance))
+  }
+  #print(plotFactors(v.new, trait_names=paste0("T",1:10), paste0("Seed = ",i),cluster = "None"))
+  write.csv(v.new, file = paste0(dout, "/V", i, "_M", ntraits, "_K",nfactors,"_mid-sparse.csv"),quote = FALSE, row.names = FALSE)
 }
 
 ######################## MAF ########################
