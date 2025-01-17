@@ -70,8 +70,8 @@ writeAllOutputs <- function(results, description, x_true)
 
 
 #source("/scratch16/abattle4/ashton/snp_networks/gwas_decomp_ldsc/src/plot_functions.R")
-source("../../src/plot_functions.R")
-source("src/factorization_methods.R")
+source("../../../src/plot_functions.R")
+source("../src/factorization_methods.R")
 #source("/scratch16/abattle4/ashton/snp_networks/gwas_decomp_ldsc/src/factorization_methods.R")
 option_list <- list(
 	make_option("--gwas_data", type = 'character', help = "path to gwas z-scores data; table of n snp rows x m study columns.", default = ""),
@@ -292,27 +292,16 @@ if(args$all_run || args$only_run != "")
     start_time <- Sys.time()
     if(grepl("gwasMF", meth) | grepl("GLEANER", meth))
     {
-      #OCT 28- temporary hack to just run flash, trying to make a quick tweak....
-      message("Skip")
-      next;
       start_time <- Sys.time()
       message("Changing to converge at just 0.005")
       message(args$WLgamma)
 	    run.data <- runSingle(meth, effect.matrix, K, se_m=se, covar = c.mat, bic.var = args$bic_var,
-                            init.mat = args$init_mat, is.sim = TRUE, save.path = paste0(args$outdir, meth),
+                            init.mat = args$init_mat, save.path = paste0(args$outdir, meth),
 	                          scale.mats = args$step_scaling,shrinkWL=args$WLgamma,conv_objective=0.005,min_bic_search_iter=5) #change on july 11,for testing#not accounting for BIC typoe here...
 	    end_time <- Sys.time()
     } else
     {
-      if(grepl("FLASH_SE$", meth))
-      {
         run.data <- runSingle(meth, effect.matrix, K, z_path=args$z_scores, n_path=args$n_samples,se_m=se, covar = c.mat,savepath = paste0(args$outdir, meth)) #llast 2 args for factorgo only
-      }else
-      {
-        #OCT 28- temporary hack to just run flash, trying to make a quick tweak....
-        message("Skip")
-        next;
-      }
     }
     end_time <- Sys.time()
     time.perf[[meth]] <- end_time - start_time

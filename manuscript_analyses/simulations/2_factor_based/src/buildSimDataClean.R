@@ -14,7 +14,7 @@
 ## ---------------------------
 ##
 ## Notes:
-##   
+##
 ##
 ## ---------------------------
 
@@ -64,7 +64,7 @@ propNMixedTwoBlock <- function(o, prop)
 nsnps=500
 ntraits=10
 nfactors=5
-########################  U and V ########################  
+########################  U and V ########################
 
 #### 3 different Us, 3 different Vs, for a total of 9 ######
 ## For 100 SNPs across 10 traits, we are simulating U and V drawn from the same distributions, but with varying levels of sparsity
@@ -103,6 +103,53 @@ for(i in 101:103)
   write.csv(u.new, file = paste0(dout, "/U", i, "_N",nsnps, "_K", nfactors,".csv"),quote = FALSE, row.names = FALSE)
 }
 
+
+########################  Special cases ########################
+## 2 versions of a sparse V, with no dense factors (use existing Us)
+v.variance <- 1
+dout='/scratch16/abattle4/ashton/snp_networks/scratch/cohort_overlap_exploration/simulating_factors/custom_easy/u_and_v/'
+for(i in 105:106)
+{
+  set.seed(i)
+  v.sparsity <-  c(runif(5,0.5,0.75))
+  v.new <- do.call("cbind", lapply(v.sparsity, function(s) rnorm(ntraits,sd=sqrt(v.variance)) * rbinom(10,size = 1,prob = 1-s)))
+  if(any(apply(v.new,2,function(x) sum(x==0)) == nrow(v.new)))
+  {
+    message("Change the seed or the probabilities we don't want a 0 column in V.")
+    print(i)
+    break
+  }
+  if(any(apply(v.new,1,function(x) sum(x==0)) == ncol(v.new)))
+  {
+    message("One of the rows is totally empty. This simulation isn't meant to generate null phenotypes.\nChoosing one at random to populate")
+    add_rand <- which(any(apply(v.new,1,function(x) sum(x==0)) == ncol(v.new)))
+    rand.index <- sample(1:nfactors,1)
+    v.new[add_rand, rand.index] <- rnorm(1,sd=sqrt(v.variance))
+  }
+  #print(plotFactors(v.new, trait_names=paste0("T",1:10), paste0("Seed = ",i),cluster = "None"))
+  write.csv(v.new, file = paste0(dout, "/V", i, "_M", ntraits, "_K",nfactors,"_sparse.csv"),quote = FALSE, row.names = FALSE)
+}
+
+
+## 2 more Vs, with 3 and 5 dense factors
+for(i in c(107,109))
+{
+  set.seed(i)
+  n.dense=i-104
+  v.sparsity <-  c(runif(5,0.5,0.75))
+  v.sparsity[1:n.dense] <- 0
+  dense.indices <- sample.int(5,1)
+  v.new <- do.call("cbind", lapply(v.sparsity, function(s) rnorm(ntraits,sd=sqrt(v.variance)) * rbinom(10,size = 1,prob = 1-s)))
+  if(any(apply(v.new,2,function(x) sum(x==0)) == nrow(v.new)))
+  {
+    message("Change the seed or the probabilities we don't want a 0 column in V.")
+    print(i)
+    break
+  }
+  #print(plotFactors(v.new, trait_names=paste0("T",1:10), paste0("Seed = ",i),cluster = "None"))
+  write.csv(v.new, file = paste0(dout, "/V", i, "_M", ntraits, "_K",nfactors,"_", n.dense, "dense.csv"),quote = FALSE, row.names = FALSE)
+}
+
 ######################## MAF ########################
 
 set.seed(22)
@@ -127,7 +174,7 @@ n_out ="/scratch16/abattle4/ashton/snp_networks/scratch/cohort_overlap_explorati
 set.seed(222)
 half <- 0.5
 most <- 0.9
-  
+
 
 #### 1) No overlap
 for(n in sample_sizes)
@@ -145,12 +192,12 @@ for(n in sample_sizes)
   o[4:8,4:8] <- n * most
   diag(o) <- n
   write.csv(o, file = paste0(n_out,n,"_",most*100, "perc_1block_10x10.csv"),quote = FALSE, row.names = FALSE)
-  
+
   o <- diag(ntraits) * n
   o[4:8,4:8] <- n * half
   diag(o) <- n
   write.csv(o, file = paste0(n_out,n,"_",half*100,"perc_1block_10x10.csv"),quote = FALSE, row.names = FALSE)
-  
+
 }
 
 #### 3) 2 block overlap version:
@@ -162,7 +209,7 @@ for(n in sample_sizes)
   o[6:10,6:10] <- n * most
   diag(o) <- n
   write.csv(o, file = paste0(n_out,n,"_",most*100, "perc_2block_10x10.csv"),quote = FALSE, row.names = FALSE)
-  
+
   o <- diag(10) * n
   o[1:5,1:5] <- n * half
   o[6:10,6:10] <- n * half

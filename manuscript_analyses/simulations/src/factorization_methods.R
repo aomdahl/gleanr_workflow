@@ -13,11 +13,7 @@ library(gleanr)
 # * flashR (with average factor, point normal, adaptive shrinkage, backfitting)
 #Note that for the sake of these simulations, W is believed to be 1 across all.
 
-#runSingle(meth, effect.matrix, K, se, covar = c.mat)
-#runSingle(args$single_method, zstat_m, args$K, se_m = NULL, covar = c.mat)
 runSingle <- function(method, X, K, z_path, n_path,se_m = 1, covar = NULL,savepath="./",...){
-
-  #Xin <- adjustMatrixAsNeeded(X, covar) #we are whitening it out at the beginning. That was the problem. holy fetch you turd.
   Xin = X
   if(is.null(se_m))
   {
@@ -26,11 +22,11 @@ runSingle <- function(method, X, K, z_path, n_path,se_m = 1, covar = NULL,savepa
     #print(se_m)
     W.mat <- 1/se_m
   }
-  
+
   message("now starting: ", method)
   switch(method,
          "PMA2" = doublePMA(Xin, K),
-         
+
          "flashUbiqFilter" = flashierUbiq(Xin, K, W = W.mat, filter = TRUE),
          "flashUbiq_noscale" = flashierUbiq(Xin, K=K),
          "ashr" = flashRashR(Xin, K, W = W.mat),
@@ -115,7 +111,7 @@ vanillaPCA <- function(X,K, covar=NULL, whiten=FALSE)
   {
     X <- adjustMatrixAsNeeded(X, covar)
   }
-  
+
   pca = RSpectra::svds(as.matrix(X), k = K)
   if(choose.k)
   {
@@ -133,7 +129,7 @@ vanillaPCA <- function(X,K, covar=NULL, whiten=FALSE)
   {
     d <- as.matrix(diag(pca$d[keep.vals]))
   }
-  
+
   return(retDat(v, u, u %*% d %*% t(v), X, pca$d[keep.vals]^2/sum(pca$d^2)))
 }
 
@@ -235,7 +231,7 @@ flashRBackfit <- function(X, K, W = NULL, filter = FALSE)
   }
   #return(retDat(f_ashr$F_pm, f_ashr$L_pm, f_ashr$L_pm %*% t(f_ashr$F_pm),X, f_ashr$pve))
   return(retDat(f_ashr$F_pm, f_ashr$L_pm, fitted(f_ashr),X, f_ashr$pve))
-  
+
 }
 
 #The variant with Scaling the right way....
@@ -269,7 +265,7 @@ runFactorGo <- function(X, K, zpath, npath, savepath)
   pve <- unlist(data.table::fread(paste0(savepath, ".factor.tsv.gz"))[,3])
   #retDat <- function(V, U, X, Xref, pve = NULL)
   #py_run_file("/scratch16/abattle4/ashton/snp_networks/factorGo/FactorGo/src/factorgo/cli.py -h")
-  
+
   return(retDat(as.matrix(v), as.matrix(u), u %*% t(v), X,pve=pve))
 }
 
@@ -283,12 +279,13 @@ runGWASMFBeta <- function(X, W, K,C,...)
     message("Not using C")
   }
  #source("/scratch16/abattle4/ashton/snp_networks/scratch/testing_gwasMF_code/model_selection/bic_autofit_functions.R")
-  #library(gleanr)
-  files.source = list.files("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gleanr/R/")
-  sapply(paste0("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gleanr/R/", files.source), source)
-  
+  library(gleanr)
+  #1/16 dropped these lines, since package working
+  #files.source = list.files("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gleanr/R/")
+  #sapply(paste0("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gleanr/R/", files.source), source)
 
- res <- gleaner(X,W, paste0("rs", 1:nrow(X)), paste0("T",1:ncol(X)), K=K,C=C,...)
+  #Had to update to reflect simulations
+ res <- gleanr(X,W, paste0("rs", 1:nrow(X)), paste0("T",1:ncol(X)), K=K,C=C,is.sim=TRUE,...) #recall- if was sim and sklearn, forced it to be GRID
   option <- list();   option$fixed_ubiq <- TRUE; option$alpha1 <- res$autofit_alpha[1]; option$lambda1 <- res$autofit_lambda[1]
   if(nrow(res$V) == 0)
   {
@@ -357,7 +354,7 @@ flashCompleteVar <- function(X,K,W)
   S = 1/W #standard errors
   X <- effect.matrix
   #how about the urls to the examples here you ninny?
-  
+
   gtex.bf <- flash(
     X,
     greedy_Kmax = 5,
@@ -367,7 +364,7 @@ flashCompleteVar <- function(X,K,W)
   #The kroneker variance really mucks things. up...
   #I think these special ones just do worse than vaniall flash honestly.
   S.dim <- ? #specify this
-  ebnm.prior <- ebnm::ebnm_point_normal 
+  ebnm.prior <- ebnm::ebnm_point_normal
   var_type = c(1,2)
 }
 
@@ -375,14 +372,14 @@ flashCompleteNoVar <- function(X,K,W)
 {
   Z = X*W #standard errors
   S.dim <- ? #specify this
-    ebnm.prior <- ebnm::ebnm_point_normal 
+    ebnm.prior <- ebnm::ebnm_point_normal
   var_type = c(1,2)
 #kroneker variance hasn't been implemented yet
-  
-  
-  flash.fix.factors(kset = 1, mode = 2) 
-  
-  
+
+
+  flash.fix.factors(kset = 1, mode = 2)
+
+
 }
 
 #add an average factor on the front end along with backfitting.
@@ -398,7 +395,7 @@ flashierUbiq <- function(X, K, W = NULL, filter = FALSE,var.type.param=0)
   #                                verbose.lvl = 1, backfit = TRUE,var_type = var.type.param)
   #flashier::flash(data = X, S = 1/W, greedy_Kmax = K, ebnm_fn = list(ebnm_normal, ebnm_point_normal)
   # fscaled = flashier::flash(X, S=1/W, greedy_Kmax = K, backfit = TRUE,var_type = var.type.param)
-  
+
   # Fit flash model (this is an example)'#For teh list of options, see #ebnm
   library(ebnm)
   library(flashier)
