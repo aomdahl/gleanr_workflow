@@ -4,10 +4,10 @@ suppressMessages(library("magrittr"))
 suppressMessages(library("dplyr"))
 suppressMessages(library(stringr))
 suppressMessages(library("combinat"))
-source("../../src/matrix_similarity_scoring/evaluateSimR2.R")
+source("../../../src/matrix_similarity_scoring/evaluateSimR2.R")
 #source("/scratch16/abattle4/ashton/snp_networks/scratch/cohort_overlap_exploration/src/evaluateSimR2.R")
 #source("/scratch16/abattle4/ashton/snp_networks/scratch/finngen_v_ukbb/src/matrix_comparison_utils.R")
-source("../../src/matrix_similarity_scoring/matrix_comparison_utils.R")
+source("../../../src/matrix_similarity_scoring/matrix_comparison_utils.R")
 library("gleanr")
 #source("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwasMF/R/sparsity_scaler.R")
 
@@ -27,7 +27,7 @@ option_list <- list(
               help="Scale true and predicted V/U to have unit norm.", action = "store_true"),
   make_option(c("--sim_raw"), default = "", type = "character",
               help="Path to the actual simulation files, not the tests")
-  
+
 )
 
 #debug interactive
@@ -193,13 +193,13 @@ colnames(sim.performance) <- c("method", 'R2_L','R2_F',"RSE", "R2_X","yuan_U", "
 
 #Combine the old and the new
 #Updated August 27 to reflect the most recent match-based version
-#full.sim.performance <- cbind(sim.performance, updated.calcs$V %>% dplyr::select(BIC, PRC, GlobalKappa,correlation, Procrustes_pearson, Euclidian_dist) %>% 
+#full.sim.performance <- cbind(sim.performance, updated.calcs$V %>% dplyr::select(BIC, PRC, GlobalKappa,correlation, Procrustes_pearson, Euclidian_dist) %>%
 #                                set_colnames(c("runID_V", "PRC_V", "Kappa_V", "Corr_mine_V", "Procrust_pearson_V", "Distance_V")),
 #updated.calcs$U %>% dplyr::select(BIC, PRC, GlobalKappa,correlation, Procrustes_pearson, Euclidian_dist) %>% set_colnames(c("runID_U", "PRC_U", "Kappa_U",  "Corr_mine_U", "Procrust_pearson_U", "Distance_U")),
 #updated.calcs$Xhat_norms) %>% rename("Xhat_dist"=dist)
 
 stopifnot(all(paste0(sim.performance$method, "_", sim.performance$iter) == updated.calcs$joint$BIC))
-full.sim.performance <- cbind(sim.performance, updated.calcs$joint %>% 
+full.sim.performance <- cbind(sim.performance, updated.calcs$joint %>%
                                 dplyr::select(BIC, joint_cb_auc_v, joint_cb_kappa_v,joint_cb_pearson_v, joint_cb_kendall_v, joint_cb_rrmse_v,
                                               joint_pr_auc_v, joint_pr_kappa_v,joint_pr_pearson_v, joint_pr_kendall_v, joint_pr_rrmse_v,
                                               joint_cb_auc_u, joint_cb_kappa_u,joint_cb_pearson_u, joint_cb_kendall_u, joint_cb_rrmse_u,
@@ -207,28 +207,6 @@ full.sim.performance <- cbind(sim.performance, updated.calcs$joint %>%
                               updated.calcs$Xhat_norms %>% rename("Xhat_dist"=dist))
 
 stopifnot(all(full.sim.performance$BIC == paste0(sim.performance$method, "_", sim.performance$iter)))
-#if(all(full.sim.performance$runID_U == full.sim.performance$runID_V))
-#{
-#  if(all(paste0(full.sim.performance$method, "_", full.sim.performance$iter) == full.sim.performance$runID_V))
-#  {
-#    full.sim.performance <- full.sim.performance %>% select(-runID_V, -runID_U)
-#  } else
-#  {
-#    message("ERROR: simulations don't line up in assessment")
-#    quit()
-#  }
-#}
-
-#if(any(full.sim.performance$R2_F > full.sim.performance$Procrust_pearson_V^2))
-#{
-#  message("WARNING: our R2 on V exceeds the procrustes version.")
-#  print(full.sim.performance %>% filter(R2_F > Procrust_pearson_V^2))
-#}
-#if(any(full.sim.performance$R2_L > full.sim.performance$Procrust_pearson_U^2))
-#{
-#  message("WARNING: our R2 on V exceeds the procrustes version.")
-#  print(full.sim.performance %>% filter(R2_L > Procrust_pearson_U^2))
-#}
 
 #Now plot it, if desired
 write.table(full.sim.performance, file = paste0(args$output, ".tabular_performance.tsv"), quote = FALSE, row.names = FALSE)
