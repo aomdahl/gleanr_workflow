@@ -58,12 +58,18 @@ if("sim_ref" %in% yml$n)
 
 
 
+
 n_o <- as.matrix(fread(unlist(yml[which(yml$n == "samp_overlap"),2])))
 
-new.seed=args$seed + as.numeric(n_o[1,1]) #seed differs depending on the sample overlap matrix that is passed in and the iteration.
+#new.seed=args$seed + as.numeric(n_o[1,1]) #seed differs depending on the sample overlap matrix that is passed in and the iteration.
+#SEed wasn't being unique
+#Needed to update so more likely to be unique- based on the seed in the simulation
+new.seed = as.numeric(paste0(as.character(args$seed), yml[which(yml$n == "seed_init"),2]))
+
 #message("New sim version: seed set by setting + n: ", new.seed)
 message("Constructing new simulation with seed ", new.seed)
 set.seed(new.seed)
+
 rho <- as.matrix(fread(unlist(yml[which(yml$n == "pheno_corr"),2]))) #Correlation between phenotypes
 f <- as.matrix(fread(unlist(yml[which(yml$n == "factors"),2])))
 l <-  as.matrix(fread(unlist(yml[which(yml$n == "loadings"),2]))) #gut says this should be more dense, huh.
