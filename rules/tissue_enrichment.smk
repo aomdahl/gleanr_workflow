@@ -87,8 +87,6 @@ def aggregate_factors(wildcards):
     print(ldsc_files)
     return ldsc_files
 
-
-
 rule ldsc_visualize:
     input:
        aggregate_factors
@@ -98,7 +96,7 @@ rule ldsc_visualize:
         "results/{identifier}/{projection_style}_ldsc_enrichment_{tis_ref}/fdr_0.01_heatmap.png",
         "results/{identifier}/{projection_style}_ldsc_enrichment_{tis_ref}/wrapped_z.heatmap.png",
         "results/{identifier}/{projection_style}_ldsc_enrichment_{tis_ref}/factor_tissue_fdr.heatmap.png",
-        "results/{identifier}/{projection_style}_ldsc_enrichment_{tis_ref}/factor_global_fdr.heatmap.png"
+        "results/{identifier}/{projection_style}_ldsc_enrichment_{tis_ref}/factor_global_fdr.heatmap.png",
         "results/{identifier}/{projection_style}_ldsc_enrichment_{tis_ref}/plotting_table.csv"
     params:
         "results/{identifier}/{projection_style}_ldsc_enrichment_{tis_ref}/"
@@ -106,7 +104,7 @@ rule ldsc_visualize:
         """
             echo {input}
             Rscript src/visualizeLDSC.R --input_dir {params} --plot_type "facet_wrap" --output {output[3]}
-	    Rscript src/visualizeLDSC.R --input_dir {params} --plot_type "fdr_sig" --output {output[1]} --fdr 0.05
+	          Rscript src/visualizeLDSC.R --input_dir {params} --plot_type "fdr_sig" --output {output[1]} --fdr 0.05
             Rscript src/visualizeLDSC.R --input_dir {params} --plot_type "fdr_sig" --output {output[2]} --fdr 0.01
             Rscript src/visualizeLDSC.R --input_dir {params} --plot_type "horizontal" --output {output[0]}
             Rscript src/visualizeLDSC.R --input_dir {params} --plot_type "factor_tissue_FDR" --output {output[4]}

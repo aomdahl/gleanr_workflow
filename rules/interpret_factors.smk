@@ -16,12 +16,15 @@ GENE_LIBS=["WikiPathways_2023_Human",
 "MSigDB_Hallmark_2020", 
 "OMIM_Expanded",
 "Azimuth_Cell_Types_2021"]
-SNP_GENE_MAP="/scratch16/abattle4/ashton/snp_networks/scratch/factor_interpretation/snp_to_gene/41K_openTargets.csv"
+SNP_GENE_MAP="/scratch16/abattle4/ashton/snp_networks/scratch/factor_interpretation/snp_to_gene/41K_openTargets.withDist.csv"
 analysis_scripts="/scratch16/abattle4/ashton/snp_networks/scratch/factor_interpretation/src/"
 nfactors=58
 rule all:
 	input: 
-		expand('results/panUKBB_complete_41K_final/top_elements_by_factor/gene_factor_enrichments/F{factor}.joined_enrichments.txt', factor=range(1,nfactors+1))	
+		#expand("results/panUKBB_complete_41K_SVD/top_elements_by_factor/top_fe/gene_factor_enrichments_unique/F1.{gene_lib}.txt", gene_lib=GENE_LIBS)
+		#"results/panUKBB_complete_41K_SVD/top_elements_by_factor/top_fe/gene_factor_enrichments_unique/F1.joined_enrichments.txt"	
+		"results/panUKBB_complete_41K_SVD/top_elements_by_factor/top_fe/gene_factor_enrichments_unique/all_factors_evaluated.txt"	
+		#expand('results/panUKBB_complete_41K_final/top_elements_by_factor/gene_factor_enrichments/F{factor}.joined_enrichments.txt', factor=range(1,nfactors+1))	
 		#expand("results/panUKBB_complete_61K/NONE_ldsc_enrichment_Multi_tissue_chromatin/F{num}.multi_tissue.log", num=list(range(1,nfactors))),
 		#"results/panUKBB_complete_61K/NONE_ldsc_enrichment_Multi_tissue_chromatin/factor_global_fdr.heatmap.png"
 
@@ -48,7 +51,7 @@ rule top_genes_by_factor:
         background_set=expand("results/{{identifier}}/top_elements_by_factor/{{sel_method}}/F{F}_background_genes.txt", F=range(1,nfactors+1)),
         fg_set = expand("results/{{identifier}}/top_elements_by_factor/{{sel_method}}/F{F}_genes_in_factor.txt", F=range(1,nfactors+1))
     params:
-        outdir="results/{identifier}//top_elements_by_factor/{sel_method}",
+        outdir="results/{identifier}//top_elements_by_factor/{sel_method}/",
     shell:
         """
             conda activate renv
@@ -60,17 +63,17 @@ rule gene_set_enrichment:
     	gene_set = "results/{identifier}/top_elements_by_factor/{sel_method}/F{factor}_genes_in_factor.txt",
 	background_set="results/{identifier}/top_elements_by_factor/{sel_method}/F{factor}_background_genes.txt"
     output: 
-       "results/{identifier}/top_elements_by_factor/{sel_method}/gene_factor_enrichments_unique/F{factor}.{gene_lib}.txt",
+       "results/{identifier}/top_elements_by_factor/{sel_method}/gene_factor_enrichments_unique/F{factor}.{gene_lib}.csv",
     shell:
         """
         conda activate std
-        python src/gsea_enrichr.py -t {input.gene_set} -b {input.background_set} -o {output} -g {gene_lib} --unique_only
+        python src/gsea_enrichr.py -t {input.gene_set} -b {input.background_set} -o {output} -g {wildcards.gene_lib} --unique_only
         """
 
 
 rule join_enrichment_dat:
     input:
-        expand("results/{{identifier}}/top_elements_by_factor/{{sel_method}}/gene_factor_enrichments/F{{factor}}.{gene_list}.txt", gene_list=GENE_LIBS)
+        expand("results/{{identifier}}/top_elements_by_factor/{{sel_method}}/gene_factor_enrichments_unique/F{{factor}}.{gene_lib}.csv", gene_lib=GENE_LIBS)
     output:
         "results/{identifier}/top_elements_by_factor/{sel_method}/gene_factor_enrichments_unique/F{factor}.joined_enrichments.txt"
     shell:
@@ -90,4 +93,5 @@ rule complete_enrichment_analysis:
          	"""
 		touch {output}
 		"""
-		
+
+ruleorder: gene_set_enrichment > join_enrichment_dat
