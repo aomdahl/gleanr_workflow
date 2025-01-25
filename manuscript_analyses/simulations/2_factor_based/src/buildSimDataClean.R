@@ -108,6 +108,7 @@ for(i in 101:103)
 ## 2 versions of a sparse V, with no dense factors (use existing Us)
 v.variance <- 1
 dout='/scratch16/abattle4/ashton/snp_networks/scratch/cohort_overlap_exploration/simulating_factors/custom_easy/u_and_v/'
+sparse_only_seeds <- c(105,106,107,109)
 for(i in 105:106)
 {
   set.seed(i)
@@ -128,25 +129,6 @@ for(i in 105:106)
   }
   #print(plotFactors(v.new, trait_names=paste0("T",1:10), paste0("Seed = ",i),cluster = "None"))
   write.csv(v.new, file = paste0(dout, "/V", i, "_M", ntraits, "_K",nfactors,"_sparse.csv"),quote = FALSE, row.names = FALSE)
-}
-
-
-## 2 more Vs, with 3 and 5 dense factors
-for(i in c(107,109))
-{
-  set.seed(i)
-  n.dense <- i-104
-  v.sparsity <-  c(runif(5,0.5,0.75))
-  dense.indices <- sample.int(5,1)
-  v.new <- do.call("cbind", lapply(v.sparsity, function(s) rnorm(ntraits,sd=sqrt(v.variance)) * rbinom(10,size = 1,prob = 1-s)))
-  if(any(apply(v.new,2,function(x) sum(x==0)) == nrow(v.new)))
-  {
-    message("Change the seed or the probabilities we don't want a 0 column in V.")
-    print(i)
-    break
-  }
-  #print(plotFactors(v.new, trait_names=paste0("T",1:10), paste0("Seed = ",i),cluster = "None"))
-  write.csv(v.new, file = paste0(dout, "/V", i, "_M", ntraits, "_K",nfactors,"_", n.dense, "dense.csv"),quote = FALSE, row.names = FALSE)
 }
 
 ## 2 more Vs, with relatively more dense factors (V)
@@ -172,6 +154,29 @@ for(i in 110:111)
   #print(plotFactors(v.new, trait_names=paste0("T",1:10), paste0("Seed = ",i),cluster = "None"))
   write.csv(v.new, file = paste0(dout, "/V", i, "_M", ntraits, "_K",nfactors,"_mid-sparse.csv"),quote = FALSE, row.names = FALSE)
 }
+
+### Previously, incorrectly wrote out as sparse. This has since been fixed.
+### These old simulations are still informative, but not included in this analysis
+## 2vs with 3 dense factors, 2 V's with ll dense factors.
+for(i in 113:116)
+{
+  set.seed(i)
+  n.dense <- 3 + 2*(i %% 2)
+  v.sparsity <-  c(runif(5,0.5,0.75))
+  dense.indices <- sample.int(5,n.dense)
+  v.sparsity[dense.indices] <- 0
+  v.new <- do.call("cbind", lapply(v.sparsity, function(s) rnorm(ntraits,sd=sqrt(v.variance)) * rbinom(10,size = 1,prob = 1-s)))
+  if(any(apply(v.new,2,function(x) sum(x==0)) == nrow(v.new)))
+  {
+    message("Change the seed or the probabilities we don't want a 0 column in V.")
+    print(i)
+    break
+  }
+  #print(plotFactors(v.new, trait_names=paste0("T",1:10), paste0("Seed = ",i),cluster = "None"))
+  write.csv(v.new, file = paste0(dout, "/V", i, "_M", ntraits, "_K",nfactors,"_", n.dense, "dense.csv"),quote = FALSE, row.names = FALSE)
+}
+
+
 
 ######################## MAF ########################
 

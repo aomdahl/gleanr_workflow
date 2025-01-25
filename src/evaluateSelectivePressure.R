@@ -28,7 +28,7 @@ if(permute > 0 | permute == -1)  u.pvals.s_sigma <-  matrix(NA, ncol =4, nrow = 
     u.optim <- estimateS_SigmaG(u_effects, mafs)
     if(permute > 0)
     {
-      u.selection.full.permutes[[u]] <-permuteNullDistS(2,10, u_effects, mafs) 
+      u.selection.full.permutes[[u]] <-permuteNullDistS(permute,10, u_effects, mafs) 
       u.pvals.s_sigma[u,] <- c(u.optim$par[1], u.optim$par[2], sum(u.selection.full.permutes[[u]][,1] <= u.optim$par[1]),
                                sum(u.selection.full.permutes[[u]][,2] >= u.optim$par[2]))
     }else if(permute == -1){ #This is code for getting the CI
@@ -223,6 +223,9 @@ option_list <- list(
   make_option(c("-m", "--maf_reference"),
               type = "character", default = "/data/abattle4/lab_data/GWAS_summary_statistics/PanUKBB/high_quality_common_variants_EUR.txt.bgz",
               help = "Path to MAF reference file"),
+  make_option(c("-p", "--permute_val"),
+              type = "numeric", default = -10,
+              help = "Code for permutations. -1 does a 100x jacknife., less than that does none. A positive nubmer foes a 10 permutation, with that value as the seed."),
   make_option(c("-o", "--output"),
               type = "character", default = NULL,
               help = "Output location")
@@ -269,7 +272,8 @@ df.v <- joinedVDat(ret$V, ret$trait.names)
 
 #Get selection scores:
 message("Estimating S scores")
-df.s_estimates <- getSelectionScores(ret$U,df.u, permute = -1) #get 95% CI by default.
+#df.s_estimates <- getSelectionScores(ret$U,df.u, permute = -1) #get 95% CI by default.
+df.s_estimates <- getSelectionScores(ret$U,df.u, permute = opt$permute_val)
 df.polygen_estimates <- getPolygenicityScores(ret$U)
 df.architecture <- left_join(df.s_estimates, df.polygen_estimates, by="Factor")
 write.table(df.architecture, file=paste0(opt$output, "s_scores.tsv"), quote=FALSE, row.names=FALSE)

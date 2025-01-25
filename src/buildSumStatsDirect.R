@@ -49,6 +49,7 @@ make_option("--output", type = "character", help = "Path to output location."),
 make_option("--samp_counts", type = "character", help = "Number of samples across the studies- give as an average.", default = "weighted"),
 make_option("--samp_se", type = "character", help = "SE OF SNPS ON INPUT."),
 make_option("--samp_file", type = "character", help = "Option to read in a file that contains the sample counts"),
+make_option("--no_zscaling", type = "logical",default=FALSE, action="store_true", help = "Specify this if you don't want to scale by SEs (for SVD or flash)"),
 make_option("--snp_reflist", type = "character", help = "Path SNP list to use, default given.", 
             default = "/data/abattle4/aomdahl1/reference_data/hapmap_chr_ids.txt")
 #make_option("--no_file_headers", type = "logical", help = "Should we read in a file header", default = FALSE, action="store_true"),
@@ -151,9 +152,11 @@ message("Weighting by the inverted SE")
 for(i in 1:ncol(dat)) #from 2 since first column is IDs...
 {
   #SNP   A1  A2  N   Z #a1 is effect allele....
-  #Shoot. in PanUKBB, which is the effect allele?
-    #this is a bit.... concerning. Why the error????
     zse <- dat[,i] * weighted.se[,i]
+    if(args$no_zscaling)
+    {
+      zse <- dat[,i]
+    }
     zs.n <- dat[,i] * weighted.n[,i]
     #Briefly report on the distribution of the data.x
     #rand.samp <- sample(zse, size = 10000)
@@ -170,9 +173,10 @@ for(i in 1:ncol(dat)) #from 2 since first column is IDs...
     fwrite(x = out, file= paste0(args$output,"/F",i, ".sumstats.gz"), compress = "gzip", sep = "\t")
     
     #alternative N weighted version
-    out <- data.frame("SNP" = snp.dat$id, "A1" = snp.dat$ALT, "A2" = snp.dat$REF, "N" = var_counts, "Z" = zs.n) #TODO: check the ref alt stuff make sure on point.
-    names(out) <- c("SNP", "A1","A2", "N","Z")
-    fwrite(x = out, file= paste0(args$output,"/F",i, "N_weighted.sumstats.gz"), compress = "gzip", sep = "\t")
+    #Don't make this anymore
+    #out <- data.frame("SNP" = snp.dat$id, "A1" = snp.dat$ALT, "A2" = snp.dat$REF, "N" = var_counts, "Z" = zs.n) #TODO: check the ref alt stuff make sure on point.
+    #names(out) <- c("SNP", "A1","A2", "N","Z")
+    #fwrite(x = out, file= paste0(args$output,"/F",i, "N_weighted.sumstats.gz"), compress = "gzip", sep = "\t")
     
     
     message(paste0("written out ", file.path(args$output), "/F", i, ".sumstats.gz"))

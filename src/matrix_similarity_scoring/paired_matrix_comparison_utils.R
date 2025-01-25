@@ -1,4 +1,4 @@
-GLOBAL_THRESH=7
+GLOBAL_THRESH=6
 source("/scratch16/abattle4/ashton/snp_networks/scratch/cohort_overlap_exploration/src/evaluateSimR2.R")
 `%>%` <- magrittr::`%>%`
 
@@ -59,7 +59,8 @@ emptyCheck <- function(repair.me, reference)
 #recurseGreedyMap(r.mat,r2, c(dir), list(dt))
 #    matched.cols <- recurseGreedyMapPaired(pcd$r_mat_u, pcd$r_mat_v,pcd$r2_global, c(pcd$dir), list(pcd$order), TRUE, init.dat)
 
-recurseGreedyMapPaired <- function(cor.u, cor.v, r2.global, signs, pairs, global_at_thresh,base.data, global.thresh=GLOBAL_THRESH)
+recurseGreedyMapPaired <- function(cor.u, cor.v, r2.global, signs, pairs, global_at_thresh,base.data, 
+                                   global.thresh=GLOBAL_THRESH, verbose=FALSE)
 {
   #Check- have we reduced the number enough to avoid needing to be greedy anymore, but can be optimal?
   if(global_at_thresh)
@@ -111,6 +112,7 @@ recurseGreedyMapPaired <- function(cor.u, cor.v, r2.global, signs, pairs, global
   cor.v[dt[1],] <- 0; cor.v[,dt[2]] <- 0
   r2.global[dt[1],] <- 0; r2.global[,dt[2]] <- 0
   #recurseGreedyMap(cor,r2, c(signs, dir.u), pairs)
+  if(verbose) {message("Progress moving", length(signs))}
   recurseGreedyMapPaired(cor.u, cor.v, r2.global, c(signs, dir.u), pairs, global_at_thresh,base.data)
 
 }
@@ -159,12 +161,14 @@ if(FALSE)
 #' @param cor.type pearson or kendall
 #' @param global_at_thresh do you want to use the global optima finding approach when there are sufficiently few columns?
 #'        recommended setting is TRUE
+#' @param verbose if you want real time updates as calculating
 #'
 #' @return a list containing the global correlation score, the order of the reference columns, the order of the predicted columns, and the accompanying sign changes.
 #' @export
 #'
 #' @examples
-greedyMaxPairedCor <- function(true.u, true.v, pred.u, pred.v, cor.type="pearson", global_at_thresh = TRUE)
+greedyMaxPairedCor <- function(true.u, true.v, pred.u, pred.v, cor.type="pearson", global_at_thresh = TRUE, verbose = FALSE,
+                               order_only=FALSE)
 {
   if(!(matrixDimsAlign(true.u, pred.u) & matrixDimsAlign(true.v, pred.v))) {
     warning("Matrix dimensions aren't aligned. Recommend padding missing cols with 0.")
@@ -184,7 +188,8 @@ greedyMaxPairedCor <- function(true.u, true.v, pred.u, pred.v, cor.type="pearson
   }else
   {
     pcd <- prepForRecursiveGreedySearch(init.dat, cor.type)
-    matched.cols <- recurseGreedyMapPaired(pcd$r_mat_u, pcd$r_mat_v,pcd$r2_global, c(pcd$dir), list(pcd$order), TRUE, init.dat)
+    if(verbose) message("starting greedy search")
+    matched.cols <- recurseGreedyMapPaired(pcd$r_mat_u, pcd$r_mat_v,pcd$r2_global, c(pcd$dir), list(pcd$order), TRUE, init.dat, verbose=verbose)
     # function(cor.u, cor.v, r2.global, signs, pairs, global_at_thresh,base.data, global.thresh=GLOBAL_THRESH)
   }
 
@@ -216,6 +221,11 @@ greedyMaxPairedCor <- function(true.u, true.v, pred.u, pred.v, cor.type="pearson
     }
     stopifnot(all.equal(c_v,stackAndAssessCorr(as.matrix(true.v[,true.order]), matrixSignsProduct(pred.v[,pred.order], pred.signs))))
     stopifnot(all.equal(c_u,stackAndAssessCorr(as.matrix(true.u[,true.order]), matrixSignsProduct(pred.u[,pred.order], pred.signs))))
+    if(order_only)
+    {
+      return(list("order.true"=true.order, "order.pred"=pred.order, "signs"=pred.signs,
+                  "lead_v"=lead.v, "lead_u"=lead.u, "scnd_v"=scnd.v, "scnd_u"=scnd.u, "swap"=FALSE))
+    }
     return(list("corr_v"=c_v, "corr_u"=c_u,
                 "kendall_v"=stackAndAssessCorr(lead.v, scnd.v,cor.type = "kendall"),"kendall_u"=stackAndAssessCorr(lead.u, scnd.u,cor.type = "kendall"),
                 "order.true"=true.order, "order.pred"=pred.order, "signs"=pred.signs,

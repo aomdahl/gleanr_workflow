@@ -15,10 +15,12 @@ GENE_LIBS=["WikiPathways_2023_Human",
 "KEGG_2021_Human", 
 "MSigDB_Hallmark_2020", 
 "OMIM_Expanded",
-"Azimuth_Cell_Types_2021"]
+"Azimuth_Cell_Types_2021",
+"PanglaoDB_Augmented_2021"]
 SNP_GENE_MAP="/scratch16/abattle4/ashton/snp_networks/scratch/factor_interpretation/snp_to_gene/41K_openTargets.withDist.csv"
 analysis_scripts="/scratch16/abattle4/ashton/snp_networks/scratch/factor_interpretation/src/"
-nfactors=58
+nfactors=config["nfactors"]
+	
 rule all:
 	input: 
 		#expand("results/panUKBB_complete_41K_SVD/top_elements_by_factor/top_fe/gene_factor_enrichments_unique/F1.{gene_lib}.txt", gene_lib=GENE_LIBS)

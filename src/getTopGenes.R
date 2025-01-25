@@ -411,6 +411,7 @@ main <- function(snp_gene_map_file,snp_id_map, snp_scores_file, method, odir) {
   snp_gene_map <- data.frame(loadSNPtoGeneMap(snp_gene_map_file))
   
   #Upgraded version of joined singular.. a little more straightforward
+  print(colnames(snp_gene_map))
   snp_gene_map.singular <- snp_gene_map %>% group_by(hg38) %>% slice_min(n=1,order_by = d) %>% ungroup() %>%
     dplyr::filter(nchar(ref_allele) == 1, nchar(alt_allele)==1) %>% distinct(across(c(hg38,gene_id,overall_score)), .keep_all=TRUE)
   

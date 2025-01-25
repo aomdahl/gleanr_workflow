@@ -16,6 +16,7 @@ OUTDIR=/scratch16/abattle4/ashton/snp_networks/scratch/cohort_overlap_exploratio
 buildSims()
 {
   TYPE=$1
+  SEED_APPEND=$2
   echo "$TYPE"
   #Build the appropriate directories
   mkdir -p ${OUTDIR}/simulating_factors/custom_easy/simulation_outputs/final_sims_june_2024/${TYPE}/
@@ -23,8 +24,8 @@ buildSims()
 
   #Rscript src/BuildYamlFiles.R simulating_factors/custom_easy/setting_files/final_sim_${TYPE}.csv simulating_factors/custom_easy/yaml_files/final_sims_june_2024/${TYPE}/ -c simulating_factors/custom_easy/simulation_outputs/final_sims_june_2024/${TYPE}/ > run_scripts/final_sim_june_2024/build_${TYPE}_gwas.commands.txt
 
-  Rscript src/BuildYamlFiles.R ${NEW_DIR}/setting_files/final_sim_${TYPE}.csv ${OUTDIR}/simulating_factors/custom_easy/yaml_files/final_sims_june_2024/${TYPE}/ \
-        -c ${OUTDIR}simulating_factors/custom_easy/simulation_outputs/final_sims_june_2024/${TYPE}/ > ${OUTDIR}/run_scripts/final_sim_june_2024/build_${TYPE}_gwas.commands.txt
+  Rscript src/BuildYamlFiles.R --param_file ${NEW_DIR}/setting_files/final_sim_${TYPE}.csv --output_path ${OUTDIR}/simulating_factors/custom_easy/yaml_files/final_sims_june_2024/${TYPE}/ \
+	  -s ${SEED_APPEND}  --commands ${OUTDIR}simulating_factors/custom_easy/simulation_outputs/final_sims_june_2024/${TYPE}/ > ${OUTDIR}/run_scripts/final_sim_june_2024/build_${TYPE}_gwas.commands.txt
 
   #Determine how to split commands by number (help from chatgpt)
   NUM_CALLS=$(wc -l ${NEW_DIR}/setting_files/final_sim_${TYPE}.csv | cut -f 1 -d " ")
@@ -65,17 +66,21 @@ buildSims()
 }
 
 #Main simulations
-buildSims no_overlap
-buildSims 1b_overlap
-buildSims 2b_overlap
+#buildSims no_overlap 1000
+#buildSims 1b_overlap 2000
+#buildSims 2b_overlap 3000
 
 #Special cases- no dense factors, muliple dense factors, and some "dens-er" (mid-density) factors
-buildSims special_2b_overlap
-buildSims special_1b_overlap
-buildSims special_no_overlap
-buildSims special_mid-density_2b_overlap
-buildSims special_mid-density_1b_overlap
-buildSims special_mid-density_no_overlap
+
+#buildSims special_2b_overlap 4000
+#buildSims special_1b_overlap 5000
+#buildSims special_no_overlap 6000
+buildSims dense_2b_overlap 7000
+buildSims dense_1b_overlap 8000
+buildSims dense_no_overlap 9000
+
+
+
 
 #cd run_scripts/final_sim_june_2024/
 cd ${NEW_DIR}/run_scripts/

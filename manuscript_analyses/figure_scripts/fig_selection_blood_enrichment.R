@@ -32,9 +32,9 @@ names(cols) <- factors
 plot.bars.df <- to.bar %>% filter(name != "V1")
 plot.bars.df$Factor_names <- factor(plot.bars.df$Factor_names, levels = c("F4","F11","F23"))
 loading.barplot <- ggplot(plot.bars.df, aes(x=value, y=new_names,fill=new_names)) + geom_bar(stat="identity") + facet_wrap(~Factor_names, ncol=1) +
-  theme_classic(15) + geom_vline(xintercept = 0) + 
+  theme_classic(15) + geom_vline(xintercept = 0) +
   theme(axis.text.y = element_blank(), axis.title.y=element_blank(), axis.ticks.y=element_blank(),
-        legend.position = "bottom",legend.title =element_blank(), legend.direction = "horizontal") + 
+        legend.position = "bottom",legend.title =element_blank(), legend.direction = "horizontal") +
   xlab("V value") + guides(fill=guide_legend(nrow=1)) + scale_fill_manual(values = myColors)  +
   theme(strip.text = element_text(colour = cols))
 
@@ -44,7 +44,7 @@ ggsave(loading.barplot, filename="/scratch16/abattle4/ashton/snp_networks/presen
        height=7,width=3)
 #Opposite orientation:
 loading.barplot.long <- ggplot(to.bar %>% filter(name != "V1"), aes(x=value, y=new_names,fill=new_names)) + geom_bar(stat="identity") + facet_wrap(~Factor_names, nrow=1) +
-  theme_classic(15) + geom_vline(xintercept = 0) + 
+  theme_classic(15) + geom_vline(xintercept = 0) +
   theme(axis.text.y = element_blank(), axis.title.y=element_blank(), axis.ticks.y=element_blank(),
         legend.position = "bottom",legend.title =element_blank(), legend.direction = "horizontal") + xlab("V value") +
   scale_fill_manual(values = myColors)
@@ -56,7 +56,7 @@ ggsave(loading.barplot.long, filename="/scratch16/abattle4/ashton/snp_networks/p
 
 #FOR POSTER VERSINO:
 ggplot(to.bar %>% filter(name != "V1"), aes(x=value, y=full_names,fill=new_names)) + geom_bar(stat="identity") + facet_wrap(~Factor_names, nrow=1) +
-  theme_classic(17) + geom_vline(xintercept = 0) + 
+  theme_classic(17) + geom_vline(xintercept = 0) +
   theme(legend.position = "none",legend.title =element_blank(), legend.direction = "horizontal") + xlab("V value") +
   scale_fill_manual(values = myColors) + ylab("")
 ggsave(filename="/scratch16/abattle4/ashton/snp_networks/presentation_figures/gleaner_manuscript_draft/figures/fig4_trait_bars.POSTER.svg",
@@ -82,6 +82,7 @@ mk_hmt <- c("ABCG5","ABCG8","GNE","MPIG6B")
 pp_hmt <- c("ACTB","CDC42")
 plt_hmt <- c()
 
+
 f4.tp <- loadGeneEnrichments(4, "top_fe")
 f11.tp <- loadGeneEnrichments(11, "top_fe")
 f23.tp <- loadGeneEnrichments(23, "top_fe")
@@ -99,21 +100,18 @@ factor_titles <- c("F4","F11","F23")
 or_test_hmt <- testEnrichment(unique(f4.tp$set_genes), unique(full.bg), macro.genes,conf.level=0.90,alternative="two.sided")
 plot.me <- data.frame("OR"=or_test_hmt$test$estimate, "upper"=or_test_hmt$test$conf.int[2], "lower"=or_test_hmt$test$conf.int[1], "p"=or_test_hmt$test$p.value, "Factor"="U4")
 #Quick nice plot of this 10/28
-ggplot(plot.me, aes(x=Factor, y=OR)) + geom_point(size=3) + 
+ggplot(plot.me, aes(x=Factor, y=OR)) + geom_point(size=3) +
   geom_errorbar( aes(x=Factor, ymin=lower, ymax=upper), width=0.3, colour="black", alpha=0.9) + theme_classic(16) +
   geom_hline(yintercept = 1,color="black", lty="dashed")+ ylab("Enrichment OR")  + coord_flip()
 
-
-
+#Sandbox- could show as a z-score
+#qnorm(or_test_hmt$test$p.value*2,lower.tail = TRUE)
 
 ##Harder test- just within blood genes
 blood.bg <- c(f4.tp$set_genes,f11.tp$set_genes,f23.tp$set_genes)
 testEnrichment(unique(f4.tp$set_genes), unique(blood.bg), macro.genes,conf.level=0.90,alternative="two.sided")
 testEnrichment(unique(f11.tp$set_genes), unique(blood.bg), macro.genes,conf.level=0.90,alternative="two.sided")
 testEnrichment(unique(f23.tp$set_genes), unique(blood.bg), macro.genes,conf.level=0.90,alternative="two.sided")
-
-
-
 
 
 
@@ -124,14 +122,14 @@ test_sets <- list(early_Megakaryopoiesis,c(late_mk,mk_hmt), c(protoplatelet,pp_h
 if(LOAD)
 {
   load("/scratch16/abattle4/ashton/snp_networks/presentation_figures/gleaner_manuscript_draft/enrichment_test_platelets.RData")
-  
+
 }else
 {
   ##First test- just those for macro genes
   permuted.joint.hmtc <- tabEnrichmentTestPermuted(factor_sets,full.bg,factor_titles, list(macro.genes),c("HMTC"),n_permute=10000,conf.level=0.9)
   permuted.joint.bg <- tabEnrichmentTestPermuted(factor_sets,full.bg,factor_titles, test_sets,phases,n_permute=50000,conf.level=0.9)
   save(permuted.joint.bg,permuted.joint.hmtc,file="/scratch16/abattle4/ashton/snp_networks/presentation_figures/gleaner_manuscript_draft/enrichment_test_platelets.RData")
-  
+
 }
 
 
@@ -142,15 +140,15 @@ permuted.joint.bg$fdr_sig <- ifelse(permuted.joint.bg$FDR < 0.05, "FDR < 0.05", 
 
 
 #size: 1500 x 400
-custom.markers <- ggplot(permuted.joint.bg, aes(x=Factor, y=OR,color=-log10(p.val))) + geom_point(size=3) + 
-  geom_errorbar( aes(x=Factor, ymin=LOWER, ymax=UPPER), width=0.3, colour="black", alpha=0.9) + 
+custom.markers <- ggplot(permuted.joint.bg, aes(x=Factor, y=OR,color=-log10(p.val))) + geom_point(size=3) +
+  geom_errorbar( aes(x=Factor, ymin=LOWER, ymax=UPPER), width=0.3, colour="black", alpha=0.9) +
   facet_wrap(~Phase, nrow = 1) + theme_classic(18) +
-  geom_hline(yintercept = 1,color="black", lty="dashed") + scale_color_gradient(low="blue",high="red",limits=c(0,5)) + 
+  geom_hline(yintercept = 1,color="black", lty="dashed") + scale_color_gradient(low="blue",high="red",limits=c(0,5)) +
   labs(color="Permutation\n-log10(q)") + ylab("Enrichment OR") + theme(
     legend.position = "none", # c(1, 0.8) bottom left, c(1,1) top-right.
     legend.background = element_rect(fill = "transparent", colour = NA),
                                      legend.text = element_text(size=12),
-                                     legend.title=element_text(size=12), 
+                                     legend.title=element_text(size=12),
                                      legend.title.position = "right",  plot.title =element_text(size=10, face='bold', color="grey"),
     axis.title.x = element_blank(),axis.text.x= element_text(colour=cols, size=18)) #+
   #ggtitle("IPD genes by differention stage")
@@ -189,16 +187,16 @@ if(LOAD)
 unique.permuted.cell.types$Phase <- factor(unique.permuted.cell.types$Phase, levels=c("HSCs", "Megakaryocytes","Protoplatelets", "Platelets"))
 unique.permuted.cell.types$Factor <- factor(unique.permuted.cell.types$Factor, levels = paste0("F",1:100))
 
-panglao.markers <- ggplot(unique.permuted.cell.types, aes(x=Factor, y=OR,color=-log10(p.val))) + geom_point(size=3) + 
-  geom_errorbar( aes(x=Factor, ymin=LOWER, ymax=UPPER), width=0.3, colour="black", alpha=0.9) + 
+panglao.markers <- ggplot(unique.permuted.cell.types, aes(x=Factor, y=OR,color=-log10(p.val))) + geom_point(size=3) +
+  geom_errorbar( aes(x=Factor, ymin=LOWER, ymax=UPPER), width=0.3, colour="black", alpha=0.9) +
   facet_wrap(~Phase, nrow = 1,drop=FALSE) + theme_classic(18) +
-  geom_hline(yintercept = 1,color="black", lty="dashed")+ ylab("Enrichment OR")  + 
-  labs(color="Permutation\n-log10(p)") + scale_color_gradient(low="blue",high="red",limits=c(0,5))  + 
+  geom_hline(yintercept = 1,color="black", lty="dashed")+ ylab("Enrichment OR")  +
+  labs(color="Permutation\n-log10(p)") + scale_color_gradient(low="blue",high="red",limits=c(0,5))  +
   theme(
     legend.position = "left", # c(1, 0.8) bottom left, c(1,1) top-right.
     legend.background = element_rect(fill = "transparent", colour = NA),
     legend.text = element_text(size=12),
-    legend.title=element_text(size=12), 
+    legend.title=element_text(size=12),
     legend.title.position = "right", plot.title =element_text(size=10, face='bold', color="grey"),
     axis.text.x= element_text(colour=cols, size=18))# + ggtitle("Cell type gene marker enrichment")
 ggsave(panglao.markers, filename="/scratch16/abattle4/ashton/snp_networks/presentation_figures/gleaner_manuscript_draft/figures/fig4_panglao_enrichment.svg",
@@ -206,16 +204,16 @@ ggsave(panglao.markers, filename="/scratch16/abattle4/ashton/snp_networks/presen
 
 
 #Move the legend to the empty spot
-fitted_plot <- ggplot(unique.permuted.cell.types, aes(x=Factor, y=OR,color=-log10(p.val))) + geom_point(size=3) + 
-  geom_errorbar( aes(x=Factor, ymin=LOWER, ymax=UPPER), width=0.3, colour="black", alpha=0.9) + 
+fitted_plot <- ggplot(unique.permuted.cell.types, aes(x=Factor, y=OR,color=-log10(p.val))) + geom_point(size=3) +
+  geom_errorbar( aes(x=Factor, ymin=LOWER, ymax=UPPER), width=0.3, colour="black", alpha=0.9) +
   facet_wrap(~Phase, nrow = 1,drop=FALSE) + theme_classic(18) +
-  geom_hline(yintercept = 1,color="black", lty="dashed")+ ylab("Enrichment OR")  + 
-  labs(color="Permutation\n-log10(p)") + scale_color_gradient(low="blue",high="red",limits=c(0,5))  + 
+  geom_hline(yintercept = 1,color="black", lty="dashed")+ ylab("Enrichment OR")  +
+  labs(color="Permutation\n-log10(p)") + scale_color_gradient(low="blue",high="red",limits=c(0,5))  +
   theme(
     legend.position =c(0.65, 0.6), #bottom left, c(1,1) top-right.
     legend.background = element_rect(fill = "transparent", colour = NA),
     legend.text = element_text(size=12),
-    legend.title=element_text(size=12), 
+    legend.title=element_text(size=12),
     legend.title.position = "right", plot.title =element_text(size=10, face='bold', color="grey"),
     axis.text.x= element_text(colour=cols,size=18)) #+ ggtitle("Cell type gene marker enrichment")
 
@@ -235,14 +233,16 @@ ggsave(filename="/scratch16/abattle4/ashton/snp_networks/presentation_figures/gl
 
 
 #Load the gene sets fresh
+#TODO0 update these to be enrichments unique
+#added in jan 22, 2025, but need to verify elsewhere
 f23.tp <- loadGeneEnrichments(23, "top_fe")
 f11.tp <- loadGeneEnrichments(11, "top_fe")
 f4.tp <- loadGeneEnrichments(4, "top_fe")
-gsea.f23 <- f23.tp$enrichments %>%  filter(gene_library != "GTEx_Tissue_Expression_Down",gene_library != "GTEx_Tissue_Expression_Up") %>% mutate("FDR"=p.adjust(`P-value`, method="BH"))
+gsea.f23 <- f23.tp$enrichments_unique %>%  filter(gene_library != "GTEx_Tissue_Expression_Down",gene_library != "GTEx_Tissue_Expression_Up") %>% mutate("FDR"=p.adjust(`P-value`, method="BH"))
 
-gsea.f11 <- f11.tp$enrichments %>%  filter(gene_library != "GTEx_Tissue_Expression_Down",gene_library != "GTEx_Tissue_Expression_Up") %>% mutate("FDR"=p.adjust(`P-value`, method="BH"))
+gsea.f11 <- f11.tp$enrichments_unique %>%  filter(gene_library != "GTEx_Tissue_Expression_Down",gene_library != "GTEx_Tissue_Expression_Up") %>% mutate("FDR"=p.adjust(`P-value`, method="BH"))
 
-gsea.f4 <- f4.tp$enrichments %>%  filter(gene_library != "GTEx_Tissue_Expression_Down",gene_library != "GTEx_Tissue_Expression_Up") %>% mutate("FDR"=p.adjust(`P-value`, method="BH"))
+gsea.f4 <- f4.tp$enrichments_unique %>%  filter(gene_library != "GTEx_Tissue_Expression_Down",gene_library != "GTEx_Tissue_Expression_Up") %>% mutate("FDR"=p.adjust(`P-value`, method="BH"))
 
 
 #keep.groups <- c("GO_Cellular_Component_2023","GO_Molecular_Function_2023", "GO_Biological_Process_2023","KEGG_2021_Human")
@@ -258,7 +258,7 @@ top.4.plot <- gsea.f4 %>% filter(FDR < 0.05) %>% arrange(FDR) %>% filter(gene_li
 
 
 top.in.either <- unique(c(top.4.plot$`Term name`, top.23.plot$`Term name`,top.11.plot$`Term name`))
-to.plot <- rbind(gsea.f23 %>% mutate("Source"="F23"), 
+to.plot <- rbind(gsea.f23 %>% mutate("Source"="F23"),
                  gsea.f4 %>% mutate("Source"="F4"), gsea.f11 %>% mutate("Source"="F11")) %>% filter(`Term name` %in% top.in.either) %>%
   filter(`Term name` != "Phosphoserine Residue Binding (GO:0050815)") %>% filter(gene_library=="GO_Molecular_Function_2023") %>% mutate("n_genes"=stringr::str_count(Genes,",") + 1)
 #Requires being tested in all cases and at least 5 genes contributing to the annotation

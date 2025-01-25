@@ -100,7 +100,7 @@ if [ "$RUN_FACTORIZATION" = true ] || [ "$RUN_ALL" = true ]; then
   MNAMES=$(grep "test_methods" $YAML | cut -f 2 -d "," | sed 's/:/,/g')
   K=$(grep -e "^K," $YAML | cut -f 2 -d ",")
   BIC=$(grep "bic_param," $YAML | cut -f 2 -d ",")
-  INIT=$(grep "init," $YAML | cut -f 2 -d ",")
+  INIT=$(grep "^init," $YAML | cut -f 2 -d ",")
   SCALE=$(grep "scale," $YAML | cut -f 2 -d ",")
   SHRINK=$(grep "covar_shrinkage," $YAML | cut -f 2 -d ",")
   SCALE_VAR=""
