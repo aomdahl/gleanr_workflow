@@ -509,6 +509,12 @@ pleioScoreByWilcox <- function(input.factor, pleio_scores, top_perc = 0.99, alph
 
 }
 
+
+load_v2G <- function()
+{
+  fread("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results/panUKBB_complete_41K_final/gene_snp_mappings.csv")
+}
+
 loadGeneEnrichments <- function(factor, type,
                                 path="/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results/panUKBB_complete_41K_final/top_elements_by_factor/",
                                 unique_only=FALSE)
@@ -517,6 +523,7 @@ loadGeneEnrichments <- function(factor, type,
   old.mapping <- factor
   dir=paste0(path,type)
   ret.list$all_genes <- fread(paste0(dir, "/F", old.mapping, "_snp_gene_rank.csv"))
+  ret.list$gene_snp_singular <- fread(paste0(dir, "/F", old.mapping, "_snp_gene_rank_singular.csv"))
   ret.list$set_genes <- fread(paste0(dir, "/F", old.mapping, "_genes_in_factor.txt"),header = FALSE)$V1
   ret.list$bg_genes <- fread(paste0(dir, "/F", old.mapping, "_background_genes.txt"),header = FALSE)$V1
 
@@ -547,12 +554,52 @@ plotPVEPretty <- function(pve_vector, factors, cin="gray", size=15)
 
 ## eenrichment test:
 #testEnrichment(f11.tp$set_genes, factor_titles, c(late_mk,mk_hmt),conf.level=0.90,alternative="greater")
-testEnrichment <- function(set_genes, bg_genes, gene_set,conf.level=0.95,alternative="two.sided")
+testEnrichment <- function(set_genes, bg_genes, gene_set,conf.level=0.95,alternative="two.sided",pseudocount = FALSE)
 {
-  contingency.table <- t(matrix(c(sum(set_genes %in% gene_set),sum(!(set_genes %in% gene_set)),
+  contingency.table <- (matrix(c(sum(set_genes %in% gene_set),sum(!(set_genes %in% gene_set)),
                                   sum(bg_genes %in% gene_set),sum(!(bg_genes %in% gene_set))), nrow = 2))
-  list("test" = fisher.test(contingency.table,alternative=alternative,conf.int =conf.level ), "tab"=contingency.table)
+  if(pseudocount){
+    contingency.table <- contingency.table + 1
+  }
+  #Let's add labels for clarity
+  colnames(contingency.table) <- c("top_factor_gene", "bg_gene")
+  rownames(contingency.table) <- c("in_test_set", "not_in_test_set")
+  fisher.dat <- fisher.test(contingency.table,alternative=alternative,conf.int =conf.level )
+  if(any(contingency.table == 0))
+  {
+    se.approx <- NA
+  }else
+  {
+    se.approx <- sqrt(sum(1/contingency.table))#This isn't great if any of the values are very small (which could for sure happen, 1/0 will break this.)
+  }
+  list("test" = fisher.dat, "tab"=contingency.table,
+       "logOR"=log(fisher.dat$estimate), "logOR_SE"=se.approx)
 }
+
+#TODO: figure out why the t4 object is return duplicates, I don't think that it should be.
+#help.solve <- f4.tp$all_genes %>% select(RSID,gene,U) %>% filter(!is.na(gene)) %>% distinct() 
+testEnrichmentLogit <- function(gene_set,gene_labels, gene_scores, collapse = "max")
+{
+  gene.dat <- data.frame("scores"=gene_scores,"genes"=gene_labels) %>% mutate("in_set"= as.numeric(genes %in% gene_set))
+  if(collapse=="min")
+  {
+    gene.dat %<>% group_by(genes) %>% slice_min(scores, n=1, with_ties = FALSE) %>% ungroup()
+  }else if(collapse =="mean")
+  {
+    gene.dat %<>% group_by(genes) %>% summarize("mean_score"=mean(scores)) %>% 
+      dplyr::rename("scores"=mean_score)%>% mutate("in_set"= as.numeric(genes %in% gene_set))
+  }else
+  {
+    #max by default
+    gene.dat %<>% group_by(genes) %>% slice_max(scores, n=1, with_ties = FALSE) %>% ungroup()
+  }
+  stopifnot(length(gene.dat$genes) == length(unique(gene.dat$genes)))
+  logit.fit <- glm(in_set ~ scores,data=gene.dat, family="binomial")
+  
+  list("test" = logit.fit, "OR"=exp(coef(logit.fit))[2],
+       "logOR"=coef(logit.fit)[2], "logOR_SE"=summary(logit.fit)$coef[4])
+}
+
 
 #testEnrichment(unique(f4.tp$set_genes),unique(f4.tp$bg_genes), early_Megakaryopoiesis),
 testEnrichmentPermutedUnique <- function(set_genes, bg_genes, gene_set,n_permute=10000, seed=NA,...)

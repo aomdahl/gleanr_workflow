@@ -174,6 +174,28 @@ greedyMaxPairedCor <- function(true.u, true.v, pred.u, pred.v, cor.type="pearson
     warning("Matrix dimensions aren't aligned. Recommend padding missing cols with 0.")
     return(NA)
   }
+  #If all of one of the matrices is empty:
+  #2/05 update!
+  if(all(pred.u == 0) | all(pred.v == 0))
+  {
+    warning("All of one input matrix is empty. Setting corresponding matrix to 0 and returning results.")
+    #Set its mate to 0
+    if(all(pred.u == 0)) {pred.v[pred.v!=0] <- 0 }
+    if(all(pred.v == 0)) {pred.u[pred.u!=0] <- 0 }
+    #Get the correlation, and no change sin order.
+    #TODO- see how frequently this comes up in simulations.
+    return(list("corr_v"=stackAndAssessCorr(true.v, pred.v), "corr_u"=stackAndAssessCorr(true.u, pred.u),
+                "order.true"=1:ncol(true.v), "order.pred"=1:ncol(pred.v), "signs"=rep(1,ncol(true.v)),
+                "lead_v"=true.v, "lead_u"=true.u, "scnd_v"=pred.v, "scnd_u"=pred.u, "swap"=FALSE))
+  }
+  #Check if you are adding in the same matrices
+  if(all(pred.u == true.u) & all(pred.v == true.v))
+  {
+    warning("Input matrices are exactly the same.")
+    return(list("corr_v"=stackAndAssessCorr(true.v, pred.v), "corr_u"=stackAndAssessCorr(true.u, pred.u),
+                "order.true"=1:ncol(true.v), "order.pred"=1:ncol(pred.v), "signs"=rep(1,ncol(true.v)),
+                "lead_v"=true.v, "lead_u"=true.u, "scnd_v"=pred.v, "scnd_u"=pred.u, "swap"=FALSE))
+  }
   init.dat <- list("true.v"=true.v, "pred.v"=pred.v,
                    "true.u" =true.u, "pred.u" = pred.u)
   lower.limit = calcCorrelationMetrics(true.v, pred.v)
@@ -223,7 +245,7 @@ greedyMaxPairedCor <- function(true.u, true.v, pred.u, pred.v, cor.type="pearson
     stopifnot(all.equal(c_u,stackAndAssessCorr(as.matrix(true.u[,true.order]), matrixSignsProduct(pred.u[,pred.order], pred.signs))))
     if(order_only)
     {
-      return(list("order.true"=true.order, "order.pred"=pred.order, "signs"=pred.signs,
+      return(list("corr_v"=c_v, "corr_u"=c_u,"order.true"=true.order, "order.pred"=pred.order, "signs"=pred.signs,
                   "lead_v"=lead.v, "lead_u"=lead.u, "scnd_v"=scnd.v, "scnd_u"=scnd.u, "swap"=FALSE))
     }
     return(list("corr_v"=c_v, "corr_u"=c_u,
