@@ -180,7 +180,7 @@ if __name__ == "__main__":
     parser.add_argument('-t', '--test', required=True, help="Path to the file containing the list of genes to test")
     parser.add_argument('-b', '--background', required=True, help="Path to the file containing the background gene list")
     parser.add_argument('-o', '--output', required=True, help="Path to save the output CSV file")
-    parser.add_argument('-g', '--gene_set_lib', default="ChEA_2022", help="Path to save the output CSV file")
+    parser.add_argument('-g', '--gene_set_lib', default="ChEA_2022", help="Specify which gene set library to test- see the enrichr webiste for the names")
     parser.add_argument('-u', '--unique_only', default=False,action="store_true", help="Specify this if you are only wnating to test on unique sets of genes")
     args = parser.parse_args()
 
