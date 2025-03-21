@@ -4,7 +4,7 @@ output: html_notebook
 ---
 Here, creating the simulation based figure
 Note that previous sims were incorrect in that they didn't quite use the sd specifications in the right way. We should be able to get this to work
-## Update the paths below to reflect the new locations, things have been mooved about!"
+**Update the paths below to reflect the new locations, things have been mooved about!"**
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 source("/scratch16/abattle4/ashton/snp_networks/scratch/cohort_overlap_exploration/gwas_sim_style/simulation_processing_tools.R")
@@ -22,8 +22,7 @@ library(ggbeeswarm)
 library(ggpubr)
 
 ```
-
-first, the null simulations based on GWAS
+## Null simulations of GWAS directly
 Updated Oct 2024
 ```{r}
 #this one was made in the old way, so just loaded the files directly in
@@ -74,30 +73,7 @@ map.to.new <- data.frame(
 "method_label"=c("GLEANR", "GLEANR-U", "SVD-adj (elbow)", 
                "SVD-adj (avg)","flash", "SVD (elbow)", "SVD (avg)"))
 
-#ordered
-"new.method"=c("SVD (avg)", "SVD (elbow)", "SVD-adj (avg)","SVD-adj (elbow)","flash", "GLEANR-U","GLEANR")
-
-full.list=c("SVD", "SVD (avg)", "SVD (elbow)","SVD-adj", "SVD-adj (avg)","SVD-adj (elbow)",
-            "flash","flash (Z)","flash (Kronecker)","FactorGo","GLEANR-U","GLEANR")
-#Trying some color things....
-#flash.cols <- natparks.pals(name="Acadia",n=3,type="discrete")
-#pca.unadj.cols <- natparks.pals(name="Glacier",n=3,type="discrete")
-#pca.adj.cols <- natparks.pals(name="CapitolReef",n=3,type="discrete")
-#GLEANR.cols <- natparks.pals(name="BryceCanyon",n=2,type="discrete")
-#factorgo.cols <- natparks.pals(name="Arches",n=1,type="discrete")
-#
-
-flash.cols <- brewer.pal(5,"Greens")[3:5]
-pca.unadj.cols <- brewer.pal(3,"Blues")
-pca.adj.cols <- brewer.pal(8,"BuPu")[c(5,6,8)]
-pca.adj.cols <- brewer.pal(3,"Purples")
-GLEANR.cols <- brewer.pal(2,"Oranges")[2:3]
-factorgo.cols <- brewer.pal(5,"PuRd")[4]
-
-
-
-all.colors <- c(pca.unadj.cols,pca.adj.cols, flash.cols, factorgo.cols,GLEANR.cols )
-color.map.pub <- data.frame("method_label"=full.list, "color" = all.colors)
+color.map.pub <-buildPubColors()
 ```
 
 Map
@@ -112,7 +88,6 @@ Plot
 
 myColors <- color.map.pub$color
 names(myColors) <- levels(factors.by.method.long.sub.plot$method_label)
-#names(myColors) <- unique(factors.by.method.long.sub.plot$method_label)
 colScale <- scale_colour_manual(name = "Method",values = myColors)
 fillScale <- scale_fill_manual(name = "Method",values = myColors)
 
@@ -124,26 +99,12 @@ hum_names <- as_labeller(
 gwas.based <- ggplot(factors.by.method.long.sub.plot, aes(x=method_label,y=as.numeric(value), fill=method_label))+
   geom_violin(aes(fill = method_label)) +theme_bw(15) +  geom_jitter(alpha = 0.1,aes(color=method_label))+
  fillScale + facet_wrap(~overlap_bins, nrow = 1,labeller = hum_names, strip.position = "top") +  theme(strip.background =element_rect(fill="white")) + colScale + theme(axis.text.x = element_blank(), axis.ticks.x = element_blank(),axis.title.x = element_blank()) + ylab(expression("# estimated factors" ~ hat(K))) 
- # ggtitle("Low levels of cohort overlap sufficient for common methods to detect spurious components") + theme(plot.title = 
-#element_text(size=10,color="dimgrey"))  + xlab("% overlapping samples")  +
-#+ ylab(expression( hat(K) ))
 ```
 Great, Im' actually pretty happy with that.
 ##################################
-Next, the factor based simulations. Moment of truth!!!
 
-Unscaled flavor
-```{r, eval = FALSE}
-no.covar.unscaled <- mergeTabularResults(query="",base.dir = "/scratch16/abattle4/ashton/snp_networks/scratch/cohort_overlap_exploration/simulating_factors/custom_easy/simulation_outputs/final_sims_june_2024/no_overlap/", scale=FALSE)  %>% mutate("Covar"=  "none")
-
-oneb.covar.unscaled  <- mergeTabularResults(query="",base.dir = "/scratch16/abattle4/ashton/snp_networks/scratch/cohort_overlap_exploration/simulating_factors/custom_easy/simulation_outputs/final_sims_june_2024/1b_overlap/", scale=FALSE) %>%   mutate("Covar"=  "1b")
-twob.covar.unscaled  <- mergeTabularResults(query="",base.dir = "/scratch16/abattle4/ashton/snp_networks/scratch/cohort_overlap_exploration/simulating_factors/custom_easy/simulation_outputs/final_sims_june_2024/2b_overlap/", scale=FALSE)  %>%   mutate("Covar"=  "2b")
-
-all.sims.joined.unscaled <- rbind(no.covar.unscaled,oneb.covar.unscaled,twob.covar.unscaled)
-```
-
-Scaled flavor (preferred, more comparable across since most methods autoscale)
-Go with this- unscaled isn't really fair.
+## Factor-based simulations
+Load in the results
 ```{r}
 no.covar <- mergeTabularResults(query="",base.dir = "/scratch16/abattle4/ashton/snp_networks/scratch/cohort_overlap_exploration/simulating_factors/custom_easy/simulation_outputs/final_sims_june_2024/no_overlap/")  %>% 
   mutate( "Covar"=  "none")
@@ -157,12 +118,10 @@ all.sims.joined.scaled <- rbind(no.covar,oneb.covar,twob.covar)
 
 ```
 
-
+Add in some fake rows so I can get the color legend for all methods
 
 ```{r}
 all.sims.joined.scaled$N <- factor(all.sims.joined.scaled$N, levels = c("5000","10000","50000","1e+05","2e+05","mixed"))
-#all.sims.joined.unscaled$N  <- factor(all.sims.joined.unscaled$N, levels = c("5000","10000","50000","1e+05","2e+05","mixed"))
-#Methods:
 
 full.list=c("SVD", "SVD (avg)", "SVD (elbow)","SVD-adj", "SVD-adj (avg)","SVD-adj (elbow)",
             "flash","flash (Z)","flash (Kronecker)","FactorGo","GLEANR-U","GLEANR")
@@ -179,16 +138,15 @@ all.sims.joined.scaled <- rbind(all.sims.joined.scaled, fake.row.svd.elbow,fake.
 name.map = data.frame("method_label"=c("SVD", "flash (Z)", "flash", "flash (Kronecker)","SVD (avg)", "GLEANR", "GLEANR-U", "SVD-adj", "SVD (beta)", "FactorGo", "SVD (elbow)","SVD-adj (elbow)","SVD-adj (avg)"), "method" = unique(all.sims.joined.scaled$method))
 
 level_order=name.map$method_label
+
 all.sims.joined.scaled %<>% left_join(.,name.map, by="method") %>% 
   mutate("method_label"=factor(method_label, levels=color.map.pub$method_label)) %>% arrange(method_label) %>% filter(method != "SVD_beta",method_label != "flash (Z)")
-
-#all.sims.joined.unscaled %<>% left_join(.,name.map, by="method") %>% 
-#  mutate("method_label"=factor(method_label, levels=color.map.pub$method_label)) %>% arrange(method_label) %>% filter(method != #"SVD_beta",method_label != "flash (Z)")
 
 ```
 Numerical checks- where do we outperform other methods?
 ```{r}
 #Get for U- my claim holds true!
+#need to update this- group by N and covar at the end.
 all.sims.joined.scaled %>% filter((!method_label %in% drop.methods)) %>% group_by(method_label, N, Covar) %>% summarize("medianV" = median(yuan_V), "medianU"=median(yuan_U)) %>% arrange(N, -medianU) %>% filter(Covar == "1b") %>% group_by(N) %>% slice_max(medianU)
 
 all.sims.joined.scaled %>% filter((!method_label %in% drop.methods)) %>% group_by(method_label, N, Covar) %>% summarize("medianV" = median(yuan_V), "medianU"=median(yuan_U)) %>% arrange(N, -medianU) %>% filter(Covar == "2b") %>% group_by(N) %>% slice_max(medianU)
@@ -206,13 +164,13 @@ all.sims.joined.scaled %>% filter((!method_label %in% drop.methods)) %>% group_b
 all.sims.joined.scaled %>% filter((!method_label %in% drop.methods)) %>% group_by(method_label, N, Covar) %>% summarize("medianV" = median(yuan_V), "medianU"=median(yuan_U)) %>% arrange(N, -medianV) %>% filter(Covar == "none") %>% group_by(N) %>% slice_max(medianV)
 ```
 
-Make the plot
-Decision to drop blash Z, too compli
+### Make the nice plots
+The figure for V will go into supplement; figure for U in main text.
 ```{r}
-##Scaled
+##Labeller with updated name (1/31)
 pop_names <- as_labeller(
-     c(`5000` = "N=5k", `10000` = "N=10k",`50000` = "N=50k", 
-       `1e+05` = "N=100k",`2e+05` = "N=200k", "mixed"="N=[10K,200K]",
+     c(`5000` = "N<sub>S</sub>=5k", `10000` = "N<sub>S</sub>=10k",`50000` = "N<sub>S</sub>=50k", 
+       `1e+05` = "N<sub>S</sub>=100k",`2e+05` = "N<sub>S</sub>=200k", "mixed"="N<sub>S</sub>=[10K,200K]",
      `1b`="1-block", `2b`="2-block", `none`="No overlap"))
 
 # Supplemental figure
@@ -220,7 +178,9 @@ drop.methods <- c("flash (Z)", "SVD (elbow)","SVD (elbow)","SVD-adj (elbow)","SV
 
 v.sim <- ggplot(all.sims.joined.scaled %>% filter((!method_label %in% drop.methods)), aes(x = method_label, y = yuan_V, fill = method_label)) + geom_boxplot() + facet_grid(Covar~N,labeller = pop_names) +  theme_bw() + xlab("Factorization method") +
   theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) + 
-  theme(axis.text.x=element_blank(), axis.ticks.x = element_blank()) + ylab(bquote(R^2 ~ "with simulated V")) + fillScale +  theme(strip.background =element_rect(fill="white"),legend.position = "top") + ggtitle("Performance across simulations with respect to V")
+  theme(axis.text.x=element_blank(), axis.ticks.x = element_blank()) + 
+  ylab(bquote(R^2 ~ "with simulated V")) + fillScale +  
+  theme(strip.background =element_rect(fill="white"),legend.position = "top",strip.text = ggtext::element_markdown()) + ggtitle("Performance across simulations with respect to V")
 v.leg <- ggpubr::get_legend(v.sim)
 
 #Chat GPT helped me with this one.
@@ -230,7 +190,7 @@ u.sim.for.legend <- ggplot(all.sims.joined.scaled %>% filter(method_label != "fl
   facet_grid(Covar~N,labeller = pop_names) +  theme_bw() +xlab("Factorization method")  + 
   theme(axis.text.x=element_blank(), axis.ticks.x = element_blank()) + 
   ylab(bquote(R^2 ~ "with simulated U")) +
-  fillScale + theme(strip.background =element_rect(fill="white"), legend.position = "left") +
+  fillScale + theme(strip.background =element_rect(fill="white"), legend.position = "left",strip.text = ggtext::element_markdown()) +
   guides(fill = guide_legend(ncol = 2, 
                              override.aes = list(shape = 22, 
                                                  size = 8, 
@@ -245,52 +205,36 @@ u.sim <- ggplot(all.sims.joined.scaled %>% filter((!method_label %in% drop.metho
   facet_grid(Covar~N,labeller = pop_names) +  theme_bw(14) +xlab("Factorization method")  + 
   theme(axis.text.x=element_blank(), axis.ticks.x = element_blank()) + 
   ylab(bquote(R^2 ~ "with simulated U")) +
-  fillScale + theme(strip.background =element_rect(fill="white"), legend.position = "left") +
+  fillScale + theme(strip.background =element_rect(fill="white"), legend.position = "left",strip.text = ggtext::element_markdown()) +
   guides(fill = guide_legend(ncol = 2, 
                              override.aes = list(shape = 22, 
                                                  size = 8, 
                                                  linetype = 0, 
-                                                 color = NA))) + theme(legend.text=element_text(size=12)) + theme(legend.position="none",margin(t = 0, r = -1, b = 0, l = 0, unit = "pt")) + ggtitle("Covariance adjustment improves reconstruction of simulated genetic factors") + theme(plot.title = element_text(size=10,color="dimgrey"))  
+                                                 color = NA))) + 
+  theme(legend.text=element_text(size=12),legend.position="none",margin(t = 0, r = -1, b = 0, l = 0, unit = "pt")) + ggtitle("Covariance adjustment improves reconstruction of simulated genetic factors") + theme(plot.title = element_text(size=10,color="dimgrey"))  
 ```
 
-some arrows to go along with it (kkeep tweaking)
-```{r}
-library(ggplot2)
-blurb = "Better recovery of U"
-improvement <- ggplot() + xlim(c(-0.1,0.1)) + ylim(c(-1,0.5))+
-  annotate("text", x = -0.05, y = -0.1, size=3.5, label = blurb, angle=90) + 
-  theme_nothing() + annotate("segment", 
-           x = 0, xend = 0, y = -0.9, yend = 0,
-           arrow=arrow())
-
-
-decline <- ggplot() + xlim(c(-0.1,0.1)) + ylim(c(-1,1.5))+
-  annotate("text", x = -0.05, y = -0.1, size=3.5, label = "Worse recovery of U", angle=90) + 
-  theme_nothing() + annotate("segment", 
-           x = 0, xend = 0, y = 1, yend = -0.2,
-           arrow=arrow())
-
-arrows <- cowplot::plot_grid(plotlist =list(improvement,ggplot()+theme_nothing(), decline), ncol=1,rel_heights = c(1,1.3,1))
-blank.arrows <- ggplot()+theme_nothing()
-```
+Previous versions included arrows in plot- see version control for those. Have since been removed.
 
 Results basically look the same, kinda. Scaled is more favorable for us, and I think its more fair all around.
 #### Supplemenetal figure- looking at AUC, Kappa, F1:
 Not doing Kappa or F1 here- Kappa just looks at agreement, when no known truth. F1 we don't have the precisoin/recall numbers close at hand.
 ```{r}
-
 kappa.v  <- ggplot(all.sims.joined.scaled %>% filter((!method_label %in% drop.methods)), 
                 aes(x = method_label, y = joint_cb_kappa_v, fill = method_label)) +
   geom_boxplot() + 
   facet_grid(Covar~N,labeller = pop_names) +  theme_bw(14) +xlab("Factorization method")  + 
   theme(axis.text.x=element_blank(), axis.ticks.x = element_blank()) + 
   ylab(bquote(kappa ~ "for simulated V")) +
-  fillScale + theme(strip.background =element_rect(fill="white"), legend.position = "left") +
+  fillScale +
+  theme(strip.background =element_rect(fill="white"), legend.position = "left",strip.text = ggtext::element_markdown()) +
   guides(fill = guide_legend(ncol = 2, 
                              override.aes = list(shape = 22, 
                                                  size = 8, 
                                                  linetype = 0, 
-                                                 color = NA))) + theme(legend.text=element_text(size=12)) + theme(legend.position="none",margin(t = 0, r = -1, b = 0, l = 0, unit = "pt"))  + ggtitle("Classification (0/+/-) across simulations with respect to V")
+                                                 color = NA))) + 
+  theme(legend.text=element_text(size=12)) + theme(legend.position="none",margin(t = 0, r = -1, b = 0, l = 0, unit = "pt"))  + 
+  ggtitle("Classification (0/+/-) across simulations with respect to V")
 
 kappa.u <- ggplot(all.sims.joined.scaled %>% filter((!method_label %in% drop.methods)), 
                 aes(x = method_label, y = joint_cb_kappa_u, fill = method_label)) +
@@ -298,12 +242,15 @@ kappa.u <- ggplot(all.sims.joined.scaled %>% filter((!method_label %in% drop.met
   facet_grid(Covar~N,labeller = pop_names) +  theme_bw(14) +xlab("Factorization method")  + 
   theme(axis.text.x=element_blank(), axis.ticks.x = element_blank()) + 
   ylab(bquote(kappa ~ "for simulated U")) +
-  fillScale + theme(strip.background =element_rect(fill="white"), legend.position = "left") +
+  fillScale + 
+  theme(strip.background =element_rect(fill="white"), legend.position = "left",strip.text = ggtext::element_markdown()) +
   guides(fill = guide_legend(ncol = 2, 
                              override.aes = list(shape = 22, 
                                                  size = 8, 
                                                  linetype = 0, 
-                                                 color = NA))) + theme(legend.text=element_text(size=12)) + theme(legend.position="none",margin(t = 0, r = -1, b = 0, l = 0, unit = "pt"))  + ggtitle("Classification (0/+/-) across simulations with respect to U")
+                                                 color = NA))) + 
+  theme(legend.text=element_text(size=12),legend.position="none",margin(t = 0, r = -1, b = 0, l = 0, unit = "pt"))  + 
+  ggtitle("Classification (0/+/-) across simulations with respect to U")
 
 cowplot::plot_grid(v.sim + theme(legend.position = "none"),kappa.v, kappa.u,v.leg,ncol=1,rel_heights = c(1,1,1,0.3)) 
 ggsave(filename="/scratch16/abattle4/ashton/snp_networks/presentation_figures/gleaner_manuscript_draft/figures/suppl6_alternate_sim_metrics.svg",
@@ -313,7 +260,7 @@ ggsave(filename="/scratch16/abattle4/ashton/snp_networks/presentation_figures/gl
 
 
 ### Heatmaps of block structure
-All right. The only figures remaining here are the- adjcacent 
+These will be placed to to the right of boxplots in Inkscape
 ```{r}
 oneb.version <- fread("/scratch16/abattle4/ashton/snp_networks/scratch/cohort_overlap_exploration/simulating_factors/custom_easy/simulation_outputs/final_sims_june_2024/1b_overlap/V101_U101_MAF-mix_eur_N-10000_RHO-1b_high_mixed_p_No-1b_high_no/sim1.c_matrix.txt")
 
@@ -354,23 +301,7 @@ cowplot::plot_grid(blockheader,
 
 ## Now, the correlation on real data.
 This is more involved, so just loading the data s it was generated in `/scratch16/abattle4/ashton/snp_networks/presentation_figures/cohort_overlap_ukbb_may2024.R`
-**NO LONGER INCLUDING THESE in the figs**
-```{r, eval = FALSE}
-load("/scratch16/abattle4/ashton/snp_networks/presentation_figures/gleaner_manuscript_draft/ukbb_overlap_dat.RData")
-overlap.no.herit.half <- overlap.no.herit
-overlap.no.herit.half[upper.tri(overlap.no.herit.half)] <- NA
-noherit.corr <- plotCorrelationHeatmap(no.herit.query.corr, drop.labels=TRUE, col_limit=c(-1,1.2), font_size = 8,show.nums = TRUE,print.nums = overlap.no.herit.half) + 
-  theme(legend.position = "right")+  labs(fill=bquote(g[cov_int]))  + theme(axis.text = element_blank()) + 
-  annotate(geom="text",label = bquote(h^2 ~"= 0"),y = 12,x=4, size= 17/.pt)
 
-
-overlap.selected.traits.half <- overlap.selected.traits
-overlap.selected.traits.half[upper.tri(overlap.selected.traits.half)] <- NA
-herit.corr <- plotCorrelationHeatmap(manual.query.corr, drop.labels=TRUE, col_limit=c(-1,1.2), font_size = 8,show.nums = TRUE,print.nums = overlap.selected.traits.half) + 
-  theme(legend.position = "right")+  labs(fill=bquote(g[cov_int]))   + theme(axis.text = element_blank()) + 
-  annotate(geom="text",label = bquote(h^2 ~"> 0"),y = 12,x=4, size= 17/.pt)
-
-```
 Okay, I need to merge the color schemes
 Add in former figure 3 stuff:
 ```{r}
@@ -379,30 +310,7 @@ load("/scratch16/abattle4/ashton/snp_networks/presentation_figures/overlap_forme
 bottom.plot <- cowplot::plot_grid(plotlist=list(tri.heatmap, orange.bars + theme(legend.position = "none")),rel_widths = c(1,0.6))
 ```
 
-
-```{r}
-library(ggpubr)
-cor.shapes <- cowplot::plot_grid(blockheader, 
-                                 oneb.plot, twob.plot, nob.plot, ggplot() + geom_blank() + theme_classic(),
-                                 ncol=1,rel_heights = c(0.5,1,1,1,0.3))
-#theme(plot.margin = unit(c(0,0,0,0), "cm"))
-factor.sim <- cowplot::plot_grid(plotlist = list(arrows,u.sim ,cor.shapes), nrow=1, rel_widths = c(0.1,1.2,0.2),align = "v",axis = "tblr")
-#upper.panel.corr <- cowplot::plot_grid(plotlist=list(noherit.corr+ theme(legend.position = "none"), herit.corr ),nrow  =1, rel_widths = c(0.8,1))
-#upper.panel <- cowplot::plot_grid(plotlist = list(upper.panel.corr, gwas.based + theme(legend.position = "none")), rel_widths = c(1,1),labels = c('A', 'B'), rel_heights = c(0.6,1))
-upper.panel <- cowplot::plot_grid(plotlist = list(gwas.based + theme(legend.position = "none")),bottom.legend, labels = c("",'A'),rel_widths = c(0.3,1))
-
-
-
-cowplot::plot_grid(upper.panel, factor.sim, bottom.plot, rel_heights = c(0.5,1,0.6),nrow=3,labels = c("",'B',""))
-ggsave(filename="/scratch16/abattle4/ashton/snp_networks/presentation_figures/gleaner_manuscript_draft/figures/fig2_JOINED.svg",
-      width = 20,height=15,units="in")
-#2000x1500
-ggarrange(upper.panel, factor.sim,bottom.plot,
-          labels = c("", "B",""),
-          ncol = 1, nrow =3)
-
-u.sim
-```
+Previously had tried getting everything programatically on one plot, which proved more trouble than it was worth. See version control for older versions.
 Lazy approach- just save as images and import:
 ```{r}
 upper.panel #1700 x 300
@@ -417,11 +325,8 @@ cor.shapes.noheader <- cowplot::plot_grid(oneb.plot, twob.plot, nob.plot,
 ggsave(filename="/scratch16/abattle4/ashton/snp_networks/presentation_figures/gleaner_manuscript_draft/figures/fig2_panelB_2.svg",
       width = 2,height=4,units="in")
 cowplot::plot_grid(plotlist=list(tri.heatmap, orange.bars + theme(legend.position = "none"))) #
-cowplot::plot_grid(plotlist = list(blank.arrows,u.sim ,cor.shapes), nrow=1, rel_widths = c(0.1,1.2,0.2),align = "v",axis = "tblr")
+cowplot::plot_grid(plotlist = list(u.sim ,cor.shapes), nrow=1, rel_widths = c(0.1,1.2,0.2),align = "v",axis = "tblr")
 ```
-
-
-
 
 ### Figures for poster:
 Reduce to 3 panesl..
@@ -452,12 +357,13 @@ ggplot(all.sims.sub.for.talk %>% filter((!method_label %in% drop.methods)),
   facet_grid(Covar~N,labeller = pop_names) +  theme_bw(16) +xlab("Factorization method")  + 
   theme(axis.text.x=element_text(angle=45, hjust=1, vjust=1)) + 
   ylab(bquote(R^2 ~ "with simulated U")) +
-  fillScale + theme(strip.background =element_rect(fill="white"), legend.position = "left") +
+  fillScale + theme(strip.background =element_rect(fill="white"), legend.position = "left",strip.text = ggtext::element_markdown()) +
   guides(fill = guide_legend(ncol = 2, 
                              override.aes = list(shape = 22, 
                                                  size = 8, 
                                                  linetype = 0, 
-                                                 color = NA))) + theme(legend.text=element_text(size=12)) + theme(legend.position="none",margin(t = 0, r = -1, b = 0, l = 0, unit = "pt"))
+                                                 color = NA))) +
+  theme(legend.text=element_text(size=12),legend.position="none",margin(t = 0, r = -1, b = 0, l = 0, unit = "pt"))
 #950 x 550
 ```
 
@@ -475,37 +381,4 @@ ggplot(all.sims.sub.for.poster %>% filter((!method_label %in% drop.methods)),
 #830x550
 twob.plot #
 ```
-
-
-TODO: need to add in an additional entry for the missing SVD-elbow
-
-
-
-
-
-
-```{r}
-dd <- data.frame(x = c("A","B","C","D","E","F","G","H","I"),
-                 y = c(1.782,0.136,0.978,0.645,0.518,1.474,0.855,0.673,0.369))
-dd <- transform(dd, ylo = c(0.719,0.046,0.945,0.295,0.188,0.577,0.407,0.310,0.145), 
-        yhi = c(4.420,0.398,1.012,1.411,1.424,3.768,1.798,1.460,0.940))
-
-#Create a separate data frame for the arrow labels
-arrowLab <- data.frame(lab = c("Increasing","Decreasing"),
-                       x = c(0.15,0.15),y = c(10^0.25,10^(-0.25)))
-
-ggplot(data = dd, aes(x=ordered(x, levels=rev(x)), y=y)) +
-        geom_pointrange(aes(ymin=ylo, ymax=yhi)) + theme_classic() + geom_blank() +
-        geom_segment(aes(x = 0, xend = 0, y= 1, yend= 2),
-                         arrow=arrow(length=unit(0.2,"cm"))) +
-        geom_segment(aes(x = 0, xend = 0, y= 1, yend= 10^(-0.25)),
-                         arrow=arrow(length=unit(0.2,"cm"))) +
-        geom_text(data = arrowLab,aes(x=x,y=y,label = lab),size = 3) 
-
-
-
-```
-
-
-
 
