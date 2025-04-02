@@ -3,31 +3,45 @@ pacman::p_load(magrittr, dplyr, ggplot2,data.table)
 load("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results/panUKBB_complete_41K_final/panUKBB_complete_41K_final_final_dat.RData")
 source("/scratch16/abattle4/ashton/snp_networks/gwas_decomp_ldsc/src/plot_functions.R")
 source("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization//src/factorEvaluationHelper.R")
-##Factors 32 and 18 are weakly correlated:
-cor.test(ret$U[,32], ret$U[,18])
 
+##Factor 1 sparsity
+cat(round(100*sum(ret$U[,1]==0)/nrow(ret$U), digits=2), "% of SNPs in factor 1 have a value of 0\n")
+##Factors 32 and 18 are weakly correlated:
+cat("Factors 32 and 18 have a correlation of", cor.test(ret$U[,32], ret$U[,18])$estimate, "\n")
+
+#Selection scores:
+sel.dat <- fread("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results/panUKBB_complete_41K_final//selective_pressure/s_scores.tsv")
+cat("Selection score of factor 1 is:", round((sel.dat %>% filter(Factor=="U1"))$S_hat,digits=2), "\n")
+cat("Selection score of factor 32 is:", round((sel.dat %>% filter(Factor=="U32"))$S_hat,digits=2), "\n")
+cat("Minimum selection score is:", round(min((sel.dat)$S_hat),digits=2)," in factor",(sel.dat %>% arrange(S_hat))[1,]$Factor,"\n")
 
 #Enrichments in tissue markers
+#Note- have to use mapping here because factors were out of ordered on run (bug in PVE code.)
+#This has ince been fixed, with a mapping between the new and the old factors.
 tissue.plotting.dat <- fread("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results/panUKBB_complete_41K_final/NONE_ldsc_enrichment_Multi_tissue_chromatin//plotting_table.csv")
 mapping <- data.frame("new" = 1:58, "old" = ret$mapping)
 mapping.df <- mapping %>% mutate("Source"=paste0("F",old)) %>% mutate("Source_new"=paste0("F",new))
 #For refrence of all
-f18.all.tissue <- fread("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results/panUKBB_complete_41K_final/NONE_ldsc_enrichment_Multi_tissue_chromatin/F18.multi_tissue.cell_type_results.txt")
-f32.all.tissue <- fread("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results/panUKBB_complete_41K_final/NONE_ldsc_enrichment_Multi_tissue_chromatin/F28.multi_tissue.cell_type_results.txt")
+labels <- labelsPrep()
+P="/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results/panUKBB_complete_41K_final/NONE_ldsc_enrichment_Multi_tissue_chromatin/"
+f18.all.tissue <- fread(paste0(P, (mapping.df %>% filter(Source_new=="F18"))$Source,".multi_tissue.cell_type_results.txt")) %>% left_join(.,labels, by="Name")
+f32.all.tissue <- fread(paste0(P, (mapping.df %>% filter(Source_new=="F32"))$Source,".multi_tissue.cell_type_results.txt")) %>% left_join(.,labels, by="Name")#F28
 
 #Get top tissue type enrichments by category
 #MAx tissue across all
-f18.like.eqtl <- evalTissuesLikeEQTLs(tissue.plotting.dat, "F18") %>% arrange(max_tissue_fdr_adjusted) %>% print()
-f32.like.eqtl <- evalTissuesLikeEQTLs(tissue.plotting.dat, "F32") %>% arrange(max_tissue_fdr_adjusted) %>% print()
+# <- evalTissuesLikeEQTLs(tissue.plotting.dat, "F18") %>% arrange(max_tissue_fdr_adjusted) %>% print()
+#f32.like.eqtl <- evalTissuesLikeEQTLs(tissue.plotting.dat, "F32") %>% arrange(max_tissue_fdr_adjusted) %>% print()
+#A better version of this:
+f18.like.eqtl <- evalTissuesLikeEQTLs(f18.all.tissue) %>% arrange(max_tissue_fdr_adjusted) %>% print()
+f32.like.eqtl <- evalTissuesLikeEQTLs(f32.all.tissue) %>% arrange(max_tissue_fdr_adjusted) %>% print()
 
 
-
-tissue.plotting.dat <- left_join(tissue.plotting.dat, mapping.df, by="Source")
-tissue.plotting.dat$Source <- tissue.plotting.dat$Source_new
-(tissue.plotting.dat %>% filter(Source == "F32") %>% arrange(factor_tissue_fdr) %>% 
-  select(Name, Source, tissue,category, global_fdr, p_tissue, Factor_specific_fdr))[1:5,]
-(tissue.plotting.dat %>% filter(Source == "F18") %>% arrange(factor_tissue_fdr)%>% 
-  select(Name, Source, tissue,category, global_fdr, p_tissue, Factor_specific_fdr))[1:5,]
+  tissue.plotting.dat <- left_join(tissue.plotting.dat, mapping.df, by="Source")
+  tissue.plotting.dat$Source <- tissue.plotting.dat$Source_new
+  (tissue.plotting.dat %>% filter(Source == "F32") %>% arrange(factor_tissue_fdr) %>% 
+    select(Name, Source, tissue,category, global_fdr, p_tissue, Factor_specific_fdr))[1:5,]
+  (tissue.plotting.dat %>% filter(Source == "F18") %>% arrange(factor_tissue_fdr)%>% 
+    select(Name, Source, tissue,category, global_fdr, p_tissue, Factor_specific_fdr))[1:5,]
 
 
 #Look at gene enrichments
