@@ -131,7 +131,7 @@ ggsave(plot=heatmap.diff.raw, filename="/scratch16/abattle4/ashton/snp_networks/
 ######################################################
 
 ######################################################
-### Looking directly at correlation:
+### Looking directly at correlation- stats for text/table:
 source("/scratch16/abattle4/ashton/snp_networks/scratch/finngen_v_ukbb/src/matrix_comparison_utils.R")
 fg.std_block.path <- "/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results/finngen_benchmark_2/conservative_1e-5/covar_influence/"
 uk.std_block.path <- "/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results/ukbb_benchmark_2/conservative_1e-5/covar_influence/"
@@ -141,6 +141,10 @@ std_block.results <- loadGLEANERResultsLists(fg.std_block.path, uk.std_block.pat
 scaled.case <- list("finngen"=list(), 'ukbb' = list())
 scal  <- std_block.results$finngen$`BIC-sklearn_eBIC_K-41`
 scaled.case$finngen$BIC_adj_K41$V <- apply(scal$V, 2, scale, center=FALSE); scaled.case$finngen$BIC_adj_K41$U <- apply(scal$U, 2, scale, center=FALSE); 
+scale.alt <- scale(scal$V, center=FALSE)
+stopifnot(all(scale.alt == scaled.case$finngen$BIC_adj_K41$V))
+alt <- unitNorms(scal$V)
+
 
 scaled.case$ukbb$BIC_adj_K41 <- std_block.results$ukbb$`BIC-sklearn_eBIC_K-41`
 scaled.case$ukbb$BIC_adj_K41$V <- apply(scaled.case$ukbb$BIC_adj_K41$V, 2, scale, center=FALSE); scaled.case$ukbb$BIC_adj_K41$U <- apply(scaled.case$ukbb$BIC_adj_K41$U, 2, scale, center=FALSE); 
@@ -187,6 +191,10 @@ uk.v.new = matrixSignsProduct(uk.v[,adj.version$order.pred], adj.version$signs)
 adj.v <- cor.test(y=c(uk.v.new), x=c(fg.v))
 adj.u <- cor.test(y=c(uk.u.new), x=c(fg.u))
 
+cat("Similarity between V, WITH covariance adjustment:",round(adj.v$estimate,digits=3 ), "\n")
+cat("Similarity between U, WITH covariance adjustment:",round(adj.u$estimate,digits=3 ), "\n")
+
+
 #Undjusted, non-standard gleaner
 v.dat <- prepMatricesForAnalysis(scaled.case$finngen$BIC_no_adj_K41$V,scaled.case$ukbb$BIC_no_adj_K41$V); 
 u.dat <- prepMatricesForAnalysis(scaled.case$finngen$BIC_no_adj_K41$U,scaled.case$ukbb$BIC_no_adj_K41$U)
@@ -201,11 +209,17 @@ uk.v.non = matrixSignsProduct(uk.v[,no_adj.version$order.pred], no_adj.version$s
 nonadj.v <- cor.test(y=c(uk.v.non), x=c(fg.v))
 nonadj.u <- cor.test(y=c(uk.u.non), x=c(fg.u))
 
+cat("Similarity between V, no covariance adjustment:",round(nonadj.v$estimate,digits=3 ), "\n")
+cat("Similarity between U, no covariance adjustment:",round(nonadj.u$estimate,digits=3 ), "\n")
 #### are these statistically significant differences?
 #Note that the best test would be a little more nuanced, since these groups really aren't entirely independent. But this is okay for now.
 library(cocor)
-cocor.indep.groups(r1.jk=adj.u$estimate, r2.hm=nonadj.u$estimate, n1=length(c(uk.u.new)), n2=length(c(uk.u.non)), alternative="greater", alpha=0.05, conf.level=0.95, null.value=0)
-cocor.indep.groups(r1.jk=adj.v$estimate, r2.hm=nonadj.v$estimate, n1=length(c(uk.v.new)), n2=length(c(uk.v.non)), alternative="greater", alpha=0.05, conf.level=0.95, null.value=0)
+u.diff <- cocor.indep.groups(r1.jk=adj.u$estimate, r2.hm=nonadj.u$estimate, n1=length(c(uk.u.new)), n2=length(c(uk.u.non)), alternative="greater", alpha=0.05, conf.level=0.95, null.value=0)
+v.diff <- cocor.indep.groups(r1.jk=adj.v$estimate, r2.hm=nonadj.v$estimate, n1=length(c(uk.v.new)), n2=length(c(uk.v.non)), alternative="greater", alpha=0.05, conf.level=0.95, null.value=0)
+
+cat("P-value in independent difference of Us (fisher test)",u.diff@fisher1925$p.value, "\n")
+cat("P-value in independent difference of Vs (fisher test)",v.diff@fisher1925$p.value, "\n")
+
 
 #### Make the plot
 calc.cor <- data.frame("type" = c("GLEANER", "GLEANER","GLEANER\n(unadjusted)","GLEANER\n(unadjusted)"), "Matrix"=c("U","V", "U","V"),
@@ -245,7 +259,7 @@ fg.full.mat <- as.matrix(fread(fg.args$covar_matrix))
 uk.full.mat <- as.matrix(fread(uk.args$covar_matrix))
 stopifnot(all(colnames(fg.full.mat) == colnames(uk.full.mat)))
 mean(abs(c(fg.full.mat- uk.full.mat)))
-########And some numbers in there to include:
+########RRMSE numbers in there to include:
 unadj.fg.x <- std_block.results$finngen$`BIC-sklearn_eBIC_K-41_no_covar`$U %*% t(std_block.results$finngen$`BIC-sklearn_eBIC_K-41_no_covar`$V)
 adj.fg.x <- std_block.results$finngen$`BIC-sklearn_eBIC_K-41`$U %*% t(std_block.results$finngen$`BIC-sklearn_eBIC_K-41`$V)
 
