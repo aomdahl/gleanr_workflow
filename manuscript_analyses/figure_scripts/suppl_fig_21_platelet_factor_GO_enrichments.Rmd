@@ -1,0 +1,104 @@
+---
+title: "Reported functional enrichments for F4, F11, F23 (Fig S21)"
+output: html_notebook
+---
+Examining GO enrichments, and generating Fig. S21
+
+## Load in data
+```{r}
+source("/scratch16/abattle4/ashton/snp_networks/gwas_decomp_ldsc/src/plot_functions.R")
+source("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization//src/factorEvaluationHelper.R")
+source("/scratch16/abattle4/ashton/snp_networks/scratch/factor_interpretation/src/get_pLI.R")
+library(ggplot2)
+
+
+f23.tp <- loadGeneEnrichments(23, "top_fe")
+f11.tp <- loadGeneEnrichments(11, "top_fe")
+f4.tp <- loadGeneEnrichments(4, "top_fe")
+```
+
+Let's first look at teh top GO enrichments in each factor:
+l
+# GO biological process:
+Note- there are some that just don't get tested that we want to have. For some reason, they aren't included, but they are significant.
+```{r}
+gob.test<- "GO_Biological_Process_2023"
+unique.gob <- rbind(f23.tp$enrichments_unique %>% filter(gene_library==gob.test) %>% mutate("source" ="F23"),
+      f11.tp$enrichments_unique %>% filter(gene_library==gob.test) %>% mutate("source" ="F11"),
+       f4.tp$enrichments_unique %>% filter(gene_library==gob.test) %>% mutate("source" ="F4") ) %>%
+  mutate("n_genes"=stringr::str_count(Genes,",") + 1)
+
+std.gob <- rbind(f23.tp$enrichments %>% filter(gene_library==gob.test) %>% mutate("source" ="F23"),
+      f11.tp$enrichments %>% filter(gene_library==gob.test) %>% mutate("source" ="F11"),
+       f4.tp$enrichments %>% filter(gene_library==gob.test) %>% mutate("source" ="F4")) %>% 
+   mutate("n_genes"=stringr::str_count(Genes,",") + 1)
+
+```
+FActor 23 biological processes
+```{r}
+std.gob %>% filter(source == "F23") %>% filter(n_genes > 3) %>% select(-Genes, -gene_library, -source, -`Combined score`) %>% mutate("Rounded_bh"=round(`Adjusted p-value`, digits=2))
+```
+Unique flavor
+```{r}
+top.by.unique <- unique((unique.gob %>% group_by(source) %>% arrange(`P-value`) %>% slice_head(n=7))$`Term name`)
+uniqe.gob.plt <- unique.gob %>% filter(`Term name` %in% top.by.unique)
+#Order them by which Source is the top
+order.set <- uniqe.gob.plt %>% group_by(`Term name`) %>% arrange(source) %>% summarize("which_top"=which.max(-log10(`P-value`))) %>% arrange(which_top)
+uniqe.gob.plt$`Term name` <- factor(uniqe.gob.plt$`Term name`, levels = order.set$`Term name`)
+
+#standard version
+top.by.std <- unique((std.gob %>% group_by(source) %>% arrange(`P-value`) %>% slice_head(n=7))$`Term name`)
+
+std.plt <- std.gob %>% filter(`Term name` %in%top.by.std)
+```
+
+
+
+
+# GO molecular
+
+```{r}
+gom.test<- "GO_Molecular_Function_2023"
+unique.gom <- rbind(f23.tp$enrichments_unique %>% filter(gene_library==gom.test) %>% mutate("source" ="F23"),
+      f11.tp$enrichments_unique %>% filter(gene_library==gom.test) %>% mutate("source" ="F11"),
+       f4.tp$enrichments_unique %>% filter(gene_library==gom.test) %>% mutate("source" ="F4") ) %>%
+  mutate("n_genes"=stringr::str_count(Genes,",") + 1)
+
+std.gom <- rbind(f23.tp$enrichments %>% filter(gene_library==gom.test) %>% mutate("source" ="F23"),
+      f11.tp$enrichments %>% filter(gene_library==gom.test) %>% mutate("source" ="F11"),
+       f4.tp$enrichments %>% filter(gene_library==gom.test) %>% mutate("source" ="F4")) %>% 
+   mutate("n_genes"=stringr::str_count(Genes,",") + 1)
+
+```
+FActor 23 molecular processes
+```{r}
+unique.gom %>% filter(source == "F23") %>% filter(n_genes > 3) %>% select(-Genes, -gene_library, -source,-`Combined score`) %>% mutate("Rounded_bh"=round(`Adjusted p-value`, digits=2))
+```
+
+FActor 4 molecular processes
+```{r}
+unique.gom %>% filter(source == "F4") %>% filter(n_genes > 3) %>% select(-Genes, -gene_library, -source,-`Combined score`) %>% mutate("Rounded_bh"=round(`Adjusted p-value`, digits=2))
+```
+
+Just look at those in the top10 of each:
+
+Unique flavor
+```{r}
+top.by.unique <- unique((unique.gom %>% group_by(source) %>% arrange(`P-value`) %>% slice_head(n=7))$`Term name`)
+uniqe.gom.plt <- unique.gom %>% filter(`Term name` %in% top.by.unique)
+#Order them by which Source is the top
+order.set <- uniqe.gom.plt %>% group_by(`Term name`) %>% arrange(source) %>% summarize("which_top"=which.max(-log10(`P-value`))) %>% arrange(which_top)
+uniqe.gom.plt$`Term name` <- factor(uniqe.gom.plt$`Term name`, levels = order.set$`Term name`)
+```
+
+
+
+#Plot for supplement- Figure S21
+Got the top 7 per factor plotted here.
+```{r}
+cowplot::plot_grid(ggplot(uniqe.gom.plt, aes(x=`Term name`, y=-log10(`Adjusted p-value`), fill=source)) + geom_bar(stat="identity", position="dodge") + coord_flip() + ggtitle("GO Molecular function\nenrichments") + geom_hline(yintercept = -log10(0.05)) + theme_bw() + theme(axis.title.y=element_blank(), legend.position="none"),
+ggplot(uniqe.gob.plt, aes(x=`Term name`, y=-log10(`Adjusted p-value`), fill=source)) + geom_bar(stat="identity", position="dodge") + coord_flip() + ggtitle("GO Biological Process\nenrichments") + geom_hline(yintercept = -log10(0.05))  + theme_bw())
+ggsave("/scratch16/abattle4/ashton/snp_networks/presentation_figures/gleaner_manuscript_draft/figures/suppl_enrichments_platelet_factors.svg",width = 15,height=6)
+ggsave("/scratch16/abattle4/ashton/snp_networks/presentation_figures/gleaner_manuscript_draft/figures/suppl_enrichments_platelet_factors.png",width = 15,height=6)
+```
+
