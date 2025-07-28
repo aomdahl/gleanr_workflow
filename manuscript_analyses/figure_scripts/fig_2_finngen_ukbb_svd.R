@@ -1,6 +1,7 @@
 #First the heatmap:
 pacman::p_load(data.table, dplyr, magrittr, tidyr)
 
+#Analysis was performed using script `run_scripts/finngen_ukbb_benchmark/v2_expanded_run/covar_influence/finngen_ukbb_benchmark_svd.sh`
 #source("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwasMF/R/read_in_tools.R")
 #source("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwasMF/R/data_decorrelation.R")
 library(gleanr)
