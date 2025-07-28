@@ -25,6 +25,8 @@
 
 library(devtools)
 library(optparse)
+library(gleanr)
+
  `%>%` <- magrittr::`%>%`
 writeOutResults <- function(V,U,traits, snps,outdir)
 {
@@ -67,6 +69,7 @@ make_option(c("--bic_var"), type = 'character', help = "Specify the bic method t
 make_option(c("-p", "--param_conv_criteria"), type = 'character', help = "Specify the convergene criteria for parameter selection", default = "BIC.change"),
 make_option(c("-r", "--rg_ref"), type = 'character', help = "Specify a matrix of estimated genetic correlations to initialize V from", default = ""),
 make_option(c("-v", "--verbosity"), type="integer", default= 0, help="How much output information to give in report? 0 is quiet, 1 is loud"),
+make_option(c("--sparsity_levels"), type="character", default= "", help="Manually specify a lambda and alpha to run at- this will skip the model selection step. (e.g. 0.4,0.3). Requires a numerical specified K, and bic_var NONE. NOT RECOMMENDED to use this for most users."),
 make_option(c("-n", "--ncores"), type="integer", default= 1, help="Do you want to run on multiple cores? Only influences the K initialization step at this point."),
 #These related to covariance matrix tweaks
 make_option(c("-s", "--sample_sd"), type="character", default= "", help="File containing the standard deviation of SNPs; if provided, used to scale LDSC gcov terms."),
@@ -106,7 +109,7 @@ t= c("--gwas_effects=/scratch16/abattle4/ashton/snp_networks/custom_l1_factoriza
      "--uncertainty=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwas_extracts/ukbb_benchmark_2//ukbb_benchmark_2_conservative.se.tsv",
      "--trait_names=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwas_extracts/ukbb_benchmark_2//pheno.names.txt",
      "--outdir=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results/ukbb_benchmark_2/DEBUG//sklearn_max_covar_manual",
-     "--fixed_first",  "--nfactors=GRID", "--bic_var=sklearn","--verbosity=1",
+     "--fixed_first",  "--nfactors=14", "--bic_var=sklearn","--verbosity=1", "--sparsity_levels=0.01,0.01",
      "--covar_matrix=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/ldsr_results/ukbb_benchmark_2/summary_data/gcov_int.tab.csv",
      "--sample_sd=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gwas_extracts/ukbb_benchmark_2/sample_sd_report.tsv")
 
@@ -129,13 +132,8 @@ t= c("--gwas_effects=/scratch16/abattle4/ashton/snp_networks/gleanr/inst/extdata
      "--WLgamma=Strimmer", "--covar_se_matrix=/scratch16/abattle4/ashton/snp_networks/gleanr/inst/extdata/sim1.c_se_matrix.txt")
 
 args_input <- parse_args(OptionParser(option_list=option_list))#, args = t)
-#args_input <- parse_args(OptionParser(option_list=option_list), args = t)
-#TODO: cut oout this middle-man, make a more efficient argument input vector.
 
-#setwd("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gleanr/"); load_all()
-library(gleanr)
 args <-fillDefaultSettings(args_input)
-
 writeRunReport(args)
 
 #Establish the internal settings
@@ -143,12 +141,6 @@ option <- readInSettings(args)
 option$alpha1 <- NA
 option$lambda1 <- NA
 outdir <-args$outdir
-#option$std_y <- TRUE
-#Read in the hyperparameters to explore
-#hp <- readInParamterSpace(args)
-#args$WLgamma <- 0
-#args$block_covar <- 0.2 This is the issue
-#cheatDebug(args)
 input.dat <- readInData(args)
 X <- input.dat$X; W <- input.dat$W; all_ids <- input.dat$ids; names <- input.dat$trait_names; W_c <- input.dat$W_c; C <- input.dat$C_block
 option$C <- C
@@ -168,13 +160,23 @@ if(args$subset_seed > -1)
 #Prep regression datasets (weights, x, etc.)
 #Keep these things in memory so not recreating each time
 reg.vect <- prepRegressionElements(X,W,W_c,option) #returns sparse matrices since that saves a ton of memory by doing this once up front
-#Loading that all in each time was slow...
 userMessage(args$verbosity, "Outcome data weighted and transformed for regression", thresh=0)
 opath=outdir
-#What I should do is initialize a GLEANER object, and have all these things in there....
-#Can I make the regvect elements sparse?
-#Perform sparsity selection,
 
+## Special run conditions users can specify, helpful for custom cases:
+s_params = NULL
+if(args$sparsity_levels != "")
+{
+  if(is.null(as.numeric(args$nfactors)))
+  {
+    stop("Number of factors specified must be numeric- invalid input.")
+  }
+  userMessage(args$verbosity, "You have chosen alpha and lambda parameters to run GLEANR. This will skip model selection step. Please be careful with this choice.", thresh=0)
+  s_params <- as.numeric(strsplit(args$sparsity_levels,  split= ",")[[1]])
+  option$bic.var = "NONE" #This will end this fitting immediately
+  option$alpha1 <- s_params[1]
+  option$lambda1 <- s_params[2]
+}
 if(args$model_select)
 {
   userMessage(args$verbosity, "Only performing model selection step of gleanr, will not perform full fitting.", thresh=0)
@@ -187,17 +189,17 @@ if(args$debug)
   quit()
 }
 
-if(args$intermediate_bic == "")
+if(args$intermediate_bic == "" )
 {
-  bic.dat <- getBICMatricesGLMNET(outdir,option,X,W,W_c, all_ids, names,reg.elements=reg.vect)
+   bic.dat <- getBICMatricesGLMNET(outdir,option,X,W,W_c, all_ids, names,reg.elements=reg.vect)
   save(bic.dat,option, file = paste0(outdir, "_bic_dat.RData"))
-}else
-{
+}else if(args$intermediate_bic != ""){
   message("Using initialized version..")
-  #Need to update some of the options, if there are any differences....
   load(args_input$intermediate_bic)
   option$conv0 <- args$converged_obj_change
   message("Starting at ", bic.dat$K)
+}else{
+  exit("Invalid options specified, program ending.")
 }
 
 if(args$model_select)
@@ -211,8 +213,6 @@ if(is.na(bic.dat$K))
   writeOutResults(bic.dat$optimal.v, bic.dat$optimal.u, names, all_ids, outdir)
   ret <- list("V"=bic.dat$optimal.v, "U"=bic.dat$optimal.u,"snp.ids"=all_ids, "trait.names"=names)
   save(ret,option, file = paste0(outdir, "_final_dat.RData"))
-
-
   quit()
 }
 
@@ -227,7 +227,6 @@ option$lambda1 <- bic.dat$lambda #This is applied to V
 #Perform optimization
 ret <- gwasML_ALS_Routine(option, X, W, W_c, bic.dat$optimal.v, maxK=bic.dat$K,reg.elements=reg.vect) #I like this better
 #Next, try it with them swapped......
-#Testing init with u: ret.u <- gwasML_ALS_Routine(option, X, W, W_c, bic.dat$optimal.v, maxK=bic.dat$K,reg.elements=reg.vect, preU=bic.dat$optimal.u)
 ret[["snp.ids"]] <- all_ids
 ret[["trait.names"]] <- names
 save(ret,option, file = paste0(outdir, "_final_dat.RData"))
