@@ -66,18 +66,18 @@ buildSims()
 }
 
 #Main simulations
-buildSims no_overlap 1000
-buildSims 1b_overlap 2000
-buildSims 2b_overlap 3000
+#buildSims no_overlap 1000
+#buildSims 1b_overlap 2000
+#buildSims 2b_overlap 3000
 
 #Special cases- no dense factors, muliple dense factors, and some "dens-er" (mid-density) factors
 
 buildSims special_2b_overlap 4000
 buildSims special_1b_overlap 5000
 buildSims special_no_overlap 6000
-buildSims dense_2b_overlap 7000
-buildSims dense_1b_overlap 8000
-buildSims dense_no_overlap 9000
+#buildSims dense_2b_overlap 7000
+#buildSims dense_1b_overlap 8000
+#buildSims dense_no_overlap 9000
 
 
 
