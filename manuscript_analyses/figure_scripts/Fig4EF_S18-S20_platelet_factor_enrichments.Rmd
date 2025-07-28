@@ -1,0 +1,357 @@
+---
+title: "Permutation background evaluation"
+output: html_notebook
+---
+*These data were evaluated by running the permutations as in `/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/run_scripts/GLEANR_panUKBB_41K_permutations`*
+This was followed by calls to `src/evaluate_gleanr_permutations.R`
+
+First, load in all the permutation data, and generate like 45 qq plots.
+```{r}
+source("/scratch16/abattle4/ashton/snp_networks/gwas_decomp_ldsc/src/plot_functions.R")
+source("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization//src/factorEvaluationHelper.R")
+source("/scratch16/abattle4/ashton/snp_networks/scratch/factor_interpretation/src/get_pLI.R")
+source("/data/abattle4/aomdahl1/gene_utils/qqplot.R")
+pacman::p_load(magrittr, dplyr, ggplot2, data.table, ggsignif,RColorBrewer)
+```
+## P-value distribution
+First, load in the imputed null data for the background
+```{r}
+p="/scratch16/abattle4/ashton/snp_networks//scratch/manuscript_reviews/permute_testing/"
+dirs <- list.dirs(p) 
+#get just a sublist for now
+full.permuted.res <- NULL
+full.permuted.alt <- NULL
+ncols=14
+for(d in dirs)
+{
+  if(grepl(x=d,pattern="assess_test_seed") & grepl(x=d,pattern="00$")){
+    cfile =paste0(d, "/permuted_enrichment_results.tsv")
+    if(file.exists(cfile)){
+      message("Found valid file ", basename(d))
+      add_in <-fread(cfile) %>% mutate("dir_name"=basename(d))
+      if("pseudofisher_p" %in% colnames(add_in)) {
+        add_in %<>% select(-pseudofisher_p,-pseudofisher_OR, - pseudofisher_OR,-pseudofisher_logOR,-pseudofisher_logOR_SE)
+      }
+      add_in %<>% mutate("set_source"=ifelse(grepl("panglaoDB",x=d),"panglao", "platelet_set"))
+      full.permuted.res <- rbind(full.permuted.res,add_in) 
+
+    }
+  }
+    if(grepl(x=d,pattern="assess_test_seed") & grepl(x=d,pattern="_byROW")){
+      cfile =paste0(d, "/permuted_enrichment_results.tsv")
+      if(file.exists(cfile)){
+        message("Found valid file ", basename(d))
+        #Change in what data I extracted- make sure the headers align:
+        add_in <- fread(cfile) %>%  mutate("set_source"=ifelse(grepl("panglaoDB",x=d),"panglao", "platelet_set"))
+        if(!is.null(full.permuted.alt))
+        {
+          keep.cols <- colnames(full.permuted.alt)[-ncol(full.permuted.alt)]
+           add_in %<>% select(all_of(keep.cols))
+        }
+
+        full.permuted.alt <- rbind(full.permuted.alt,add_in %>% mutate("dir_name"=basename(d)))
+      }
+  }
+}
+```
+Examine the tests
+```{r}
+full.permuted.res %>% group_by(factor, gene_set,set_source) %>% summarize("ntests"=n())
+full.permuted.alt %>% group_by(factor, gene_set) %>% summarize("ntests"=n())
+```
+## Function to visualize all the QQ plots
+```{r}
+makeAllQQ <- function(dfin, snd_tab = NULL)
+{
+
+  plot.sub <- list("fisher" = list(), "max_logit" = list(), "avg_logit" = list())
+
+for(g in unique(dfin$gene_set_label))
+{
+  for(f in unique(dfin$factor))
+  {
+    title=paste0("F",f," | ",g )
+    if(is.null(snd_tab)){
+      t <- dfin %>% filter(gene_set_label == g, factor == f)
+      plot.sub[[as.character(f)]][["fisher"]][[g]] <- qqunif.plot((t %>% filter(!is.na(fisher_p)))$fisher_p, main=title)
+      plot.sub[[as.character(f)]][["max_logit"]][[g]] <- qqunif.plot((t %>% filter(!is.na(maxlogit_p)))$maxlogit_p, 
+                                                                     main=title, xlab=expression(paste("Expected (",-log[10], " p)")), ylab=expression(paste("Observed (",-log[10], " p)")))
+      plot.sub[[as.character(f)]][["avg_logit"]][[g]] <- qqunif.plot((t %>% filter(!is.na(avglogit_p)))$avglogit_p, 
+                                                                     main=title, xlab=expression(paste("Expected (",-log[10], " p)")), ylab=expression(paste("Observed (",-log[10], " p)")))
+
+    }else {
+      message("2 plot case")
+      #This means we have 2 lists we are looking to plot.
+      t <- dfin %>% filter(gene_set_label == g, factor == f)
+      alt <- snd_tab %>% filter(gene_set_label == g, factor == f)
+      plot.sub[[as.character(f)]][["fisher"]][[g]] <- qqunif.plot(
+        list((t %>% filter(!is.na(fisher_p)))$fisher_p,(alt %>% filter(!is.na(fisher_p)))$fisher_p),
+        main=title, xlab=expression(paste("Expected (",-log[10], " p)")), ylab=expression(paste("Observed (",-log[10], " p)")))
+      
+       plot.sub[[as.character(f)]][["max_logit"]][[g]] <- qqunif.plot(
+        list((t %>% filter(!is.na(maxlogit_p)))$maxlogit_p,(alt %>% filter(!is.na(maxlogit_p)))$maxlogit_p),
+        main=title, xlab=expression(paste("Expected (",-log[10], " p)")), ylab=expression(paste("Observed (",-log[10], " p)")))
+       
+        plot.sub[[as.character(f)]][["avg_logit"]][[g]] <- qqunif.plot(
+        list((t %>% filter(!is.na(avglogit_p)))$avglogit_p,(alt %>% filter(!is.na(avglogit_p)))$avglogit_p),
+        main=title, xlab=expression(paste("Expected (",-log[10], " p)")), ylab=expression(paste("Observed (",-log[10], " p)")))
+    }
+
+  }
+}
+plot.sub
+
+}
+```
+Visualize all qq plots, both shuffle approachs:
+First, clean up the names:
+```{r}
+clean_ids <- data.table("gene_set" = unique(full.permuted.res$gene_set), "gene_set_label" =c("Early MK", "Late MK", "Protoplatelet", "Platelet", "HMTP", "HSCs", "Megakaryocytes", "Platelets"))
+full.permuted.res <- left_join(full.permuted.res, clean_ids, by="gene_set")
+full.permuted.alt <- left_join(full.permuted.alt, clean_ids, by="gene_set")
+```
+
+```{r}
+both.qq.plots <- makeAllQQ(full.permuted.res %>% filter(set_source != "panglao"), snd_tab=full.permuted.alt %>% filter(set_source != "panglao"))
+both.qq.plots.panglao <- makeAllQQ(full.permuted.res %>% filter(set_source == "panglao"), snd_tab=full.permuted.alt %>% filter(set_source == "panglao"))
+```
+
+## Plot the QQ plots
+### Figure S18
+Fisher's p-values, platelet gene sets
+```{r}
+cowplot::plot_grid(
+  cowplot::plot_grid(plotlist = both.qq.plots[["4"]][["fisher"]],nrow=5),
+cowplot::plot_grid(plotlist = both.qq.plots[["11"]][["fisher"]],nrow=5),
+cowplot::plot_grid(plotlist = both.qq.plots[["23"]][["fisher"]],nrow=5), ncol=3, labels = c("A", "B", "C"))
+
+#1200 x 1500
+
+```
+
+### Figure S19
+
+Fisher's p-values, panglao gene sets
+1700x800
+```{r}
+cowplot::plot_grid(
+  cowplot::plot_grid(plotlist = both.qq.plots.panglao[["4"]][["fisher"]],nrow=3),
+cowplot::plot_grid(plotlist = both.qq.plots.panglao[["11"]][["fisher"]],nrow=3),
+cowplot::plot_grid(plotlist = both.qq.plots.panglao[["23"]][["fisher"]],nrow=3), ncol=3, labels = c("A", "B", "C"))
+```
+More inflated here, so an empirical adjustment is important.
+
+## Evaluating true enrichments with respect to these empirical backgrounds
+Function to calc it:
+```{r}
+getEmpiricalP <- function(real.df, sim.df, interval=1)
+{
+  empirical.p.std <- NULL
+for(rowi in 1:nrow(real.df))
+{
+  row = real.df[rowi,]
+  filt.dat <- sim.df %>% filter(factor == row$factor, gene_set == row$gene_set)
+  empirical.p.std <- rbind(empirical.p.std, data.frame("factor"=row$factor, "gene_set"=row$gene_set,
+  "p_or" = (sum(filt.dat$fisher_OR >= row$fisher_OR)+interval)/(sum(!is.na(filt.dat$fisher_OR))+interval),
+  "p_psuedo_or" = (sum(filt.dat$pseudofisher_OR >= row$pseudofisher_OR)+interval)/(sum(!is.na(filt.dat$pseudofisher_OR))+interval),
+  "p_maxlogit_z" = (sum(abs(filt.dat$maxlogit_b/filt.dat$maxlogit_SE) >= abs(row$maxlogit_b/row$maxlogit_SE),na.rm = TRUE)+interval)/(sum(!is.na(filt.dat$maxlogit_b))+interval),
+  "p_avglogit_z" = (sum(abs(filt.dat$avglogit_b/filt.dat$avglogit_SE) >= abs(row$avglogit_b/row$avglogit_SE), na.rm = TRUE)+interval)/(sum(!is.na(filt.dat$avglogit_b))+interval)))
+}
+empirical.p.std
+}
+```
+**Load in the true enrichments** (calculate don each iteration)
+```{r}
+platelet.enrichments <- fread("/scratch16/abattle4/ashton/snp_networks/scratch/manuscript_reviews/permute_testing/assess_test_seed25_100/enrichment_results.tsv")
+platelet.enrichments.verify <- fread("/scratch16/abattle4/ashton/snp_networks/scratch/manuscript_reviews/permute_testing/assess_test_seed23_200//enrichment_results.tsv")
+platelet.empirical <- getEmpiricalP(platelet.enrichments,full.permuted.res %>% filter(set_source != "panglao"))
+
+platelet.enrichments <- left_join(platelet.enrichments,platelet.empirical, by=c("factor","gene_set") )
+```
+What is the enrichment of factor 4 in HMPT genes?
+```{r}
+platelet.enrichments %>% filter(gene_set=="macro_genes")
+platelet.enrichments.verify %>% filter(gene_set=="macro_genes")
+platelet.empirical %>% filter(gene_set=="macro_genes")
+```
+
+Set up plot details and coloration
+```{r}
+platelet.enrichments$Factor <- factor(paste0("F", platelet.enrichments$factor), levels = paste0("F",c(4,11,23)))
+clean.names <- data.frame("gene_set" = unique(platelet.enrichments$gene_set), 
+"Phases"=c("Early megakaryopoiesis","Late megakaryopoiesis", "Protoplatelet formation", "Platelet function", "HMTP")) %>%
+  mutate("Phases" = factor(Phases, levels = c("Early megakaryopoiesis","Late megakaryopoiesis", "Protoplatelet formation", "Platelet function", "HMTP")))
+platelet.enrichments %<>% left_join(.,clean.names,by="gene_set") %>% filter(Phases != "HMTP")
+
+#Get the label colors (why is this giving me grief?)
+factors <- factor(c("F4", "F11", "F23"))
+cols <- c("#DC143C", "#DAA520", "#6994F2")
+names(cols) <- factors
+
+
+
+```
+Plot it:
+**Figure 4E**
+```{r}
+
+#point plot version
+upper.thresh.p = 2.5
+stopifnot( upper.thresh.p > max(-log10(platelet.enrichments$p_or)))
+platelet.markers <- ggplot(platelet.enrichments %>% filter(Phases != "HMTP"), aes(x=Factor, y=fisher_OR,color=-log10(p_or))) + geom_errorbar( aes(x=Factor, ymin=fisher_CI_lower, ymax=fisher_CI_upper), width=0.3, colour="black", alpha=0.9)+ 
+  geom_point(size=5) +
+ facet_wrap(~Phases, nrow = 1) + theme_classic(18) +
+    geom_hline(yintercept = 1,color="black", lty="dashed") + 
+  scale_color_gradient(low="blue",high="red",limits=c(0,upper.thresh.p)) +
+  labs(color="Permutation\n-log10(p)") + ylab("Enrichment OR") + theme(
+    legend.position = "none", # c(1, 0.8) bottom left, c(1,1) top-right.
+    legend.background = element_rect(fill = "transparent", colour = NA),
+                                     legend.text = element_text(size=12),
+                                     legend.title=element_text(size=12),
+                                     legend.title.position = "right",  plot.title =element_text(size=10, face='bold', color="grey"),
+    axis.title.x = element_blank(),axis.text.x= element_text(colour=cols, size=18)) 
+
+ggsave(platelet.markers, filename="/scratch16/abattle4/ashton/snp_networks/presentation_figures/gleaner_manuscript_draft/figures/fig4_idp_enrichment.svg",
+        height=4,width=14)
+
+ggsave(platelet.markers, filename="/scratch16/abattle4/ashton/snp_networks/presentation_figures/gleaner_manuscript_draft/figures/fig4_idp_enrichment.png",
+       height=4,width=15)
+
+```
+
+REport FDR q-values for the text
+The column "p_or" is the empirical odds ratio p-value (single-tailed test)
+```{r}
+bh.adjusted <- platelet.enrichments %>% filter(Phases != "HMTP") %>% mutate("BH_corrected_p"=p.adjust(p_or,method = "BH")) %>% select(factor, gene_set, fisher_p, fisher_OR,BH_corrected_p, p_or, Factor, Phases) %>% arrange(factor)
+bh.adjusted
+
+#Early megakaryposeis, factor 23
+bh.adjusted %>% filter(gene_set == "early_Megakaryopoiesis", factor==23) %>% select(Phases, Factor, fisher_OR, fisher_p,p_or, BH_corrected_p)
+
+#Late megakaryposeis, factor 11
+bh.adjusted %>% filter(gene_set == "late_mk", factor==11) %>% select(Phases, Factor, fisher_OR, fisher_p,p_or, BH_corrected_p)
+
+#Platelet function, factor 4
+bh.adjusted %>% filter(gene_set == "platelet_function", factor==4) %>% select(Phases, Factor, fisher_OR, fisher_p,p_or, BH_corrected_p)
+
+#Protoplatelet formation, factor 4
+bh.adjusted %>% filter(gene_set == "protoplatelet", factor==4) %>% select(Phases, Factor, fisher_OR, fisher_p,p_or, BH_corrected_p)
+
+```
+
+##Panglao enrichment:
+```{r}
+#Set up
+panglao.enrichments <- fread("/scratch16/abattle4/ashton/snp_networks/scratch/manuscript_reviews/permute_testing/panglaoDB/assess_test_seed22_100/enrichment_results.tsv") %>%
+  mutate("Factor"=paste0("F",factor))
+nice.names <- data.frame("Phases"=c("HSCs", "Megakaryocytes","Platelets"), "gene_set"=unique(panglao.enrichments$gene_set)) 
+panglao.enrichments <- left_join(panglao.enrichments,nice.names,by="gene_set")
+```
+Get the empirical p-values sand update the table
+```{r}
+panglao.empirical <- getEmpiricalP(panglao.enrichments,full.permuted.res %>% filter(set_source == "panglao"))
+
+panglao.enrichments <- left_join(panglao.enrichments,panglao.empirical, by=c("factor","gene_set") )
+panglao.enrichments$Factor <- factor(panglao.enrichments$Factor, levels = paste0("F",c(4,11,23)))
+```
+*
+PLot:
+**Figure 4F**
+```{r}
+#point plot version
+stopifnot(upper.thresh.p > max(-log10(panglao.enrichments$p_or)))
+panglao.markers.plt <- ggplot(panglao.enrichments, aes(x=Factor, y=fisher_OR,color=-log10(p_or))) + 
+  geom_errorbar( aes(x=Factor, ymin=fisher_CI_lower, ymax=fisher_CI_upper), width=0.3, colour="black", alpha=0.9)+ 
+  geom_point(size=5) +
+ facet_wrap(~Phases, nrow = 1) + theme_classic(18) +
+    geom_hline(yintercept = 1,color="black", lty="dashed") + 
+  scale_color_gradient(low="blue",high="red",limits=c(0,upper.thresh.p)) +
+  labs(color="Permutation\n-log10(p)") + ylab("Enrichment OR") +
+  theme(
+    legend.position = "left", # c(1, 0.8) bottom left, c(1,1) top-right.
+    legend.background = element_rect(fill = "transparent", colour = NA),
+    legend.text = element_text(size=12),
+    legend.title=element_text(size=12),
+    legend.title.position = "right", plot.title =element_text(size=10, face='bold', color="grey"),
+    axis.text.x= element_text(colour=cols, size=18))
+
+ggsave(panglao.markers.plt, filename="/scratch16/abattle4/ashton/snp_networks/presentation_figures/gleaner_manuscript_draft/figures/fig4_panglao_enrichment.svg",
+       height=4,width=15)
+
+
+```
+And the version for visualization purposes with a blank in the middle:
+Add an empty phase:
+```{r}
+panglao.enrichments$Phases <- factor(panglao.enrichments$Phases, levels = c("HSCs","Megakaryocytes","Protoplatelets","Platelets"))
+```
+The move the legend to the empty spot
+```{r}
+#Move the legend to the empty spot
+fitted_plot <- ggplot(panglao.enrichments, aes(x=Factor, y=fisher_OR,color=-log10(p_or))) + geom_point(size=5) +
+  geom_errorbar( aes(x=Factor, ymin=fisher_CI_lower, ymax=fisher_CI_upper), width=0.3, colour="black", alpha=0.9) +
+  facet_wrap(~Phases, nrow = 1,drop=FALSE) + theme_classic(18) +
+  geom_hline(yintercept = 1,color="black", lty="dashed")+ ylab("Enrichment OR")  +
+  labs(color="Permutation\n-log10(p)") + scale_color_gradient(low="blue",high="red",limits=c(0,upper.thresh.p))  +
+  theme(
+    legend.position =c(0.65, 0.6), #bottom left, c(1,1) top-right.
+    legend.background = element_rect(fill = "transparent", colour = NA),
+    legend.text = element_text(size=12),
+    legend.title=element_text(size=12),
+    legend.title.position = "right", plot.title =element_text(size=10, face='bold', color="grey"),
+    axis.text.x= element_text(colour=cols,size=18)) #+ ggtitle("Cell type gene marker enrichment")
+
+panglao.fitted <- remove_facets(fitted_plot, "aa#a")
+
+#size: 1500 x 400
+
+cowplot::plot_grid(platelet.markers, panglao.markers.plt,ncol=1)
+ggsave(filename="/scratch16/abattle4/ashton/snp_networks/presentation_figures/gleaner_manuscript_draft/figures/fig4_both_enrichments.svg",
+       height=5,width=13)
+
+#This is the one I want.
+cowplot::plot_grid(platelet.markers , panglao.fitted,ncol=1, rel_heights = c(0.9,1))
+ggsave(filename="/scratch16/abattle4/ashton/snp_networks/presentation_figures/gleaner_manuscript_draft/figures/fig4_both_enrichments_with_blank.svg",
+       height=7,width=13)
+
+
+```
+FDR corrected scores for the text
+```{r}
+panglao.enrichments %>%   mutate("BH_corrected_p"=p.adjust(p_or,method = "BH")) %>% select(factor, gene_set, fisher_p, fisher_OR,BH_corrected_p, p_or) %>% arrange(factor)
+```
+
+
+## The Bayesian flavor (ashr) plots
+*Fig. S20*
+**Platelet-related disease genes (Fig. S20A)**
+As a complement to this, try adjusting usiing ashr:
+```{r}
+library(ashr)
+
+ash.stats <- ashr::ash(platelet.enrichments$fisher_logOR,platelet.enrichments$fisher_logOR_SE)
+ash.stats$result$Factor <- platelet.enrichments$Factor
+ash.stats$result$Phases <- platelet.enrichments$Phases
+
+ipd.ashr <- ggplot(ash.stats$result,aes(x=as.factor(Factor), y=PositiveProb, fill=lfsr)) + geom_bar(stat="identity") + facet_wrap(~Phases, nrow=1) + theme_bw(15) + ggtitle("")+
+  labs(fill="Local false\nsign rate") + xlab("Factor") + ylab("Probability of\npositive enrichment") + theme(strip.background=element_rect(colour="black", fill="white"))
+#1200 by 400
+```
+
+**PanglaoDB cell type genes (Fig. S20B)*
+
+```{r}
+ash.panglao <- ashr::ash(panglao.enrichments$fisher_logOR,panglao.enrichments$fisher_logOR_SE)
+ash.panglao$result$Factor <- panglao.enrichments$Factor
+ash.panglao$result$Phases <- panglao.enrichments$Phases
+
+panglao.ashr <- ggplot(ash.panglao$result,aes(x=as.factor(Factor), y=PositiveProb, fill=lfsr)) + geom_bar(stat="identity") + facet_wrap(~Phases, nrow=1) + theme_bw(15) + ggtitle("")+
+  labs(fill="Local false\nsign rate") + xlab("Factor") + ylab("Probability of\npositive enrichment") + theme(strip.background=element_rect(colour="black", fill="white"))
+```
+
+```{r}
+cowplot::plot_grid(ipd.ashr, panglao.ashr, labels = c("A","B"), nrow=2)
+#1250 x 700
+ggsave(filename="/scratch16/abattle4/ashton/snp_networks/presentation_figures/gleaner_manuscript_draft/figures/Fig_S20_Bayesian_enrichments.png", height=6,width=12)
+```
+
