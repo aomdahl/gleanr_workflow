@@ -125,7 +125,6 @@ if [ "$RUN_FACTORIZATION" = true ] || [ "$RUN_ALL" = true ]; then
       --C ${ODIR}/sim${i}.c_matrix.txt $SCALE_VAR $SHRINK_VAR
   done
 fi
-
 # If only factorizing, exit
 if [ "$RUN_FACTORIZATION" = true ] && \
    [ "$RUN_ALL" = false ] && \

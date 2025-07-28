@@ -24,12 +24,27 @@ varAllEntries <- function(aligned_matrices, nrow, ncol, col_tag="T")
   var.by.row.by.col
 }
 
+pairwiseCorByMatrix <- function(aligned_matrices)
+{
+  full.len <- expand.grid(1:10, 1:10) %>% filter(Var1 != Var2)
+  overall.r2 <- c()
+  for(i in 1:nrow(full.len))
+  {
+    overall.r2 <- c(overall.r2, evaluateSingleMatrixConstruction(aligned_matrices[[full.len[i,1]]], aligned_matrices[[full.len[i,2]]]))
+  }
+  list("avg" = mean(overall.r2), "var"=var(overall.r2))
+    
+}
+
+
 varByMatrix <- function(aligned_matrices)
 {
   #First, get the "average" matrix
   full_array <- do.call(abind::abind, c(aligned_matrices, along = 3))
   mean.mat <- apply(full_array, 1:2, mean) #go along dimensions 1 and 2 to get the vector
-  sum(sapply(aligned_matrices, function(x) norm(x-mean.mat, "F")))/length(aligned_matrices)
+  sum(sapply(aligned_matrices, function(x) norm(x-mean.mat, "F")^2))/length(aligned_matrices)
+  #Updated to say squared, as it should!
+  #sum(sapply(aligned_matrices, function(x) norm(x-mean.mat, "F")))/length(aligned_matrices)
 }
 
 varByFactor <- function(aligned_matrices)
@@ -105,7 +120,7 @@ ref.list <- list()
 pred.list <- list()
 
 #Output data storage:
-factorVar <- NULL;matrixVar<- NULL;perCellVar<- NULL;
+factorVar <- NULL;matrixVar<- NULL;perCellVar<- NULL;perMatAvg <- NULL;
 
 n_features=12
 for(m in methods.run)
@@ -145,12 +160,15 @@ for(m in methods.run)
     all_iter_aligned[[i]] <- evaluate_error(true.loadings, true.factors, pred.list[[lookup_id]][["U"]], pred.list[[lookup_id]][["V"]])
     f_i = f_i+1
   }
+  
+  #JJune 21, added in comments to try and clean things up for faster running
   ### Calculate the consistency
   v.matrices <- lapply(all_iter_aligned, function(x) x$reordered_V)
   u.matrices <- lapply(all_iter_aligned, function(x) x$reordered_U)
   v.vars.all <- varAllEntries(v.matrices,nrow(true.factors), ncol(true.factors), col_tag="Trait")
   u.vars.all <- varAllEntries(u.matrices,nrow(true.loadings), ncol(true.loadings), col_tag="SNP")
-
+  #r2.avg.v <- pairwiseCorByMatrix(v.matrices) 
+  #r2.avg.u <- pairwiseCorByMatrix(u.matrices)
   ##Save this data in a cohesive way
   factorVar <- rbind(factorVar, data.frame("method"=m, "matrix"="V","factor_vars"= varByFactor(v.matrices)),
                      data.frame("method"=m, "matrix"="U","factor_vars"=varByFactor(u.matrices) ))
@@ -159,21 +177,25 @@ for(m in methods.run)
                      data.frame("method"=m, "matrix"="U","matrix_vars"=varByMatrix(u.matrices) ))
 
 
-  perCellVar <- rbind(perCellVar,
-                      data.frame("method"=m, "matrix"="V",reshape2::melt(v.vars.all)),
-                      data.frame("method"=m, "matrix"="U",reshape2::melt(u.vars.all)))
-
+  #perCellVar <- rbind(perCellVar,
+  #                    data.frame("method"=m, "matrix"="V",reshape2::melt(v.vars.all)),
+  #                    data.frame("method"=m, "matrix"="U",reshape2::melt(u.vars.all)))
+  
+  
+  #perMatAvg <- rbind(perMatAvg,
+  #                    data.frame("method"=m, "matrix"="V","mean"=r2.avg.v$avg, "var"=r2.avg.v$var),
+  #                    data.frame("method"=m, "matrix"="U","mean"=r2.avg.u$avg, "var"=r2.avg.u$var))
 
 }
 
 #Clean up tables if needed
 stopifnot(ncol(perCellVar) == 5)
-perCellVar %<>% set_colnames(c("method","matrix", "Trait", "Factor","entry_var"))
+#perCellVar %<>% set_colnames(c("method","matrix", "Trait", "Factor","entry_var"))
 #Now plot it, if desired
-write.table(factorVar, file = paste0(args$output, ".per_factor_variance.tsv"), quote = FALSE, row.names = FALSE)
+#write.table(factorVar, file = paste0(args$output, ".per_factor_variance.tsv"), quote = FALSE, row.names = FALSE)
 write.table(matrixVar, file = paste0(args$output, ".per_matrix_variance.tsv"), quote = FALSE, row.names = FALSE)
-write.table(perCellVar, file = paste0(args$output, ".per_entry_variance.tsv"), quote = FALSE, row.names = FALSE)
-
+#write.table(perCellVar, file = paste0(args$output, ".per_entry_variance.tsv"), quote = FALSE, row.names = FALSE)
+#write.table(perMatAvg, file = paste0(args$output, ".per_matrix_pairwise_r2.tsv"), quote = FALSE, row.names = FALSE)
 ##For interactive use
 if(FALSE)
 {
