@@ -1,0 +1,380 @@
+---
+title: "Comparing flash, GLEANR, and SVD results from Pan-UKBB analysis"
+output: html_notebook
+---
+
+```{r}
+pacman::p_load(data.table, tidyr, dplyr, readr, ggplot2, stringr, cowplot, flashr, magrittr)
+#source("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/src/plot_functions.R")
+source("/scratch16/abattle4/ashton/snp_networks/gwas_decomp_ldsc//src/plot_functions.R") 
+source("/scratch16/abattle4/ashton/snp_networks/scratch/cohort_overlap_exploration/src/evaluateSimR2.R")
+source("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/src/matrix_similarity_scoring/evaluateSimR2.R")
+source("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization//src/matrix_similarity_scoring/matrix_comparison_utils.R")
+```
+
+*After running flashR and PCA on the datasets, we will*
+Load GLEANR
+```{r}
+load("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results/panUKBB_complete_41K_final/panUKBB_complete_41K_final_final_dat.RData")
+gleanr.ret <- ret
+```
+Load flashr data:
+```{r}
+load("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results/panUKBB_complete_41K_flashR/panUKBB_complete_41K_flashRrobustFlash_final_dat.RData")
+flash_se.ret <- ret
+flash_se.v <- data.frame(flash_se.ret$trait.names, flash_se.ret$V) %>% set_colnames(c("Study", paste0("V",1:ncol(flash_se.ret$V))))
+flash_se.u <- data.frame(flash_se.ret$snp.ids, flash_se.ret$U) %>% set_colnames(c("SNP", paste0("U",1:ncol(flash_se.ret$V))))
+
+#Sanity check:
+load("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results/panUKBB_complete_41K_flashR_doubleCheck/panUKBB_complete_41K_flashR_doubleCheckrobustFlash_final_dat.RData")
+flash_se.ret.check <- ret
+stopifnot(all(flash_se.ret.check$V == flash_se.ret$V))
+stopifnot(all(flash_se.ret.check$U == flash_se.ret$U))
+```
+
+Load SVD data:
+```{r}
+pca.scaled.v <- fread("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results/panUKBB_complete_41K_SVD_scaled/latent.factors.txt")
+pca.scaled.u <- fread("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results/panUKBB_complete_41K_SVD_scaled/latent.loadings.txt")
+
+pca.unscaled.v <- fread("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results/panUKBB_complete_41K_SVD/latent.factors.txt")
+pca.unscaled.u <- fread("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results/panUKBB_complete_41K_SVD/latent.loadings.txt")
+```
+To avoid variable issues:
+```{r}
+rm(ret)
+```
+
+Function for comparing the factorizations:
+```{r}
+#reference.ret <- gleanr.ret;compare_to_v <- flash_se.v;compare_to_u <- flash_se.u;ref_tag = "GLEANR";target_tag = "flash_SE"
+correlationBasedComparisons <- function(reference.ret, compare_to_v, compare_to_u, ref_tag, target_tag)
+{
+  cor.v <- plotCorrelationDiagMatch(reference.ret$V, as.matrix(compare_to_v[,-1])) + xlab(paste0(ref_tag, " factors")) + ylab(paste0(target_tag, " factors"))
+
+  cor.u <- plotCorrelationDiagMatch(reference.ret$U, as.matrix(compare_to_u[,-1])) + xlab(paste0(ref_tag, " factors")) + ylab(paste0(target_tag, " factors")) + ggtitle("Factors wrt U") #1400, 1400
+  
+  cor.mat.u <- plotCorrelationDiagMatch(reference.ret$U, as.matrix(compare_to_u[,-1]),ret.mat = TRUE)
+  
+  #What percent have high R2?
+  ncols=ncol(compare_to_u)-1
+  hist(abs(diag(cor.mat.u)), main="Correlation of top-matched factors (matched by U only)")
+  cat("\nWhat percent of factors have a correlation > 0.5?",sum(abs(diag(cor.mat.u)) > 0.5,na.rm = TRUE)/ncols*100,"%\n")
+  cat("What percent of factors have a correlation > 0.5?",sum(abs(diag(cor.mat.u)) > 0.6,na.rm = TRUE)/ncols*100,"%\n")
+  cat("What percent of factors have a correlation > 0.7?",sum(abs(diag(cor.mat.u)) > 0.7,na.rm = TRUE)/ncols*100,"%\n")
+   cat("--------------------------------------------------------------\n")
+    cat("Analysis across paired matrices (all factors):\n")
+  v.dat <- prepMatricesForAnalysis(unitNorms(reference.ret$V),unitNorms(as.matrix(compare_to_v[,-1])));
+  u.dat <- prepMatricesForAnalysis(unitNorms(reference.ret$U),unitNorms(as.matrix(compare_to_u[,-1])))
+  gleanr_v_flash <- greedyMaxPairedCor(u.dat$lead, v.dat$lead, u.dat$second, v.dat$second, verbose=TRUE,order_only=TRUE) 
+  #Someting is going on here I don't understand.
+  #DEBUG
+  u.alt <- cor(gleanr_v_flash$lead_u, gleanr_v_flash$scnd_u)
+  
+  #Okay, so the output matrices look right here.
+  stopifnot(all(unlist(apply(round(cor(gleanr_v_flash$lead_v, v.dat$lead),digits=2), 1, function(x) any(x == 1)))))
+  stopifnot(all(unlist(apply(round(cor(gleanr_v_flash$lead_u, u.dat$lead),digits=2), 1, function(x) any(x == 1)))))
+  #sum(unlist(apply(round(cor(gleanr_v_flash$scnd_u,u.dat$second),digits=2), 1, function(x) any(abs(x) == 1))),na.rm = TRUE)
+  #sum(unlist(apply(round(cor(gleanr_v_flash$scnd_v,v.dat$second),digits=2), 1, function(x) any(abs(x) == 1))),na.rm = TRUE)
+  #Why can't I find the matches between factors I am looking for? Sign issues?
+  #round(abs(cor(gleanr_v_flash$scnd_u,gleanr_v_flash$lead_u)),digits=3)
+  
+  cat("R^2 between U matrices:", gleanr_v_flash$corr_u^2, "\n")
+  cat("R^2 between V matrices:", gleanr_v_flash$corr_v^2, "\n")
+  cor.mat.u <- diag(cor(gleanr_v_flash$lead_u, gleanr_v_flash$scnd_u))
+  cor.mat.v <- diag(cor(gleanr_v_flash$lead_v, gleanr_v_flash$scnd_v))
+  cat("Median R2 across aligned U:", median(cor.mat.u^2,na.rm = TRUE), "\n")
+  cat("Median R2 across aligned V:",median(cor.mat.v^2,na.rm = TRUE), "\n")
+  
+     cat("--------------------------------------------------------------\n")
+    cat("Analysis across paired matrices (factors appearing just in",target_tag,"data ):\n")
+  nonzero.flash.factors <- which(apply(gleanr_v_flash$scnd_v, 2, function(x) sum(x !=0)) != 0)
+  stopifnot((norm(gleanr_v_flash$lead_u[,1], "2") - 1) < 1e-15)
+   stopifnot((norm(gleanr_v_flash$scnd_u[,1], "2")- 1) < 1e-15)
+  cat("R2 between matched U matrices, where target matrix has an estimate:",
+      round(stackAndAssessCorr(gleanr_v_flash$lead_u[,nonzero.flash.factors], gleanr_v_flash$scnd_u[,nonzero.flash.factors])^2,digits=3),
+      "\n")
+    cat("R2 between matched V matrices, where target matrix has an estimate:",
+      round(stackAndAssessCorr(gleanr_v_flash$lead_v[,nonzero.flash.factors], gleanr_v_flash$scnd_v[,nonzero.flash.factors])^2,digits=3),
+      "\n")
+  list("cor_heatmap_v"=cor.v, "cor_heatmap_u"=cor.u,"pairwise_cor_paired"=gleanr_v_flash, "matched_cor_u"=cor.mat.u, "matched_cor_v"=cor.mat.v)
+}
+
+```
+
+## Comparing GLEANR and flash
+```{r}
+gleanr_v_flash_se <- correlationBasedComparisons(gleanr.ret,flash_se.v,flash_se.u, "GLEANR", "flash")
+```
+## And with PCA:
+### Scaled
+```{r}
+gleanr_v_svd_scaled <- correlationBasedComparisons(gleanr.ret,pca.scaled.v,pca.scaled.u, "GLEANR", "SVD_scaled")
+```
+
+#### Unscaled
+```{r}
+gleanr_v_svd_unscaled <- correlationBasedComparisons(gleanr.ret,pca.unscaled.v,pca.unscaled.u, "GLEANR", "SVD_UNscaled")
+```
+Unscaled looks more similar to GLEANR, so we focus on that one.
+## Plot of overall correlation (violin plot):
+*Figure S22*
+GEt the data
+```{r}
+buildCorMatrixCustom <- function(lin, method_name)
+{
+  data.frame("factor" = 1:length(lin$matched_cor_u), 
+                             "v"=lin$matched_cor_v^2, 
+                             "u"=lin$matched_cor_u^2) %>% drop_na() %>%
+            pivot_longer(cols=c("v","u"), names_to = c("Matrix"), values_to = c("R2")) %>%
+            mutate("Matrix"=paste0(method_name, "_", Matrix))
+}
+
+perf.all <- rbind(buildCorMatrixCustom(gleanr_v_flash_se, "flash"),
+                  buildCorMatrixCustom(gleanr_v_svd_unscaled, "SVD_unscaled"),
+                  buildCorMatrixCustom(gleanr_v_svd_scaled, "SVD_scaled")) %>%
+  mutate("source_mat"=ifelse(grepl(pattern="_u$",x = Matrix), "U","V"))
+
+```
+Figure S22:
+```{r}
+#lower part
+violin.r2 <- ggplot(perf.all, aes(x=Matrix,y=R2)) + geom_violin() + geom_boxplot(width=0.05) + 
+  theme_bw() + ggtitle(bquote(R^2 ~"across matched factors")) + 
+  ylab(bquote(R^2)) + facet_wrap(~source_mat, scales = "free_x") + theme(axis.text.x = element_text(angle=45,hjust=1,vjust=1))
+
+upper.fs22 <- cowplot::plot_grid(gleanr_v_flash_se$cor_heatmap_u + 
+                                   theme(legend.position = "none", text=element_text(size=8), plot.title = element_blank()),
+                gleanr_v_svd_unscaled$cor_heatmap_u + ylab("SVD factors") + labs(fill="PCC") + 
+                  theme( text=element_text(size=8),plot.title = element_blank()),
+                                 nrow=1,labels = c("A","B"), rel_widths = c(0.9,1))
+cowplot::plot_grid(upper.fs22,violin.r2,nrow=2, labels=c("","C"), rel_heights = c(1,0.7))
+#1200 x 1100
+```
+
+
+
+
+
+## Visualize alignment between corresponding factors
+*Figure S23*
+Show alignment between GLEANR and flash:
+```{r}
+plotAlignedDots <- function(gleanr_i, alternate_i, gleanr_dat,alternate_dat, alt_label, ncols=1 )
+{
+    plots <- list()
+    for(index in 1:length(gleanr_i))
+    {
+      i <- gleanr_i[index]
+      j <- alternate_i[index]
+      df <- data.frame("gleanr"=gleanr_dat[,i], alt_label=alternate_dat[,j])
+      plots[[index]] <- ggplot(df, aes(x=gleanr, y=alt_label)) + geom_point() + geom_smooth(method="lm") + theme_bw() +
+        ggtitle("") + xlab(paste0("V",i, " (gleanr)")) + ylab(paste0("V",j, " (",alt_label, ")"))
+    }
+    cowplot::plot_grid(plotlist=plots, ncol=ncols)
+}
+
+```
+ Now between GLEANR and unscaled SVD:
+```{r}
+flash_line_plot <- plotAlignedDots(gleanr_v_flash_se$pairwise_cor_paired$order.true[1:5],
+                                   gleanr_v_flash_se$pairwise_cor_paired$order.pred[1:5],
+                                     unitNorms(gleanr.ret$V), unitNorms(as.matrix(flash_se.v[,-1])), "flash", ncols = 5)
+svd_unscaled_line_plot <-  plotAlignedDots(gleanr_v_svd_unscaled$pairwise_cor_paired$order.true[1:5],
+                                         gleanr_v_svd_unscaled$pairwise_cor_paired$order.pred[1:5],
+                                         unitNorms(gleanr.ret$V), unitNorms(as.matrix(pca.unscaled.v[,-1])), "SVD", ncols = 5)
+
+per_factor_view <- cowplot::plot_grid(flash_line_plot,svd_unscaled_line_plot, nrow=2, labels= c("A","B"))
+
+```
+
+### Comparison of sparsity across factors:
+We include 2 definitions: one of "strict" sparsity, counting the cells that are *exactly* 0. We also include an "effective" sparsity, meaning the number of cells which pass a small threshold as to not be considered contributing (N+1)
+### Strict sparsity:
+Function for it.
+Note if a column is totally empty, we assume it was added and set its values to NA
+```{r}
+#Strict- values exactly 0
+strictSparsity <- function(mat, n) {
+  ret.mat <- apply(mat, 2, function(x) sum(x==0))/n
+    if(any(ret.mat ==1))
+    {
+      ret.mat[which(ret.mat == 1)] <- NA
+    }
+  ret.mat
+}
+
+#Approx/effective: above average cosine score
+calcApproxSparsity <- function(mat, n, MIN=1e-20) {
+  
+  ret.dat <- colSums(apply(mat, 2, function(x) x^2/sum(x^2+MIN)) < (1/(n+1)))/n
+  all.empty <- which(apply(mat, 2, function(x) sum(x==0)) == n)
+  ret.dat[all.empty] <- NA
+  ret.dat
+  }
+
+library(RColorBrewer)
+color.list <- buildPubColors() %>% filter(method_label %in% c("SVD", "flash", "GLEANR"))
+#color.list.new <- buildPubColors() %>% filter(method_label %in% c("SVD", "flash (Z)","flash","SVD-adj", "GLEANR"))
+
+myColors <- color.list$color
+#new.names <- c("SVD_scaled","SVD_unscaled","flash_z","flash_se","GLEANR" )
+#names(myColors) <- levels(factor(c("SVD_scaled","SVD_unscaled","flash_z","flash_se","GLEANR" ),levels = c("SVD_scaled","SVD_unscaled","flash_z","flash_se","GLEANR" )))
+names(myColors) <- color.list$method_label
+colScale <- scale_colour_manual(name = "Method",values = myColors)
+fillScale <- scale_fill_manual(name = "Method",values = myColors)
+```
+In V:
+```{r}
+Factors=58
+M=137
+N=nrow(gleanr.ret$U)
+#check the sparsity is retained.
+strict_sparsity.v<- rbind(data.frame("factor"=paste0("F", 1:Factors), "name"="GLEANR", "value"=strictSparsity(gleanr.ret$V,M)),
+                           data.frame("factor"=paste0("F", 1:ncol(flash_se.ret$V)), 
+                                      "name"="flash", "value"=strictSparsity(flash_se.ret$V,M)),
+                           data.frame("factor"=paste0("F", 1:Factors), 
+                                      "name"="SVD", "value"=strictSparsity(as.matrix(pca.unscaled.v[,-1]),M)))
+strict_sparsity.v$name <- factor(strict_sparsity.v$name, level=color.list$method_label)
+stopifnot(nrow(strict_sparsity.v) == 135)
+stopifnot(all(!is.na(strict_sparsity.v$value)))
+
+strict_sparsity.u <- rbind(data.frame("factor"=paste0("F", 1:Factors), "name"="GLEANR", "value"=strictSparsity(gleanr.ret$U,N)),
+                           data.frame("factor"=paste0("F", 1:ncol(flash_se.ret$U)), 
+                                      "name"="flash", "value"=strictSparsity(flash_se.ret$U,N)),
+                           data.frame("factor"=paste0("F", 1:Factors), 
+                                      "name"="SVD", "value"=strictSparsity(as.matrix(pca.unscaled.u[,-1]),N)))
+strict_sparsity.u$name <- factor(strict_sparsity.u$name, level=color.list$method_label)
+
+stopifnot(nrow(strict_sparsity.u) == 135)
+stopifnot(all(!is.na(strict_sparsity.u$value)))
+```
+
+*Approximate sparsity*
+```{r}
+effective_sparsity.v<- rbind(data.frame("factor"=paste0("F", 1:Factors), "name"="GLEANR", "value"=calcApproxSparsity(gleanr.ret$V,M)),
+                           data.frame("factor"=paste0("F", 1:ncol(flash_se.ret$V)), 
+                                      "name"="flash", "value"=calcApproxSparsity(flash_se.ret$V,M)),
+                           data.frame("factor"=paste0("F", 1:Factors), 
+                                      "name"="SVD", "value"=calcApproxSparsity(as.matrix(pca.unscaled.v[,-1]),M)))
+effective_sparsity.v$name <- factor(effective_sparsity.v$name, level=color.list$method_label)
+stopifnot(nrow(effective_sparsity.v) == 135)
+stopifnot(all(!is.na(effective_sparsity.v$value)))
+
+effective_sparsity.u <- rbind(data.frame("factor"=paste0("F", 1:Factors), "name"="GLEANR", "value"=calcApproxSparsity(gleanr.ret$U,N)),
+                           data.frame("factor"=paste0("F", 1:ncol(flash_se.ret$U)), 
+                                      "name"="flash", "value"=calcApproxSparsity(flash_se.ret$U,N)),
+                           data.frame("factor"=paste0("F", 1:Factors), 
+                                      "name"="SVD", "value"=calcApproxSparsity(as.matrix(pca.unscaled.u[,-1]),N)))
+effective_sparsity.u$name <- factor(effective_sparsity.u$name, level=color.list$method_label)
+
+stopifnot(nrow(effective_sparsity.u) == 135)
+stopifnot(all(!is.na(effective_sparsity.u$value)))
+```
+
+Combine into a single plot
+```{r}
+
+v_strict <- ggplot(strict_sparsity.v %>% filter(!is.na(value)), aes(x=name, y = value, fill=name)) + geom_boxplot() + theme_bw(15) + labs(name="Method") + 
+  fillScale + ylab("V sparsity (strict)") + xlab("Method")
+bottom.legend <- ggpubr::get_legend(v_strict)
+
+
+
+joined.sparsities <- rbind(effective_sparsity.u %>% mutate("Matrix"="U", "Definition"="Approx."),
+      strict_sparsity.u %>% mutate("Matrix"="U", "Definition"="Strict"),
+      effective_sparsity.v %>% mutate("Matrix"="V", "Definition"="Approx."),
+      strict_sparsity.v %>% mutate("Matrix"="V", "Definition"="Strict"))
+
+joined_sparsity_plot <- cowplot::plot_grid(
+ggplot(joined.sparsities %>% filter(Matrix == "V", !is.na(value)), aes(x=name, y = value, fill=name))+ geom_boxplot() + theme_bw(15) + labs(name="Method") + 
+  fillScale + ylab("V sparsity") + xlab("Method")  + theme(legend.position = "none", axis.text.x=element_text(angle=45, hjust=1, vjust=1)) + facet_wrap(~Definition),
+  ggplot(joined.sparsities %>% filter(Matrix == "U",!is.na(value)), aes(x=name, y = value, fill=name))+ geom_boxplot() + theme_bw(15) + labs(name="Method") + 
+  fillScale + ylab("U sparsity") + xlab("Method")  + theme(legend.position = "none",axis.text.x=element_text(angle=45, hjust=1, vjust=1)) + facet_wrap(~Definition),
+  bottom.legend,nrow=1, rel_widths = c(1,1,0.4), labels = c("C", "D", ""))
+
+
+```
+
+
+All together now:
+```{r}
+cowplot::plot_grid(per_factor_view, joined_sparsity_plot, nrow=2, rel_heights = c(1,0.8))
+#1300, 750
+ggsave(filename="/scratch16/abattle4/ashton/snp_networks/presentation_figures/gleaner_manuscript_draft/figures/Fig_S23_sparsity_across_methods.png",
+      width = 8,height=13,units="in")
+```
+Verify the significance of the differences:
+```{r}
+approx.only <- joined.sparsities %>% filter(Definition == "Approx.")
+pairwise.wilcox.test(approx.only$value, approx.only$name, p.adjust.method="BH")
+strict.only <- joined.sparsities %>% filter(Definition == "Strict")
+pairwise.wilcox.test(strict.only$value, strict.only$name, p.adjust.method="BH")
+```
+
+## TISSUE ENRICHMENTS
+*Figure S24*
+```{r}
+flash_se.f1 <-fread("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results/panUKBB_complete_41K_flashSE/NONE_ldsc_enrichment_Multi_tissue_chromatin/F1.multi_tissue.cell_type_results.txt") %>% set_colnames(c("Name", "flash_coef", "flash_se", "flash_p"))
+
+svd.f1 <-fread("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results/panUKBB_complete_41K_SVD//NONE_ldsc_enrichment_Multi_tissue_chromatin/F1.multi_tissue.cell_type_results.txt") %>% set_colnames(c("Name", "svd_coef", "svd_se", "svd_p"))
+
+gleanr.f1 <-fread(paste0("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results/panUKBB_complete_41K_final//NONE_ldsc_enrichment_Multi_tissue_chromatin_correct_order//F1.multi_tissue.cell_type_results.txt"))
+
+```
+From another script:
+```{r}
+  gtex.labs <- labelsPrep()
+combined.all.dat <- left_join(gleanr.f1, svd.f1, by="Name") %>%left_join(., flash_se.f1, by="Name") %>%
+  mutate("Name" = gsub(Name,pattern = "liver_ENTEX__", replacement = "Liver_ENTEX__")) %>% 
+  left_join(., gtex.labs,by="Name")
+combined.all.dat$Name <- gsub(combined.all.dat$Name,pattern = "liver_ENTEX__", replacement = "Liver_ENTEX__")
+```
+Prep colors
+```{r}
+color.df <- combined.all.dat %>% select(new_category, color_code) %>% distinct()
+factors <- factor(color.df$new_category)
+cols <-color.df$color_code
+names(cols) <- factors
+colScale <- scale_colour_manual(name = "new_category",values = cols)
+
+```
+Make the plots:
+```{r}
+
+SVD.tissue <- ggplot(combined.all.dat, aes(x=-log10(Coefficient_P_value), y=-log10(svd_p))) + geom_point(aes(color=new_category)) + 
+  theme_bw() + geom_abline(slope=1, intercept=0, col="grey", lty="dashed") +
+   colScale + geom_smooth(method="lm") + xlab("GLEANR F1 LDSC enrichment -log10(P)") + ylab("SVD F1 LDSC enrichment -log10(P)") +
+  theme(legend.position = "none")
+flash.tissue <- ggplot(combined.all.dat, aes(x=-log10(Coefficient_P_value), y=-log10(flash_p))) + 
+  geom_point(aes(color=new_category)) +  theme_bw() + geom_abline(slope=1, intercept=0, col="grey", lty="dashed") +
+   colScale + geom_smooth(method="lm") + xlab("GLEANR F1 LDSC enrichment -log10(P)") + ylab("Flash F1 LDSC enrichment -log10(P)") +
+  guides(color=guide_legend("Tissue"))
+
+cowplot::plot_grid(SVD.tissue, flash.tissue, labels = c("A","B"), rel_widths = c(0.7,1), nrow=1)
+
+
+#1000, 550
+```
+
+
+## Plot the genetic architecture metrics:
+*Figure S25*
+```{r}
+gleanr_ga <-fread("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results/panUKBB_complete_41K_final/selective_pressure/s_scores.tsv")
+flash_ga <-fread("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results/panUKBB_complete_41K_flashSE/selective_pressure/s_scores.tsv")
+svd.unscaled_ga <-fread("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results/panUKBB_complete_41K_SVD/selective_pressure/s_scores.tsv")
+svd.scaled_ga <-fread("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/results/panUKBB_complete_41K_SVD_scaled//selective_pressure/s_scores.tsv")
+
+plotGA <- function(df.in, title)
+{
+  ggplot(df.in, aes(x=Me_scaled,y=S_hat)) + geom_point(size=2) + theme_bw(15) + xlab(bquote("Polygenicity (Scaled" ~ M[e]*")")) + ylab(expression(hat(S))) + 
+    ggtitle(title)
+}
+
+plotGA(gleanr_ga, "GLEANR")
+cowplot::plot_grid(
+  plotGA(flash_ga, "flash"),
+  plotGA(svd.unscaled_ga, "SVD (unscaled)"),
+  plotGA(svd.scaled_ga, "SVD (scaled)"), nrow=3)
+```
