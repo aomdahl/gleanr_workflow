@@ -279,7 +279,7 @@ runGWASMFBeta <- function(X, W, K,C,...)
     message("Not using C")
   }
  #source("/scratch16/abattle4/ashton/snp_networks/scratch/testing_gwasMF_code/model_selection/bic_autofit_functions.R")
-  library(gleanr)
+  #library(gleanr)
   #1/16 dropped these lines, since package working
   #files.source = list.files("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gleanr/R/")
   #sapply(paste0("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/gleanr/R/", files.source), source)
@@ -297,7 +297,7 @@ runGWASMFBeta <- function(X, W, K,C,...)
   }
   #print(compute_obj(X, W, res$U, res$V, option, decomp = TRUE, loglik = 900))
   return(retDat(res$V, res$U, X = res$U %*% t(res$V),Xref = X, res$pve))
-}
+} 
 
 
 runGWASMFGrid <- function(X, W, K,C,...)

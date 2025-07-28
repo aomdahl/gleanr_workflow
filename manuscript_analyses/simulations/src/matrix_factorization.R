@@ -72,7 +72,7 @@ writeAllOutputs <- function(results, description, x_true)
 #source("/scratch16/abattle4/ashton/snp_networks/gwas_decomp_ldsc/src/plot_functions.R")
 source("../../../src/plot_functions.R")
 source("../src/factorization_methods.R")
-#source("/scratch16/abattle4/ashton/snp_networks/gwas_decomp_ldsc/src/factorization_methods.R")
+#source("/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/manuscript_analyses/simulations/src/factorization_methods.R")
 option_list <- list(
 	make_option("--gwas_data", type = 'character', help = "path to gwas z-scores data; table of n snp rows x m study columns.", default = ""),
 	make_option("--se_data", type = 'character', help = "path to gwas snp SEs data; table of n snp rows x m study columns."),
@@ -106,13 +106,6 @@ t=c(paste0("--se_data=", dir, "ukbb.sim1.se.tsv"),
     paste0("--outdir=", dir, "sim1.manual"),
     "--only_run=PCA,PCA_chooseK,FLASH_SE,FLASH_SE_kroneker,GLEANER_glmnet,GLEANER_glmnet_noCovar", "--K=8", "--bic_var=mle",
     "--no_plots", "--init_mat=V")
-#yuan Sim
-t=c("--se_data=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/yuan_simulations/Input_tau100_seed1_W.txt",
-    "--beta_data=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/yuan_simulations/Input_tau100_seed1_X.txt",
-    "--seed=1",
-    "--outdir=/scratch16/abattle4/ashton/snp_networks/custom_l1_factorization/yuan_simulations//simMANUAL.",
-    "--only_run=GLEANER,PCA", "--K=5", "--bic_var=dev",
-    "--no_plots", "--init_mat=V")
 
 #generic sim
 t=c("--se_data=/scratch16/abattle4/ashton/snp_networks/scratch/cohort_overlap_exploration/simulating_factors/custom_easy/simulation_outputs/fast_runs/V7_U7_mafmixed_n5000.COVAR_cont_scaling//sim8.std_error.txt",
@@ -139,8 +132,6 @@ t=c(paste0("--se_data=",simp,"seed4.replicate23.0.SE.csv"),
       "--only_run=GLEANER_glmnet,GLEANER_glmnet_noCovar", "--K=5",
       "--no_plots")
 
-#Testing factorGo yikes
-
 
   over="/scratch16/abattle4/ashton/snp_networks/scratch/cohort_overlap_exploration/simulating_factors/custom_easy/simulation_outputs/final_sims_june_2024/1b_overlap_dev_grid/V101_U101_MAF-mix_eur_N-10000_RHO-1b_high_mixed_p_No-1b_high_no/"
   t=c(paste0("--se_data=",over,"sim1.std_error.txt"),
@@ -152,14 +143,16 @@ t=c(paste0("--se_data=",simp,"seed4.replicate23.0.SE.csv"),
 
 
 
-  over="/scratch16/abattle4/ashton/snp_networks/scratch/cohort_overlap_exploration/simulating_factors/custom_easy/simulation_outputs/final_sims_june_2024/1b_overlap//V102_U102_MAF-mix_eur_N-50000_RHO-1b_high_mixed_p_No-1b_high_no/"
-  t=c(paste0("--se_data=",over,"sim10.std_error.txt"),
-      paste0("--beta_data=",over,"sim10.effect_sizes.txt"),
-      "--seed=1","--bic_var=dev",
-      paste0("--z_scores=",over,"sim10.z.txt"),
-      paste0("--n_samples=",over,"sim10.N.txt"),
-      paste0("--outdir=", over, "/factorization_results/sim10DEBUG"),
-      "--only_run=GLEANER_glmnet", "--K=5",paste0("--C=", over, "/sim10.c_matrix.txt"))
+  over="/scratch16/abattle4/ashton/snp_networks/scratch/cohort_overlap_exploration/simulating_factors/custom_easy/simulation_outputs/final_sims_june_2024/dense_1b_overlap/V113_U102_MAF-mix_eur_N-mixed_RHO-1b_high_mixed_p_No-1b_high_no/"
+  t=c(paste0("--se_data=",over,"sim7.std_error.txt"),
+      paste0("--beta_data=",over,"sim7.effect_sizes.txt"),
+      "--seed=7","--bic_var=sklearn_eBIC",
+      paste0("--z_scores=",over,"sim7.z.txt"),
+      paste0("--n_samples=",over,"sim7.N.txt"),
+      paste0("--outdir=", over, "factorization_results/sim7DEBUG"),
+      "--only_run=PCA,backfit,FLASH_SE,FLASH_SE_kroneker,PCA_chooseK,GLEANER_glmnet,GLEANER_glmnet_noCovar,SVD_whiten,SVD_beta,FactorGo",
+      "--K=5",paste0("--C=", over, "/sim7.c_matrix.txt"),
+      "--init_mat=V", "--WLgamma=1")
 
 
 
