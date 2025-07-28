@@ -3,7 +3,7 @@ This repo contains tools for preprocessing of GWAS data, code for performing GWA
 
 [GLEANR](https://github.com/aomdahl/gleanr/tree/main) is a GWAS matrix factorization tool to estimate sparse latent pleiotropic genetic factors. Factors map traits to a distribution of SNP effects that may capture biological pathways or mechanisms shared by these traits. This is an ongoing project to develop a flexible, interpretable, and sparse factorization framework to integrate GWAS data across studies and cohorts. We employ a basic alternating least-squares matrix factoriztion algorithm with sparse priors on learned matrices, while accounting for study uncertainty, taking inspiration from generalized least squares by transforming regression terms to account for spurious covariance structure while simultaneously applying lasso regularization. (For a more complete description of the method, see our [publication]( https://www.cell.com/ajhg/fulltext/S0002-9297\(25\)00273-3).)
 
-It also contains files with specific commands used to performa analysis reported in the main publication:
+It also contains files with specific commands used to perform the analysis reported in the main publication:
 
 [**Sparse matrix factorization robust to sample sharing across GWASs reveals interpretable genetic components**](https://www.cell.com/ajhg/fulltext/S0002-9297\(25\)00273-3)
 
