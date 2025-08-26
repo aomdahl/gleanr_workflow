@@ -14,7 +14,7 @@ This can be done from the companion repository [here](https://github.com/aomdahl
  - `rules`: Snakemake rule files to perform GLEANR analysis, including cleaning and harmonizing input GWAS data, estimating and formatting GLEANR inputs, and analyzing GLEANR factors downstream
  - `src`: Scripts used in pre and post-processing of GLEANR results which need global accessibility across the whole directly. Entirely independent from the GLEANR software package. Also contains helpful scripts for running GLEANR directly from the command line.(`[gleanr_run.R]`(https://github.com/aomdahl/gleanr_workflow/blob/main/src/gleanr_run.R))
  - `manuscript_analyses`: Documentation for analysis run in manuscript, including scripts specific to our analysis of 137 diverse UKBB traits, the comparative analysis of FinnGen vs UKBB, and simulations.
-   
+*Note that currently, the `Snakemake` file in the top directory is not used but is simply a placeholder. The key working functionality of this pipeline resides in the Snakemake rules files in `rules`*
 ## GWAS factor analysis workflow overview:
 In order to both run and interpret GWAS factor analysis,we provide a general workflow and code for performing the following tasks:
 1) Harmonizing, munging, and cleaning up input GWAS summary statistics of various formats into a standardized, LDSC-like format for downstream processing
