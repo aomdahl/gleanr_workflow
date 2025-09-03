@@ -161,14 +161,16 @@ snakemake --snakefile rules/extract_factorize.smk -j 1 gwas_extracts/panUKBB_com
 ```
 
 **13) Run GLEANR model selection**
+Note that the *gleanr* package  performs a dynamic grid search of K-initialization values ($K_{init}$) across multiple cores. using the BIC as its selection heuristic. However, due to memory limitations in this analysis, distinct initializations of $K_{init}$ were submitted as separate SLURM jobs. This functionality is made available through the script `src/gleaner_grid_slurm.R`, which we called below:
 ```bash
 	INTER_DIR=results/panUKBB_complete_41K_sklearn_eBIC
 	mkdir -p ${INTER_DIR}
-	#Because the data is large,I needed to run grid search on separate jobs (instead of running in one multi-threaded instance, which can be done natively by the gleanr packge)
 	bash  run_scripts/GLEANER_panUKBB_41K_snps.build_sklearn-eBIC.sh #Identify the first 4 Kinit to test and build slurm scripts for that
 ```
-Run model fitting at the first 4 points
+*Note: while the output of the above script targets the directory `results/panUKBB_complete_41K_sklearn_eBIC/`, the output scripts were moved into `results/panUKBB_complete_41K_final/gleanr_model_selection/` in an effort too keep this github repo organized and readable.*
+Rue model fitting at the first 4 points
 ```bash
+cd results/panUKBB_complete_41K_final/gleanr_model_selection/
 sbatch final_gleaner_attempt_K102.slurm
 sbatch final_gleaner_attempt_K136.slurm
 sbatch final_gleaner_attempt_K34.slurm
@@ -190,9 +192,10 @@ Score all of the runs, and select the run with the lowest BIC
 ```bash
 	bash  run_scripts/GLEANER_panUKBB_41K_snps.score_sklearn-eBIC.sh
 ```
- This nominates Kinit=134
+ This nominates Kinit=134. The tabular summary of model BIC scores is given in `results/panUKBB_complete_41K_final/gleanr_model_selection/_performance_global_bic_scores.txt`.
 
 **14) Run GLEANR model fitting step**
+Here, we perform the final run of GLEANR with the settings that minimized the BIC.
 ```bash
 	sbatch final_gleaner_COMPLETION_RUN_K134.slurm
 ```
